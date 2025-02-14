@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.1](https://github.com/rivet-gg/actor-core/compare/v0.4.0...v0.4.1) (2025-02-14)
+
+
+### Documentation
+
+* new landing page ([#630](https://github.com/rivet-gg/actor-core/issues/630)) ([b8e4a8b](https://github.com/rivet-gg/actor-core/commit/b8e4a8b1c7a5311372faa00aeeb5a883c762032b))
+
+
+### Chores
+
+* switch docs middleware to production URL ([#632](https://github.com/rivet-gg/actor-core/issues/632)) ([4698d60](https://github.com/rivet-gg/actor-core/commit/4698d604311501b4d784175fb2759dff84a72f83))
+
 ## [0.4.0](https://github.com/rivet-gg/actor-core/compare/v0.2.0...v0.4.0) (2025-02-13)
 
 
