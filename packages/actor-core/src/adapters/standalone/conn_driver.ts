@@ -1,9 +1,9 @@
 import type { AnyActor } from "@/actor/runtime/actor";
 import { Connection } from "@/actor/runtime/connection";
 import { WSContext } from "hono/ws";
-import { logger } from "@/actor/runtime/log";
+import { logger } from "./log";
 import { CachedSerializer, Encoding } from "@/actor/protocol/serde";
-import { ConnectionDriver } from "@/actor/runtime/driver";
+import { ConnectionDriver } from "../../actor/runtime/driver";
 import * as messageToClient from "@/actor/protocol/message/to_client";
 import { SSEStreamingApi } from "hono/streaming";
 import { encodeDataToString } from "@/actor/protocol/serde";

@@ -1,32 +1,34 @@
-import { CachedSerializer } from "../protocol/serde";
+import { CreateRequest } from "@/client/mod";
+import { ActorTags, Connection } from "./mod";
 import type * as messageToClient from "@/actor/protocol/message/to_client";
+import { CachedSerializer } from "@/actor/protocol/serde";
 import { AnyActor } from "./actor";
-import { Connection } from "./connection";
 
-export interface LoadOutput {
-	actor: {
-		id: string;
-		tags: Record<string, string>;
-		createdAt: Date;
-	};
-	region: string;
+export type ConnectionDrivers = Record<string, ConnectionDriver>;
+
+export interface GetActorOutput {
+	endpoint: string;
+}
+
+export interface ManagerDriver {
+	getForId(actorId: string): Promise<GetActorOutput>;
+	getWithTags(tags: ActorTags): Promise<GetActorOutput | undefined>;
+	createActor(req: CreateRequest): Promise<GetActorOutput>;
 }
 
 export interface ActorDriver {
-	connectionDrivers: Record<string, ConnectionDriver>;
-
 	//load(): Promise<LoadOutput>;
 
 	// HACK: Clean these up
-	kvGet(key: any): Promise<any>;
-	kvGetBatch(key: any[]): Promise<[any, any][]>;
-	kvPut(key: any, value: any): Promise<void>;
-	kvPutBatch(key: [any, any][]): Promise<void>;
-	kvDelete(key: any): Promise<void>;
-	kvDeleteBatch(key: any[]): Promise<void>;
+	kvGet(actorId: string, key: any): Promise<any>;
+	kvGetBatch(actorId: string, key: any[]): Promise<[any, any][]>;
+	kvPut(actorId: string, key: any, value: any): Promise<void>;
+	kvPutBatch(actorId: string, key: [any, any][]): Promise<void>;
+	kvDelete(actorId: string, key: any): Promise<void>;
+	kvDeleteBatch(actorId: string, key: any[]): Promise<void>;
 
 	// Schedule
-	setAlarm(timestamp: number): Promise<void>;
+	setAlarm(actorId: string, timestamp: number): Promise<void>;
 
 	// TODO:
 	//destroy(): Promise<void>;

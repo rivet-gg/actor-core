@@ -43,7 +43,7 @@ export class Schedule {
 	): Promise<void> {
 		// Save event
 		const eventId = crypto.randomUUID();
-		await this.#driver.kvPutBatch([
+		await this.#driver.kvPutBatch(this.#actor.id, [
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 			KEYS.SCHEDULE.event(eventId) as any,
 			{
@@ -56,6 +56,7 @@ export class Schedule {
 		// TODO: Clean this up to use list instead of get
 		// Read index
 		const schedule: ScheduleState = (await this.#driver.kvGet(
+			this.#actor.id,
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 			KEYS.SCHEDULE.SCHEDULE as any,
 		)) ?? {
@@ -74,13 +75,16 @@ export class Schedule {
 		}
 
 		// Write new index
-		await this.#driver.kvPutBatch([KEYS.SCHEDULE.SCHEDULE as any, schedule]);
+		await this.#driver.kvPutBatch(this.#actor.id, [
+			KEYS.SCHEDULE.SCHEDULE as any,
+			schedule,
+		]);
 
 		// Update alarm if:
 		// - this is the newest event (i.e. at beginning of array) or
 		// - this is the only event (i.e. the only event in the array)
 		if (insertIndex === 0 || schedule.events.length === 1) {
-			await this.#driver.setAlarm(newEvent.timestamp);
+			await this.#driver.setAlarm(this.#actor.id, newEvent.timestamp);
 		}
 	}
 
@@ -89,6 +93,7 @@ export class Schedule {
 
 		// Read index
 		const scheduleIndex: ScheduleState = (await this.#driver.kvGet(
+			this.#actor.id,
 			KEYS.SCHEDULE.SCHEDULE,
 		)) ?? { events: [] };
 
@@ -100,20 +105,27 @@ export class Schedule {
 		const eventKeys = scheduleIndexEvents.map((x) =>
 			KEYS.SCHEDULE.event(x.eventId),
 		);
-		const scheduleEvents = (await this.#driver.kvGetBatch(eventKeys)) as [
+		const scheduleEvents = (await this.#driver.kvGetBatch(
+			this.#actor.id,
+			eventKeys,
+		)) as [
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 			any,
 			ScheduleEvent,
 		][];
-		await this.#driver.kvDeleteBatch(eventKeys);
+		await this.#driver.kvDeleteBatch(this.#actor.id, eventKeys);
 
 		// Write new schedule
-		await this.#driver.kvPut(KEYS.SCHEDULE.SCHEDULE, scheduleIndex);
+		await this.#driver.kvPut(
+			this.#actor.id,
+			KEYS.SCHEDULE.SCHEDULE,
+			scheduleIndex,
+		);
 
 		// Set alarm for next event
 		if (scheduleIndex.events.length > 0) {
 			// biome-ignore lint/style/noNonNullAssertion: <explanation>
-			await this.#driver.setAlarm(scheduleIndex.events[0]!.timestamp);
+			await this.#driver.setAlarm(this.#actor.id, scheduleIndex.events[0]!.timestamp);
 		}
 
 		// Iterate by event key in order to ensure we call the events in order
@@ -132,11 +144,15 @@ export class Schedule {
 
 				// Write error if needed
 				if ("error" in res.result) {
-					await this.#driver.kvPut(KEYS.SCHEDULE.alarmError(event.fn), {
-						error: res.result.error,
-						logs: res.logs,
-						timestamp: now,
-					});
+					await this.#driver.kvPut(
+						this.#actor.id,
+						KEYS.SCHEDULE.alarmError(event.fn),
+						{
+							error: res.result.error,
+							logs: res.logs,
+							timestamp: now,
+						},
+					);
 				}
 			} catch (err) {
 				logger().error("failed to run scheduled event", {
@@ -145,10 +161,14 @@ export class Schedule {
 				});
 
 				// Write internal error
-				await this.#driver.kvPut(KEYS.SCHEDULE.alarmError(event.fn), {
-					error: `${err}`,
-					timestamp: now,
-				});
+				await this.#driver.kvPut(
+					this.#actor.id,
+					KEYS.SCHEDULE.alarmError(event.fn),
+					{
+						error: `${err}`,
+						timestamp: now,
+					},
+				);
 			}
 		}
 	}
