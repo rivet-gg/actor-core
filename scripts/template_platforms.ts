@@ -30,10 +30,7 @@ async function main() {
 		}
 	}
 
-	fs.writeFileSync(
-		path.join(targetDir, ".gitignore"),
-		"*\n",
-	);
+	fs.writeFileSync(path.join(targetDir, ".gitignore"), "*\n");
 }
 
 main().catch(console.error);
