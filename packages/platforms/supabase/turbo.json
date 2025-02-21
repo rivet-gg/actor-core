@@ -4,7 +4,7 @@
   "tasks": {
     "build": {
       "inputs": ["src/**", "./tsup.config.ts"],
-      "dependsOn": ["@actor-core/redis#build"]
+      "dependsOn": ["@actor-core/redis#build", "@actor-core/deno#build"]
     }
   }
 }
