@@ -1,0 +1,38 @@
+{
+  "name": "@actor-core/cli",
+  "description": "All purpose CLI for Actor Core",
+  "version": "0.3.0",
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "package.json",
+    "bin.js"
+  ],
+  "type": "module",
+  "bin": "bin.js",
+  "sideEffects": false,
+  "preferGlobal": true,
+  "preferUnplugged": true,
+  "scripts": {
+    "build": "tsup src/mod.ts",
+    "dev": "yarn build --watch",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bufout": "^0.3.1",
+    "bundle-require": "^5.1.0",
+    "commander": "^13.1.0",
+    "ink": "^5.1.0",
+    "ink-big-text": "^2.0.0",
+    "ink-gradient": "^3.0.0",
+    "ink-link": "^4.1.0",
+    "ink-spinner": "^5.0.0",
+    "joycon": "^3.1.1",
+    "react": "^18.3",
+    "strip-ansi": "^7.1.0",
+    "zx": "^8.3.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3"
+  }
+}
