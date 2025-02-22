@@ -1,0 +1,19 @@
+on:
+  pull_request:
+    paths:
+      - packages/**
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - uses: actions/setup-node@v4
+      - run: yarn install
+      - run: yarn build
+      # create examples
+      - run: npx create-actor --platform nodejs --template chat-simple templates/chat-simple
+      - run: npx create-actor --platform nodejs --template counter templates/counter
+      # TODO: Add --compact once we publish them to npm
+      - run: yarn dlx pkg-pr-new publish 'packages/**/platforms/*' 'packages/*' --template './templates/*'
