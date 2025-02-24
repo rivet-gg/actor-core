@@ -77,7 +77,7 @@ export interface ActorRouterHandler {
 export function createActorRouter(
 	config: BaseConfig,
 	handler: ActorRouterHandler,
-) {
+): Hono {
 	const app = new Hono();
 
 	app.get("/", (c) => {

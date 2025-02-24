@@ -2,13 +2,13 @@ import * as errors from "@/actor/errors";
 import type { AnyActor } from "@/actor/runtime/actor";
 import { createActorRouter } from "@/actor/runtime/actor_router";
 import { BaseConfig } from "@/actor/runtime/config";
-import { Handler, Context as HonoContext } from "hono";
+import { Handler, Hono, Context as HonoContext } from "hono";
 import {
 	Connection,
 	generateConnectionId,
 	generateConnectionToken,
 } from "@/actor/runtime/connection";
-import { logger } from "@/actor/runtime/log";
+import { logger } from "./log";
 import { Rpc } from "@/actor/runtime/rpc";
 import {
 	CONN_DRIVER_HTTP,
@@ -39,7 +39,7 @@ export function createGenericActorRouter({
 	driverGlobal,
 	actor,
 	upgradeWebSocket,
-}: GenericActorRouterOpts) {
+}: GenericActorRouterOpts): Hono {
 	// Forward requests to actor
 	return createActorRouter(config, {
 		upgradeWebSocket,

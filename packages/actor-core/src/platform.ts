@@ -1,6 +1,6 @@
 export type { BaseConfig } from "@/actor/runtime/config";
 export type { AnyActor, AnyActorConstructor } from "@/actor/runtime/actor";
-export type { ActorDriver, ConnectionDriver } from "@/actor/runtime/driver";
+export type { ActorDriver as ActorDriver, ConnectionDriver } from "@/actor/runtime/driver";
 export { Manager } from "@/manager/runtime/manager";
 export { assertUnreachable } from "@/common/utils";
 export type { ManagerDriver } from "@/manager/runtime/mod";
