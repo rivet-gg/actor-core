@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.1](https://github.com/rivet-gg/actor-core/compare/v0.4.0...v0.4.1) (2025-02-24)
+
+
+### Documentation
+
+* fix private method name in schedule example ([#643](https://github.com/rivet-gg/actor-core/issues/643)) ([8ada3a7](https://github.com/rivet-gg/actor-core/commit/8ada3a7e13f564ae0135861951703778d72a39c4))
+* new landing page ([#630](https://github.com/rivet-gg/actor-core/issues/630)) ([b8e4a8b](https://github.com/rivet-gg/actor-core/commit/b8e4a8b1c7a5311372faa00aeeb5a883c762032b))
+* update Bluesky profile URL ([#644](https://github.com/rivet-gg/actor-core/issues/644)) ([5e4d5ee](https://github.com/rivet-gg/actor-core/commit/5e4d5eec962ab0e243fc99561b5179c351f222dd))
+* update feature comparison table ([#640](https://github.com/rivet-gg/actor-core/issues/640)) ([237784e](https://github.com/rivet-gg/actor-core/commit/237784ed69c67a3578c4e51f989ad8816092cefa))
+
+
+### Chores
+
+* add docs-bump command ([0d9ebb8](https://github.com/rivet-gg/actor-core/commit/0d9ebb8f64a32005e12db808149f63832f197cfd))
+* bump mintlify ([6e88f31](https://github.com/rivet-gg/actor-core/commit/6e88f312bb6535b271ce7aeb3e9dafc8ad7a9c3a))
+* bump mintlify ([64b99e4](https://github.com/rivet-gg/actor-core/commit/64b99e4178ae2a61a62c0d0874524bcb78b296d0))
+* bump mintlify ([42a1d83](https://github.com/rivet-gg/actor-core/commit/42a1d83ec26019f31ab0a0258553f9a3c8833cb5))
+* bump mintlify ([e6f0263](https://github.com/rivet-gg/actor-core/commit/e6f026379e51b95e4164e4f818718e0128defa18))
+* docs-bump command ([1d93be1](https://github.com/rivet-gg/actor-core/commit/1d93be161db0b55dc7559cd4c57d602b17ff0dc0))
+* switch docs middleware to production URL ([#632](https://github.com/rivet-gg/actor-core/issues/632)) ([4698d60](https://github.com/rivet-gg/actor-core/commit/4698d604311501b4d784175fb2759dff84a72f83))
+* update rivet links ([#634](https://github.com/rivet-gg/actor-core/issues/634)) ([f5a19b3](https://github.com/rivet-gg/actor-core/commit/f5a19b3c190387967e3f18c99c54edfbddf685fb))
+
 ## [0.4.0](https://github.com/rivet-gg/actor-core/compare/v0.2.0...v0.4.0) (2025-02-13)
 
 
