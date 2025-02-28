@@ -28,6 +28,44 @@ interface PlatformOutput {
 type PlatformConfigFn = (build: PlatformInput) => PlatformOutput;
 
 const PLATFORMS: Record<string, PlatformConfigFn> = {
+	vercel: (input) => {
+		input.packageJson.name += "-vercel";
+		input.packageJson.devDependencies = {
+			"@actor-core/vercel": "workspace:*",
+			"next": "^14.0.0",
+			...input.packageJson.devDependencies,
+		};
+		input.packageJson.scripts = {
+			dev: "next dev",
+			build: "next build",
+			start: "next start",
+			...input.packageJson.scripts,
+		};
+
+		const { actorImports, actorList } = buildActorImports(input);
+
+		return {
+			files: {
+				"package.json": stringifyJson(input.packageJson),
+				"src/app/api/actor/route.ts": dedent`
+					import { createHandler } from "@actor-core/vercel"
+					${actorImports}
+
+					const handler = createHandler({
+						actors: { ${actorList} }
+					});
+
+					export const GET = handler.GET;
+					export const POST = handler.POST;
+					export const PUT = handler.PUT;
+					export const DELETE = handler.DELETE;
+					export const PATCH = handler.PATCH;
+					export const HEAD = handler.HEAD;
+					export const OPTIONS = handler.OPTIONS;
+				`,
+			},
+		};
+	},
 	rivet: (input) => {
 		input.packageJson.name += "-rivet";
 		input.packageJson.devDependencies = {
