@@ -37,6 +37,21 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@actor-core/deno@workspace:packages/platforms/deno":
+  version: 0.0.0-use.local
+  resolution: "@actor-core/deno@workspace:packages/platforms/deno"
+  dependencies:
+    "@actor-core/redis": "workspace:*"
+    "@types/deno": "npm:^2.0.0"
+    dedent: "npm:^1.5.3"
+    hono: "npm:^4.7.0"
+    tsup: "npm:^8.3.6"
+    typescript: "npm:^5.5.2"
+  peerDependencies:
+    actor-core: "workspace:*"
+  languageName: unknown
+  linkType: soft
+
 "@actor-core/nodejs@workspace:*, @actor-core/nodejs@workspace:packages/platforms/nodejs":
   version: 0.0.0-use.local
   resolution: "@actor-core/nodejs@workspace:packages/platforms/nodejs"
@@ -83,6 +98,19 @@ __metadata:
     tsup: "npm:^8.3.6"
     typescript: "npm:^5.5.2"
   peerDependencies:
+    actor-core: "workspace:*"
+  languageName: unknown
+  linkType: soft
+
+"@actor-core/supabase@workspace:packages/platforms/supabase":
+  version: 0.0.0-use.local
+  resolution: "@actor-core/supabase@workspace:packages/platforms/supabase"
+  dependencies:
+    hono: "npm:^4.7.0"
+    tsup: "npm:^8.3.6"
+    typescript: "npm:^5.5.2"
+  peerDependencies:
+    "@actor-core/deno": "workspace:*"
     actor-core: "workspace:*"
   languageName: unknown
   linkType: soft
