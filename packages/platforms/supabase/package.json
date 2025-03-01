@@ -1,0 +1,37 @@
+{
+  "name": "@actor-core/supabase",
+  "version": "0.3.0",
+  "files": [
+    "src",
+    "dist",
+    "package.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/mod.d.ts",
+        "default": "./dist/mod.js"
+      },
+      "require": {
+        "types": "./dist/mod.d.cts",
+        "default": "./dist/mod.cjs"
+      }
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/mod.ts",
+    "dev": "yarn build --watch",
+    "check-types": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@actor-core/deno": "workspace:*",
+    "actor-core": "workspace:*"
+  },
+  "devDependencies": {
+    "hono": "^4.7.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.5.2"
+  }
+}

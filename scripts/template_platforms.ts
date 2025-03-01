@@ -28,6 +28,29 @@ interface PlatformOutput {
 type PlatformConfigFn = (build: PlatformInput) => PlatformOutput;
 
 const PLATFORMS: Record<string, PlatformConfigFn> = {
+	supabase: (input) => {
+		input.packageJson.name += "-supabase";
+		input.packageJson.devDependencies = {
+			"@actor-core/supabase": "workspace:*",
+			...input.packageJson.devDependencies,
+		};
+
+		const { actorImports, actorList } = buildActorImports(input);
+
+		return {
+			files: {
+				"package.json": stringifyJson(input.packageJson),
+				"src/index.ts": dedent`
+					import { createHandler } from "@actor-core/supabase"
+					${actorImports}
+
+					export default createHandler({
+						actors: { ${actorList} }
+					});
+				`,
+			},
+		};
+	},
 	vercel: (input) => {
 		input.packageJson.name += "-vercel";
 		input.packageJson.devDependencies = {
@@ -171,6 +194,36 @@ const PLATFORMS: Record<string, PlatformConfigFn> = {
 				export { handler as default, ActorHandler };
                 `,
 			},
+		};
+	},
+	deno: (input) => {
+		input.packageJson.name += "-deno";
+		input.packageJson.devDependencies = {
+			"@actor-core/deno": "workspace:*",
+			...input.packageJson.devDependencies,
+		};
+		input.packageJson.scripts = {
+			start: "deno run --allow-net src/index.ts",
+			dev: "deno run --allow-net --watch src/index.ts",
+			...input.packageJson.scripts,
+		};
+
+		const { actorImports, actorList } = buildActorImports(input);
+
+		const files = {
+			"package.json": stringifyJson(input.packageJson),
+			"src/index.ts": dedent`
+			import { serve } from "@actor-core/deno"
+			${actorImports}
+
+			serve({
+				actors: { ${actorList} }
+			});
+			`,
+		};
+
+		return {
+			files,
 		};
 	},
 	bun: (input) => {
