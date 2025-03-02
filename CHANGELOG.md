@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.5.0](https://github.com/rivet-gg/actor-core/compare/v0.4.0...v0.5.0) (2025-03-02)
+
+
+### Features
+
+* add config validation ([#648](https://github.com/rivet-gg/actor-core/issues/648)) ([3323988](https://github.com/rivet-gg/actor-core/commit/3323988f6ab3d5d9ba99ba113f6b8e4a7f4c5ec7))
+* add cors support ([#647](https://github.com/rivet-gg/actor-core/issues/647)) ([ef13939](https://github.com/rivet-gg/actor-core/commit/ef13939f57c333d19b1cafc29b003bce1ccb8cf9))
+* support transport negotiation between client and server ([#636](https://github.com/rivet-gg/actor-core/issues/636)) ([a6fa986](https://github.com/rivet-gg/actor-core/commit/a6fa986b657e7fa294c95fb95cc51cc7930651be))
+
+
+### Documentation
+
+* add changelog ([#651](https://github.com/rivet-gg/actor-core/issues/651)) ([4931a2a](https://github.com/rivet-gg/actor-core/commit/4931a2a2e7eb244791f48508ee94d50dc1ea401e))
+* add llm resources ([#653](https://github.com/rivet-gg/actor-core/issues/653)) ([de201a4](https://github.com/rivet-gg/actor-core/commit/de201a4b4796fc43fc4cb330e1e1e5bec1b4d239))
+* fix private method name in schedule example ([#643](https://github.com/rivet-gg/actor-core/issues/643)) ([8ada3a7](https://github.com/rivet-gg/actor-core/commit/8ada3a7e13f564ae0135861951703778d72a39c4))
+* new landing page ([#630](https://github.com/rivet-gg/actor-core/issues/630)) ([b8e4a8b](https://github.com/rivet-gg/actor-core/commit/b8e4a8b1c7a5311372faa00aeeb5a883c762032b))
+* update Bluesky profile URL ([#644](https://github.com/rivet-gg/actor-core/issues/644)) ([5e4d5ee](https://github.com/rivet-gg/actor-core/commit/5e4d5eec962ab0e243fc99561b5179c351f222dd))
+* update changelog for add your own driver ([#652](https://github.com/rivet-gg/actor-core/issues/652)) ([dc17dd1](https://github.com/rivet-gg/actor-core/commit/dc17dd1702a72680a8830841cb10005840ecd036))
+* update feature comparison table ([#640](https://github.com/rivet-gg/actor-core/issues/640)) ([237784e](https://github.com/rivet-gg/actor-core/commit/237784ed69c67a3578c4e51f989ad8816092cefa))
+
+
+### Code Refactoring
+
+* move redis p2p logic to generic driver ([#645](https://github.com/rivet-gg/actor-core/issues/645)) ([35c5f71](https://github.com/rivet-gg/actor-core/commit/35c5f71d4a2b17f699c348c8a1cd80589cf40af7))
+
+
+### Chores
+
+* add aider to gitignore ([#635](https://github.com/rivet-gg/actor-core/issues/635)) ([b8cedf2](https://github.com/rivet-gg/actor-core/commit/b8cedf2c6cec502abdda37f4c4d142a62fbfbc02))
+* add docs-bump command ([0d9ebb8](https://github.com/rivet-gg/actor-core/commit/0d9ebb8f64a32005e12db808149f63832f197cfd))
+* bump mintlify ([6e88f31](https://github.com/rivet-gg/actor-core/commit/6e88f312bb6535b271ce7aeb3e9dafc8ad7a9c3a))
+* bump mintlify ([64b99e4](https://github.com/rivet-gg/actor-core/commit/64b99e4178ae2a61a62c0d0874524bcb78b296d0))
+* bump mintlify ([42a1d83](https://github.com/rivet-gg/actor-core/commit/42a1d83ec26019f31ab0a0258553f9a3c8833cb5))
+* bump mintlify ([e6f0263](https://github.com/rivet-gg/actor-core/commit/e6f026379e51b95e4164e4f818718e0128defa18))
+* **cloudflare-workers:** export ActorHandle with createRouter ([#649](https://github.com/rivet-gg/actor-core/issues/649)) ([8c226be](https://github.com/rivet-gg/actor-core/commit/8c226be3a95909ab2d65b0c4b21a1fb9b4050e2d))
+* docs-bump command ([1d93be1](https://github.com/rivet-gg/actor-core/commit/1d93be161db0b55dc7559cd4c57d602b17ff0dc0))
+* release 0.5.0 ([6e3aa0b](https://github.com/rivet-gg/actor-core/commit/6e3aa0bb9f2d9c1329cc019a7e4d7dbd565f33e6))
+* release version 0.5.0 ([cec9ae1](https://github.com/rivet-gg/actor-core/commit/cec9ae1eae345d1828d7a2a56f525477c7aff2ca))
+* release version 0.5.0 ([2f9766f](https://github.com/rivet-gg/actor-core/commit/2f9766fa598647d23e210828e91a39732810ceb7))
+* **release:** check if package already published before publishing ([#650](https://github.com/rivet-gg/actor-core/issues/650)) ([9cddff4](https://github.com/rivet-gg/actor-core/commit/9cddff4c4a157ad02208fbef58123c6677c16b3b))
+* switch docs middleware to production URL ([#632](https://github.com/rivet-gg/actor-core/issues/632)) ([4698d60](https://github.com/rivet-gg/actor-core/commit/4698d604311501b4d784175fb2759dff84a72f83))
+* update rivet links ([#634](https://github.com/rivet-gg/actor-core/issues/634)) ([f5a19b3](https://github.com/rivet-gg/actor-core/commit/f5a19b3c190387967e3f18c99c54edfbddf685fb))
+
 ## [0.4.0](https://github.com/rivet-gg/actor-core/compare/v0.2.0...v0.4.0) (2025-02-13)
 
 
