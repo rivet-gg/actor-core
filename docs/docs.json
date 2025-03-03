@@ -51,7 +51,7 @@
           {
             "group": "Concepts",
             "pages": [
-              "concepts/building-actors",
+              "concepts/overview",
               "concepts/interacting-with-actors",
               "concepts/state",
               "concepts/remote-procedure-calls",

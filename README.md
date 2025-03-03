@@ -35,7 +35,7 @@ Supports [Rivet](https://rivet.gg/docs/setup), [Cloudflare Workers](https://acto
 ### Features
 
 - 💾 [**State**](https://actorcore.org/concepts/state): Fast in-memory access with built-in durability.
-- 💻 [**RPC**](https://actorcore.org/concepts/rpc): Remote procedure calls for seamless client-server communication.
+- 💻 [**RPC**](https://actorcore.org/concepts/remote-procedure-calls): Remote procedure calls for seamless client-server communication.
 - 📡 [**Events**](https://actorcore.org/concepts/events): Real-time event handling and broadcasting.
 - ⏰ [**Scheduling**](https://actorcore.org/concepts/schedule): Timed tasks and operations management.
 - 🌐 [**Connections & Multiplayer**](https://actorcore.org/concepts/connections): Manage connections and multiplayer interactions.

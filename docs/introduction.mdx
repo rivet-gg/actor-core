@@ -11,16 +11,28 @@ mode: wide
     <h2 style={{ fontSize: "1.25rem", marginBottom: "1rem", color: "white" }}>Stateful, Scalable, Realtime Backend Framework</h2>
     <p style={{ fontSize: "1.125rem", marginBottom: "1rem" }}>The modern way to build multiplayer, realtime, or AI agent backends.</p>
     <p style={{ fontSize: "1.125rem" }}>
-      Supports 
+      Runs on 
       <a class="no-break" href="https://rivet.gg/docs/setup"><img class="inline-icon" src="/images/platforms/rivet-white.svg" /> Rivet</a>, 
       <a class="no-break" href="/platforms/cloudflare-workers"><img class="inline-icon" src="/images/platforms/cloudflare-workers.svg" /> Cloudflare Workers</a>, 
       <a class="no-break" href="/platforms/bun"><img class="inline-icon" src="/images/platforms/bun.svg" /> Bun</a>, and 
       <a class="no-break" href="/platforms/nodejs"><img class="inline-icon" src="/images/platforms/nodejs.svg" /> Node.js</a>.
+	  Integrates with 
+      <a class="no-break" href="/integrations/hono"><img class="inline-icon" src="/images/platforms/hono.svg" /> Hono</a> and 
+      <a class="no-break" href="/drivers/redis"><img class="inline-icon" src="/images/platforms/redis.svg" /> Redis</a>.
     </p> 
-    <div style={{ marginTop: "2.5rem", marginBottom: "2.5rem" /* fix mobile layout with margin top on code */ }}>
-      <a href="#quickstart" class="button" style={{ background: "#ff4f00" }}>Get Started</a>
-      <a href="https://github.com/rivet-gg/actor-core" target="_blank" class="button" style={{ background: "hsl(0, 0%, 15%)" }}>View on GitHub</a>
-    </div> 
+    <div className="buttons-container">
+      <a href="/concepts/overview" className="button button-orange">Get Started</a>
+      <div className="copy-command-container copy-command-button" 
+        onClick={(e) => window.copyCommand && window.copyCommand(e.currentTarget)}>
+        <div className="copy-command-text">
+          npx create-actor@latest
+        </div>
+        <div className="icon-container">
+          <div className="copy-icon"><Icon icon="copy" /></div>
+          <div className="check-icon"><Icon icon="check" /></div>
+        </div>
+      </div>
+    </div>
   </div>
   <div style={{ marginTop: "-1.25rem", overflow: "hidden" /* fix scrolling bug */ }}>
     ```typescript
@@ -84,7 +96,7 @@ mode: wide
     icon="floppy-disk"
     horizontal={true}
   />
-  <Card title="RPC" href="/concepts/rpc" icon="code" horizontal={true} />
+  <Card title="RPC" href="/concepts/remote-procedure-calls" icon="code" horizontal={true} />
   <Card
     title="Events"
     href="/concepts/events"
@@ -194,28 +206,9 @@ mode: wide
 
 <div style={{ height: "96px" }} />
 
-## Quickstart
+## Overview
 
 <Steps>
-  <Step title="Install">
-    <CodeGroup>
-      ```sh npm
-      npm add actor-core
-      ```
-
-        ```sh pnpm
-        pnpm add actor-core
-        ```
-
-        ```sh yarn
-        yarn add actor-core
-        ```
-
-        ```sh bun
-        bun add actor-core
-        ```
-      </CodeGroup>
-    </Step>
     <Step title="Create Actor">
       <CodeGroup>
 
@@ -305,16 +298,10 @@ mode: wide
 
       </CodeGroup>
     </Step>
-    <Step title="Deploy">
-      Deploy to your platform of choice:
-
-      - [Rivet](https://rivet.gg/docs/setup)
-      - [Cloudflare Workers](/platforms/cloudflare-workers)
-      - [Bun](/platforms/bun)
-      - [Node.js](/platforms/nodejs)
-    </Step>
 
 </Steps>
+
+{/*
 
 ## LLM Prompts
 
@@ -328,6 +315,8 @@ Resources to help you use LLMs with ActorCore to build AI agents and tools. The 
   <Card title="llms-full.txt" href="/llm/llms-full" horizontal={true} />
   <Card title="prompt.txt" href="/llm/prompt" horizontal={true} />
 </CardGroup>
+
+*/}
 
 ## Community & Support
 
@@ -365,3 +354,13 @@ Resources to help you use LLMs with ActorCore to build AI agents and tools. The 
     href="https://rivet.gg/discord"
   />
 </CardGroup>
+
+## Get Started With Your Framework
+
+<CardGroup cols={4}>
+	<Card title="Rivet" href="https://rivet.gg/docs/setup" horizontal={true} />
+	<Card title="Cloudflare Workers" href="/platforms/cloudflare-workers" horizontal={true} />
+	<Card title="Bun" href="/platforms/bun" horizontal={true} />
+	<Card title="Node.js" href="/platforms/nodejs" horizontal={true} />
+</CardGroup>
+

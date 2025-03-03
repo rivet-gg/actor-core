@@ -1,0 +1,290 @@
+---
+title: Overview
+icon: square-info
+---
+
+Actors combine compute and storage into unified entities for simplified architecture. Actors seamlessly integrate with your existing infrastructure or can serve as a complete standalone solution.
+
+## Quickstart
+
+Run this to get started:
+
+<CodeGroup>
+```sh npm
+npm create actor@latest
+```
+
+```sh pnpm
+pnpm create actor@latest
+```
+
+```sh yarn
+yarn create actor@latest
+```
+
+```sh bun
+bun create actor@latest
+```
+</CodeGroup>
+
+## What are actors good for?
+
+Actors in ActorCore are ideal for applications requiring:
+
+- **Stateful Services**: Applications where maintaining state across interactions is critical. For example, **Collaborative Apps** with shared editing and automatic persistence.
+- **Realtime Systems**: Applications requiring fast, in-memory state modifications or push updates to connected clients. For example, **Multiplayer Games** with game rooms and player state.
+- **Long-Running Processes**: Tasks that execute over extended periods or in multiple steps. For example, **AI Agents** with ongoing conversations and stateful tool calls.
+- **Durability**: Processes that must survive crashes and restarts without data loss. For example, **Durable Execution** workflows that continue after system restarts.
+- **Horizontal Scalability**: Systems that need to scale by distributing load across many instances. For example, **Realtime Stream Processing** for stateful event handling.
+- **Local-First Architecture**: Systems that synchronize state between offline clients. For example, **Local-First Sync** between devices.
+
+## Core Concepts
+
+In ActorCore, each actor has these key characteristics:
+
+- **State Is Automatically Persisted**: State automatically persists between restarts, upgrades, & crashes
+- **State Is Stored In-Memory**: State is stored in memory for high-performance reads/writes while also automatically persisted
+- **Isolated State Ownership**: Actors only manage their own state, which can only be modified by the actor itself
+- **Communicates via Remote Procedure Calls**: How clients and other actors interact with an actor
+- **Remote Procedure Calls Are Low-Latency**: RPCs provide WebSocket-like performance for time-sensitive operations
+- **Broadcast Updates With Events**: Actors can publish real-time updates to connected clients
+
+## Code Example
+
+Here's a complete chat room actor that maintains state and handles messages. We'll explore each component in depth throughout this document:
+
+```typescript chat_room.ts
+import { Actor, type Rpc } from "actor-core";
+
+// Define the actor's state structure
+interface State {
+  messages: { sender: string; text: string; }[];
+}
+
+export default class ChatRoom extends Actor<State> {
+  // Initialize state when the actor is first created
+  _onInitialize(): State {
+    return { messages: [] };
+  }
+
+  // RPC method clients can call
+  sendMessage(rpc: Rpc<ChatRoom>, sender: string, text: string) {
+    // Update state
+    this._state.messages.push({ sender, text });
+    
+    // Broadcast to all connected clients
+    this._broadcast("newMessage", { sender, text });
+  }
+  
+  // RPC to get chat history
+  getHistory(rpc: Rpc<ChatRoom>) {
+    return this._state.messages;
+  }
+}
+```
+
+## Key Actor Components
+
+### State
+
+Actors maintain state that's stored in memory and automatically persisted. State is created in the `_onInitialize` method:
+
+```typescript
+import { Actor } from "actor-core";
+
+interface State {
+  count: number;
+}
+
+export default class Counter extends Actor<State> {
+  _onInitialize(): State {
+    return { count: 0 };
+  }
+}
+```
+
+Update state by modifying `this._state`:
+
+```typescript
+import { Actor, type Rpc } from "actor-core";
+
+interface State {
+  count: number;
+}
+
+export default class Counter extends Actor<State> {
+  // Example of state update method
+  increment(rpc: Rpc<Counter>) {
+    this._state.count += 1;
+  }
+}
+```
+
+These changes are durable and are automatically persisted across updates, restarts, and crashes.
+
+Learn more about [state management](/concepts/state).
+
+### Remote Procedure Calls (RPCs)
+
+RPCs are methods on your actor class that clients & other actors can call. They must accept parameter of type `Rpc<Actor>` as the first argument:
+
+```typescript
+import { Actor, type Rpc } from "actor-core";
+
+export default class Example extends Actor {
+  multiplyByTwo(rpc: Rpc<Example>, x: number) {
+    return x * 2;
+  }
+}
+```
+
+Private methods starting with `_` or `#` cannot be called by clients:
+
+```typescript
+import { Actor, type Rpc } from "actor-core";
+
+export default class Example extends Actor {
+  // Private - not callable by clients
+  #calculateFee(amount: number) {
+    return amount * 0.05;
+  }
+
+  // Public - callable by clients
+  processPayment(rpc: Rpc<Example>, amount: number) {
+    const fee = this.#calculateFee(amount);
+    // Process payment logic...
+    return { amount, fee };
+  }
+}
+```
+
+Learn more about [remote procedure calls](/concepts/remote-procedure-calls).
+
+### Events
+
+Actors can broadcast events to connected clients:
+
+```typescript
+import { Actor, type Rpc } from "actor-core";
+
+interface State {
+  items: string[];
+}
+
+export default class Inventory extends Actor<State> {
+  _onInitialize(): State {
+    return { items: [] };
+  }
+  
+  addItem(rpc: Rpc<Inventory>, item: string) {
+    // Add to state
+    this._state.items.push(item);
+    
+    // Notify all clients about the new item
+    this._broadcast("itemAdded", { item });
+  }
+}
+```
+
+You can also send events to specific clients:
+
+```typescript
+import { Actor, type Rpc } from "actor-core";
+
+export default class MessageService extends Actor {
+  sendPrivateMessage(rpc: Rpc<MessageService>, userId: string, text: string) {
+    // Send to a specific connection
+    const connection = this._connections.find(c => c.parameters.userId === userId);
+    if (connection) {
+      connection.send("privateMessage", { text });
+    }
+  }
+}
+```
+
+Learn more about [events](/concepts/events).
+
+## Actor Tags
+
+Tags are key-value pairs attached to actors that serve two purposes:
+
+1. **Actor Discovery**: Find specific actors using `client.get(tags)`
+2. **Organization**: Group related actors for management purposes
+
+The `name` tag is required and identifies the actor type.
+
+```typescript
+// Tags for a chat room actor
+{
+  name: "chat_room",
+  channel: "general"
+}
+```
+
+### Common Tag Patterns
+
+Tags help clients find the right actor instance. Here are some common patterns:
+
+```typescript
+// Game room by code
+const gameRoom = await client.get<GameRoom>({
+  name: "game_room",
+  roomCode: "ABC123"
+});
+
+// User-specific actor
+const userProfile = await client.get<UserProfile>({
+  name: "user_profile",
+  userId: "1234"
+});
+
+// Document with workspace
+const document = await client.get<Document>({
+  name: "document",
+  workspaceId: "team-alpha",
+  documentId: "budget-2024"
+});
+```
+
+## Actor Lifecycle
+
+Actors are created automatically when needed and persist until explicitly shutdown.
+
+To shut down an actor, use `this._shutdown()` from within an RPC:
+
+```typescript
+import { Actor, type Rpc } from "actor-core";
+
+interface State {
+  messages: { sender: string; text: string; }[];
+}
+
+export default class ChatRoom extends Actor<State> {
+  closeRoom(rpc: Rpc<ChatRoom>) {
+    // Do any cleanup needed
+    this._broadcast("roomClosed");
+    
+    // Shutdown the actor
+    this._shutdown();
+  }
+}
+```
+
+Learn more about the [actor lifecycle](/concepts/lifecycle).
+
+## Next Steps
+
+<CardGroup>
+  <Card title="Interacting with Actors" href="/concepts/interacting-with-actors">
+    Learn how to connect to actors from clients
+  </Card>
+  <Card title="State" href="/concepts/state">
+    Deep dive into actor state management
+  </Card>
+  <Card title="RPCs" href="/concepts/remote-procedure-calls">
+    Learn more about remote procedure calls
+  </Card>
+  <Card title="Events" href="/concepts/events">
+    Learn more about realtime events
+  </Card>
+</CardGroup>
