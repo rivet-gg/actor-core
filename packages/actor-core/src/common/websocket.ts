@@ -4,6 +4,7 @@ export async function importWebSocket(): Promise<typeof WebSocket> {
 	// Node.js environment
 	try {
 		const ws = await import("ws");
+		if (!ws.WebSocket) throw "Unsupported";
 		_WebSocket = ws.WebSocket as unknown as typeof WebSocket;
 	} catch {
 		if (typeof WebSocket !== "undefined") {
