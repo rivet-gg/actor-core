@@ -1,0 +1,242 @@
+---
+title: Interacting with Actors
+icon: square-code
+---
+
+This guide covers how to connect to and interact with actors from client applications.
+
+## Setting Up the Client
+
+The first step is to create a client:
+
+```typescript
+import { Client } from "actor-core/client";
+
+// Create a client with the connection address
+const client = new Client(/* CONNECTION ADDRESS */);
+```
+
+<Tip>See the setup guide for your platform for details on how to get the connection address.</Tip>
+
+## Finding & Connecting to Actors
+
+ActorCore provides several methods to connect to actors:
+
+### `get(tags, opts)` - Find or Create
+
+The most common way to connect is with `get()`, which finds an existing actor matching the provided tags or creates a new one:
+
+```typescript
+// Connect to a chat room for the "general" channel
+const room = await client.get<ChatRoom>({
+  name: 'chat_room',
+  channel: 'general'
+});
+
+// Now you can call methods on the actor
+await room.sendMessage("Alice", "Hello everyone!");
+```
+
+### `create(opts)` - Explicitly Create New
+
+When you specifically want to create a new actor instance:
+
+```typescript
+// Create a new document actor
+const doc = await client.create<MyDocument>({
+  create: {
+    tags: {
+      name: 'my_document',
+      docId: '123'
+    }
+  }
+});
+
+await doc.initializeDocument("My New Document");
+```
+
+### `getWithId(id, opts)` - Connect by ID
+
+Connect to an actor using its internal ID:
+
+```typescript
+// Connect to a specific actor by its ID
+const myActorId = '55425f42-82f8-451f-82c1-6227c83c9372';
+const doc = await client.getWithId<MyDocument>(myActorId);
+
+await doc.updateContent("Updated content");
+```
+
+<Note>
+It's usually better to use tags for discovery rather than directly using actor IDs.
+</Note>
+
+## Calling Actor Methods (RPCs)
+
+Once connected, calling actor methods is straightforward:
+
+```typescript
+// Call an actor method
+const result = await actor.multiplyByTwo(5);
+console.log(result); // 10
+
+// Call a method with multiple parameters
+await chatRoom.sendMessage("Alice", "Hello everyone!");
+
+// Call a method with an object parameter
+await gameRoom.updateSettings({
+  maxPlayers: 10,
+  timeLimit: 300,
+  gameMode: "capture-the-flag"
+});
+```
+
+<Note>
+All actor method calls are asynchronous and require `await`, even if the actor's method is not async.
+</Note>
+
+## Listening for Events
+
+Actors can send realtime updates to clients using events:
+
+### `on(eventName, callback)` - Continuous Listening
+
+To listen for events that will happen repeatedly:
+
+```typescript
+// Listen for new chat messages
+chatRoom.on('newMessage', ({ sender, text, timestamp }) => {
+  console.log(`${sender}: ${text}`);
+  updateChatUI(sender, text, timestamp);
+});
+
+// Listen for game state updates
+gameRoom.on('stateUpdate', (gameState) => {
+  updateGameUI(gameState);
+});
+```
+
+### `once(eventName, callback)` - One-time Listening
+
+For events you only need to hear once:
+
+```typescript
+// Listen for when a request is approved
+actor.once('requestApproved', () => {
+  showApprovalNotification();
+  unlockFeatures();
+});
+```
+
+## Connection Options
+
+### Authentication and Connection Parameters
+
+Pass information with your connection using the `parameters` option:
+
+```typescript
+const chatRoom = await client.get<ChatRoom>(
+  { name: 'chat_room', channel: 'private' },
+  {
+    parameters: { 
+      userId: '1234',
+      authToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+      displayName: 'Alice'
+    }
+  }
+);
+```
+
+The actor can access these parameters:
+
+```typescript
+export default class ChatRoom extends Actor<State, ConnectionParams> {
+  _onBeforeConnect(opts: OnBeforeConnectOptions<ChatRoom>) {
+    // Validate authentication token
+    const { userId, authToken, displayName } = opts.parameters;
+    validateToken(userId, authToken);
+    
+    // Store user info with connection
+    opts.connection.userData = { userId, displayName };
+  }
+}
+```
+
+### Additional Options
+
+#### `opts.create.tags`
+
+Specify additional tags when creating an actor:
+
+```typescript
+const actor = client.get<MyDocument>(
+  // Tags used to find the actor
+  {
+    name: 'my_document',
+    document_id: 'budget_2024'
+  },
+  {
+    create: {
+      // Additional tags if a new actor is created
+      tags: {
+        name: 'my_document',
+        workspace_id: 'team_alpha',
+        document_id: 'budget_2024',
+        created_by: 'user_123'
+      }
+    }
+  }
+);
+```
+
+#### `opts.create.region`
+
+Specify a region when creating an actor:
+
+```typescript
+const actor = client.get<GameServer>(
+  { name: 'game_server' },
+  {
+    create: {
+      region: 'eu-west'
+    }
+  }
+);
+```
+
+#### `opts.noCreate`
+
+Connect only if an actor exists, without creating a new one:
+
+```typescript
+try {
+  const doc = await client.get<MyDocument>(
+    { name: 'my_document', docId: '123' }, 
+    { noCreate: true }
+  );
+  await doc.doSomething();
+} catch (error) {
+  console.log("Document doesn't exist");
+}
+```
+
+## Disconnecting and Cleanup
+
+The client connection is automatically cleaned up when it goes out of scope.
+
+If you need to explicitly disconnect:
+
+```typescript
+// Disconnect from the actor
+await actor.disconnect();
+
+// Disconnect the entire client
+await client.disconnect();
+```
+
+## Next Steps
+
+- [State Management](/concepts/state) - Learn how state works in actors
+- [Events in Detail](/concepts/events) - Learn more about actor events
+- [Authentication](/concepts/authentication) - Add security to your actors
+- [Connections](/concepts/connections) - Manage client connections
