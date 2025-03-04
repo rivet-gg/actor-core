@@ -112,8 +112,7 @@ await connection.disconnect('Too many requests');
 	the program.
 </Tip>
 
-## Offline & reconnection behavior
+## Offline & Auto-Reconnection
 
-Clients automatically attempt to reconnect (with [exponential backoff](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html)) when disconnected. Remote procedure calls made while disconnected are queued.
+See [Interacting with Actors](/concepts/interacting-with-actors#offline-and-auto-reconnection) for details on reconnection behavior.
 
-On reconnection, event subscriptions are reestablished & queued RPCs are executed.

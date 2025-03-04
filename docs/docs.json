@@ -51,19 +51,20 @@
           {
             "group": "Concepts",
             "pages": [
-              "concepts/manage",
-              "concepts/rpc",
+              "concepts/overview",
+              "concepts/interacting-with-actors",
               "concepts/state",
+              "concepts/remote-procedure-calls",
               "concepts/events",
               "concepts/lifecycle",
               "concepts/schedule",
-              "concepts/connections",
               {
                 "group": "More",
                 "pages": [
-                  "concepts/cors",
+                  "concepts/connections",
                   "concepts/metadata",
                   "concepts/authentication",
+                  "concepts/cors",
                   "concepts/logging",
                   "concepts/scaling",
                   "concepts/external-sql",
@@ -150,6 +151,14 @@
     {
       "source": "/platforms/rivet",
       "destination": "https://rivet.gg/docs/setup"
+    },
+    {
+      "source": "/concepts/manage",
+      "destination": "/concepts/interacting-with-actors"
+    },
+    {
+      "source": "/concepts/rpc",
+      "destination": "/concepts/remote-procedure-calls"
     }
   ]
 }

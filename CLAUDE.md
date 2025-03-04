@@ -21,9 +21,9 @@
 ## Build Commands
 
 - **Type Check:** `yarn check-types` - Verify TypeScript types
-- **Check specific package:** `yarn check-types -F @rivet-gg/actor-core` - Check only specified package
+- **Check specific package:** `yarn check-types -F actor-core` - Check only specified package
 - **Build:** `yarn build` - Production build using Turbopack
-- **Build specific package:** `yarn build -F @rivet-gg/actor-core` - Build only specified package
+- **Build specific package:** `yarn build -F actor-core` - Build only specified package
 - **Format:** `yarn fmt` - Format code with Biome
 
 ## Core Concepts
