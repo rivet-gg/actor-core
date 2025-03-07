@@ -1,0 +1,16 @@
+name: 'Test'
+on: 
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+        - uses: actions/checkout@v4
+        - run: corepack enable
+        - uses: actions/setup-node@v4
+        - run: yarn install
+        - run: yarn build
+        - run: yarn install # re-install to detect CLIs
+        - run: npx vitest
