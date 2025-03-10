@@ -23,19 +23,16 @@ mod tests {
         let counter = client.get(vec![
             ("name".to_string(), "counter".to_string())
         ]).await.unwrap();
-
         counter.on_event("newCount", |args| {
             let new_count = args[0].as_i64().unwrap();
             println!("New count: {:?}", new_count);
-        }).await.unwrap();
+        }).await;
 
         let out = counter.rpc("increment", vec![
             json!(1)
         ]).await.unwrap();
         println!("RPC: {:?}", out);
 
-        // handle.transport_driver.send_raw(b"{\"body\":{\"sr\":{\"e\":\"countUpdate\",\"s\":true}}}").await;
-        // handle.transport_driver.send_raw(b"{\"body\":{\"rr\":{\"i\":0,\"n\":\"increment\",\"a\":[1]}}}").await;)
-    
+        println!("done");
     }
 }
