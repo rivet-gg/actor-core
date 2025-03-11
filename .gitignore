@@ -168,3 +168,4 @@ dist
 **/.wrangler
 **/.DS_Store
 .aider*
+**/tsup.config.bundled*

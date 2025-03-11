@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-import { getExamples } from "../packages/create-actor/src/macros";
+import { getExamples } from "../packages/actor-core-cli/src/macros";
 
 async function main() {
 	const examples = await getExamples();
@@ -14,7 +14,7 @@ async function main() {
 
 	for (const example of Object.values(examples)) {
 		for (const platform of example.supports) {
-			spawnSync(
+			const result = spawnSync(
 				createActorPath,
 				[
 					"--overwrite",
@@ -27,10 +27,16 @@ async function main() {
 				],
 				{ stdio: "inherit" },
 			);
+			
+			if (result.status === null) {
+				throw new Error(`Process failed to execute for ${example.slug}/${platform}: ${result.error?.message || 'Unknown error'}`);
+			} else if (result.status !== 0) {
+				throw new Error(`Process exited with code ${result.status} for ${example.slug}/${platform}`);
+			}
 		}
 	}
 
-	fs.writeFileSync(path.join(targetDir, ".gitignore"), "*\n");
+	//fs.writeFileSync(path.join(targetDir, ".gitignore"), "*\n");
 }
 
 main().catch(console.error);

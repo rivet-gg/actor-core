@@ -59,41 +59,44 @@ const PLATFORMS = {
 
 	// 	return { files };
 	// },
-	// vercel: ({ files, version, pkgJson, actorImports, actorMap }) => {
-	// 	files["package.json"] = stringifyJson({
-	// 		...pkgJson,
-	// 		scripts: {
-	// 			...pkgJson.scripts,
-	// 			dev: "next dev",
-	// 			build: "next build",
-	// 			start: "next start",
-	// 		},
-	// 		devDependencies: {
-	// 			"@actor-core/vercel": version,
-	// 			next: "^14.0.0",
-	// 			...pkgJson.devDependencies,
-	// 		},
-	// 	});
+	 vercel: ({ files, version, pkgJson, actorImports, actorMap }) => {
+		deployable: true,
+	 	files["package.json"] = stringifyJson({
+	 		...pkgJson,
+	 		scripts: {
+	 			...pkgJson.scripts,
+	 			dev: "next dev",
+	 			build: "next build",
+	 			start: "next start",
+				deploy: "vercel deploy",
+	 		},
+	 		devDependencies: {
+	 			"@actor-core/vercel": version,
+	 			next: "^14.0.0",
+				"vercel": "^41.3.2",
+	 			...pkgJson.devDependencies,
+	 		},
+	 	});
 
-	// 	files["src/api/actor/route.ts"] = dedent`
-	//         import { createHandler } from "@actor-core/vercel"
-	//         ${actorImports("./src/api/actor/route.ts")}
+	 	files["src/api/actor/route.ts"] = dedent`
+	         import { createHandler } from "@actor-core/vercel"
+	         ${actorImports("./src/api/actor/route.ts")}
 
-	//         const handler = createHandler({
-	//             actors: { ${actorMap} }
-	//         });
+	         const handler = createHandler({
+	             actors: { ${actorMap} }
+	         });
 
-	//         export const GET = handler.GET;
-	//         export const POST = handler.POST;
-	//         export const PUT = handler.PUT;
-	//         export const DELETE = handler.DELETE;
-	//         export const PATCH = handler.PATCH;
-	//         export const HEAD = handler.HEAD;
-	//         export const OPTIONS = handler.OPTIONS;
-	//     `;
+	         export const GET = handler.GET;
+	         export const POST = handler.POST;
+	         export const PUT = handler.PUT;
+	         export const DELETE = handler.DELETE;
+	         export const PATCH = handler.PATCH;
+	         export const HEAD = handler.HEAD;
+	         export const OPTIONS = handler.OPTIONS;
+	     `;
 
-	// 	return { files };
-	// },
+	 	return { files };
+	 },
 	rivet: {
 		deployable: true,
 		modify: ({ files, pkgJson, actorMap, actorImports, version }) => {
@@ -316,8 +319,8 @@ export const PLATFORM_NAMES = {
 	"cloudflare-workers": "Cloudflare Workers",
 	bun: "Bun",
 	nodejs: "Node.js",
+	vercel: "Vercel",
 	// supabase: "Supabase",
-	// vercel: "Vercel",
 	// deno: "Deno",
 } satisfies Record<Platform, string>;
 
