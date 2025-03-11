@@ -14,3 +14,12 @@ export type { EventUnsubscribe } from "./handle";
 export type { Transport } from "@/actor/protocol/message/mod";
 export type { Encoding } from "@/actor/protocol/serde";
 export type { CreateRequest } from "@/manager/protocol/query";
+export {
+	ActorClientError,
+	InternalError,
+	ManagerError,
+	ConnectionParametersTooLong,
+	MalformedResponseMessage,
+	NoSupportedTransport,
+	RpcError,
+} from "@/client/errors";

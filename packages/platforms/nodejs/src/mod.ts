@@ -1,4 +1,4 @@
-import { serve as honoServe } from "@hono/node-server";
+import { serve as honoServe, type ServerType } from "@hono/node-server";
 import { createNodeWebSocket, type NodeWebSocket } from "@hono/node-ws";
 import { assertUnreachable } from "actor-core/utils";
 import { CoordinateTopology } from "actor-core/topologies/coordinate";
@@ -60,7 +60,7 @@ export function createRouter(inputConfig: InputConfig): {
 	}
 }
 
-export function serve(inputConfig: InputConfig) {
+export function serve(inputConfig: InputConfig): ServerType {
 	const config = ConfigSchema.parse(inputConfig);
 
 	const { router, injectWebSocket } = createRouter(config);
@@ -76,4 +76,6 @@ export function serve(inputConfig: InputConfig) {
 		hostname: config.hostname,
 		port: config.port,
 	});
+
+	return server;
 }
