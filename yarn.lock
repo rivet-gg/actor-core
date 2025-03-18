@@ -80,6 +80,28 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@actor-core/lobby-manager@workspace:packages/components/lobby-manager":
+  version: 0.0.0-use.local
+  resolution: "@actor-core/lobby-manager@workspace:packages/components/lobby-manager"
+  dependencies:
+    "@actor-core/nodejs": "workspace:^"
+    "@rivet-gg/api": "npm:^24.6.2"
+    "@types/invariant": "npm:^2"
+    "@types/node": "npm:^22.13.1"
+    actor-core: "workspace:*"
+    deepmerge: "npm:^4.3.1"
+    get-port: "npm:^7.1.0"
+    hono: "npm:^4.7.0"
+    invariant: "npm:^2.2.4"
+    nanoevents: "npm:^9.1.0"
+    tsup: "npm:^8.3.6"
+    typescript: "npm:^5.5.2"
+    vitest: "npm:^3.0.8"
+  peerDependencies:
+    actor-core: "workspace:*"
+  languageName: unknown
+  linkType: soft
+
 "@actor-core/memory@workspace:*, @actor-core/memory@workspace:packages/drivers/memory":
   version: 0.0.0-use.local
   resolution: "@actor-core/memory@workspace:packages/drivers/memory"
@@ -94,7 +116,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@actor-core/nodejs@workspace:packages/platforms/nodejs":
+"@actor-core/nodejs@workspace:^, @actor-core/nodejs@workspace:packages/platforms/nodejs":
   version: 0.0.0-use.local
   resolution: "@actor-core/nodejs@workspace:packages/platforms/nodejs"
   dependencies:
@@ -5043,6 +5065,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"get-port@npm:^7.1.0":
+  version: 7.1.0
+  resolution: "get-port@npm:7.1.0"
+  checksum: 10c0/896051fea0fd3df58c050566754ab91f46406e898ce0c708414739d908a5ac03ffef3eca7a494ea9cc1914439e8caccd2218010d1eeabdde914b9ff920fa28fc
+  languageName: node
+  linkType: hard
+
 "get-proto@npm:^1.0.1":
   version: 1.0.1
   resolution: "get-proto@npm:1.0.1"
@@ -6208,6 +6237,13 @@ __metadata:
   dependencies:
     node-gyp: "npm:latest"
   checksum: 10c0/971f963b8120631880fa47a389c71b00cadc1c1b00ef8f147782a3f4387d4fc8195d0695911272d57438c11562fb27b24c4ae5f8c05d5e4eeb4478ba51bb73c5
+  languageName: node
+  linkType: hard
+
+"nanoevents@npm:^9.1.0":
+  version: 9.1.0
+  resolution: "nanoevents@npm:9.1.0"
+  checksum: 10c0/5fb48e6fc1d3102daddaeffd6eada907c25b1c8554dcc648e9cb0a72979a1ab3ee56ffa2d2b3e566a8e561a9e2992a3783493c61cfaaa096b2986d56dbbc1ca5
   languageName: node
   linkType: hard
 
@@ -8074,7 +8110,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tsup@npm:^8.4.0":
+"tsup@npm:^8.3.6, tsup@npm:^8.4.0":
   version: 8.4.0
   resolution: "tsup@npm:8.4.0"
   dependencies:

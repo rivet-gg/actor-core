@@ -5,6 +5,11 @@ export interface State {
 	servers: Record<string, Server>;
 	lastGcAt: number;
 	lastServerPollAt: number;
+
+	/**
+	 * Reasons that the lobbies were destroyed. Used to enhance lobby aborted errors.
+	 */
+	lobbyDestroyMeta: Record<string, LobbyDestroyMeta>;
 }
 
 export interface Server {
@@ -103,3 +108,10 @@ export type LobbyBackendLocalDevelopmentPortProtocol = "http" | "tcp" | "udp";
 export interface LobbyBackendServer {
 	serverId: string;
 }
+
+export interface LobbyDestroyMeta {
+	destroyedAt: number;
+	reason?: string;
+	cause?: undefined;
+}
+
