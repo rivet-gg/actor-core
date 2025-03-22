@@ -81,6 +81,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@actor-core/framework-base@workspace:*, @actor-core/framework-base@workspace:packages/frameworks/framework-base":
+  version: 0.0.0-use.local
+  resolution: "@actor-core/framework-base@workspace:packages/frameworks/framework-base"
+  dependencies:
+    actor-core: "workspace:^"
+    tsup: "npm:^8.3.6"
+    typescript: "npm:^5.5.2"
+    vitest: "npm:~2.1.9"
+  peerDependencies:
+    actor-core: "*"
+  languageName: unknown
+  linkType: soft
+
 "@actor-core/memory@workspace:*, @actor-core/memory@workspace:packages/drivers/memory":
   version: 0.0.0-use.local
   resolution: "@actor-core/memory@workspace:packages/drivers/memory"
@@ -109,6 +122,22 @@ __metadata:
     zod: "npm:^3.24.2"
   peerDependencies:
     actor-core: "workspace:*"
+  languageName: unknown
+  linkType: soft
+
+"@actor-core/react@workspace:packages/frameworks/react":
+  version: 0.0.0-use.local
+  resolution: "@actor-core/react@workspace:packages/frameworks/react"
+  dependencies:
+    "@actor-core/framework-base": "workspace:*"
+    actor-core: "workspace:^"
+    tsup: "npm:^8.3.6"
+    typescript: "npm:^5.5.2"
+    vitest: "npm:~2.1.9"
+  peerDependencies:
+    actor-core: "*"
+    react: ^18 || ^19
+    react-dom: ^18 || ^19
   languageName: unknown
   linkType: soft
 
@@ -3283,7 +3312,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"actor-core@workspace:*, actor-core@workspace:packages/actor-core":
+"actor-core@workspace:*, actor-core@workspace:^, actor-core@workspace:packages/actor-core":
   version: 0.0.0-use.local
   resolution: "actor-core@workspace:packages/actor-core"
   dependencies:
@@ -8075,7 +8104,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tsup@npm:^8.4.0":
+"tsup@npm:^8.3.6, tsup@npm:^8.4.0":
   version: 8.4.0
   resolution: "tsup@npm:8.4.0"
   dependencies:
