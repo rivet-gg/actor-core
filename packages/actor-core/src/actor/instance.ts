@@ -129,6 +129,10 @@ export class ActorInstance<S, CP, CS, V> {
 		return this.#actorId;
 	}
 
+	get config() {
+		return this.#config;
+	}
+
 	/**
 	 * This constructor should never be used directly.
 	 *

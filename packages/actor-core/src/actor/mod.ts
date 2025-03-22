@@ -19,9 +19,13 @@ export type {
 	ActionContextOf,
 } from "./definition";
 
-export function actor<S, CP, CS, V, R extends Actions<S, CP, CS, V>>(
-	input: ActorConfigInput<S, CP, CS, V, R>,
-): ActorDefinition<S, CP, CS, V, R> {
+export function actor<
+	S,
+	CP,
+	CS,
+	V,
+	R extends Actions<S, CP, CS, V> = Actions<S, CP, CS, V>,
+>(input: ActorConfigInput<S, CP, CS, V, R>): ActorDefinition<S, CP, CS, V, R> {
 	const config = ActorConfigSchema.parse(input) as ActorConfig<S, CP, CS, V>;
 	return new ActorDefinition(config);
 }
