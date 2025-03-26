@@ -162,7 +162,7 @@ type UserFnReturnType =
 			| Promise<GenericReturnValue>
 	  >;
 
-interface Context {
+export interface Context {
 	wait: (ms: number) => Promise<undefined>;
 	task: <T extends UserFnReturnType>(
 		name: string,

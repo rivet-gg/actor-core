@@ -4,6 +4,7 @@ import { assertUnreachable } from "actor-core/utils";
 import { CoordinateTopology } from "actor-core/topologies/coordinate";
 import { logger } from "./log";
 import type { Hono } from "hono";
+import { getRouterName, showRoutes } from "hono/dev";
 import { StandaloneTopology, type ActorCoreApp } from "actor-core";
 import {
 	MemoryGlobalState,
@@ -14,7 +15,10 @@ import { type InputConfig, ConfigSchema } from "./config";
 
 export { InputConfig as Config } from "./config";
 
-export function createRouter(app: ActorCoreApp<any>, inputConfig?: InputConfig): {
+export function createRouter(
+	app: ActorCoreApp<any>,
+	inputConfig?: InputConfig,
+): {
 	router: Hono;
 	injectWebSocket: NodeWebSocket["injectWebSocket"];
 } {
@@ -60,7 +64,10 @@ export function createRouter(app: ActorCoreApp<any>, inputConfig?: InputConfig):
 	}
 }
 
-export function serve(app: ActorCoreApp<any>, inputConfig?: InputConfig): ServerType {
+export function serve(
+	app: ActorCoreApp<any>,
+	inputConfig?: InputConfig,
+): ServerType {
 	const config = ConfigSchema.parse(inputConfig);
 
 	const { router, injectWebSocket } = createRouter(app, config);
