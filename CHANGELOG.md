@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.7](https://github.com/rivet-gg/actor-core/compare/v0.7.6...v0.7.7) (2025-03-26)
+
+
+### Documentation
+
+* add testing docs ([#801](https://github.com/rivet-gg/actor-core/issues/801)) ([c9f072b](https://github.com/rivet-gg/actor-core/commit/c9f072bd0a9a006c07bdafc2f425a6ea4ac2e8f0))
+
+
+### Chores
+
+* add tests for chat-room and counter ([#797](https://github.com/rivet-gg/actor-core/issues/797)) ([ed5f01a](https://github.com/rivet-gg/actor-core/commit/ed5f01a77d52b283654aa91ec936eae7037619ff))
+
 ## [0.7.6](https://github.com/rivet-gg/actor-core/compare/v0.7.5...v0.7.6) (2025-03-26)
 
 
