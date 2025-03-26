@@ -132,6 +132,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@hono/zod-openapi": "^0.19.2",
     "cbor-x": "^1.6.0",
     "hono": "^4.7.0",
     "invariant": "^2.2.4",

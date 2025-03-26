@@ -7,6 +7,7 @@ import { type ActorTags, assertUnreachable } from "@/common/utils";
 import { handleRouteError, handleRouteNotFound } from "@/common/router";
 import { DriverConfig } from "@/driver-helpers/config";
 import { AppConfig } from "@/app/config";
+import { OpenAPIHono } from "@hono/zod-openapi";
 
 export class Manager {
 	#appConfig: AppConfig;
@@ -27,7 +28,7 @@ export class Manager {
 	}
 
 	#buildRouter() {
-		const app = new Hono();
+		const app = new OpenAPIHono();
 
 		// Apply CORS middleware if configured
 		if (this.#appConfig.cors) {
