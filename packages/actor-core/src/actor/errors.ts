@@ -48,6 +48,15 @@ export class StateNotEnabled extends ActorError {
 	}
 }
 
+export class SqlNotEnabled extends ActorError {
+	constructor() {
+		super(
+			"sql_not_enabled",
+			"SQL not enabled.",
+		);
+	}
+}
+
 export class ConnStateNotEnabled extends ActorError {
 	constructor() {
 		super(
@@ -161,6 +170,15 @@ export class StateTooLarge extends ActorError {
 export class Unsupported extends ActorError {
 	constructor(feature: string) {
 		super("unsupported", `Unsupported feature: ${feature}`);
+	}
+}
+
+export class DriverDoesNotSupportSql extends ActorError {
+	constructor() {
+		super(
+			"driver_does_not_support_sql",
+			"Driver does not support SQL. Check https://actorcore.org for supported platforms.",
+		);
 	}
 }
 

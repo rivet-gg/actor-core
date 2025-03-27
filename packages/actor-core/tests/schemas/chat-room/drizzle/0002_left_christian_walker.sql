@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `createdAt` integer DEFAULT (unixepoch() * 1000) NOT NULL;

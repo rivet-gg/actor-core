@@ -1,5 +1,8 @@
 import type { ActorDriver, KvKey, KvValue, AnyActorInstance } from "actor-core/driver-helpers";
+import type { SqlConnection } from "actor-core/sql";
 import type { MemoryGlobalState } from "./global_state";
+import { MemorySqlConnection } from "./sql";
+import Database from "better-sqlite3";
 
 export interface ActorDriverContext {
 	state: MemoryGlobalState;
@@ -14,6 +17,10 @@ export class MemoryActorDriver implements ActorDriver {
 
 	get context(): ActorDriverContext {
 		return { state: this.#state };
+	}
+
+	createSqlConnection(): SqlConnection {
+		return new MemorySqlConnection(new Database(":memory:"));
 	}
 
 	async kvGet(actorId: string, key: KvKey): Promise<KvValue | undefined> {

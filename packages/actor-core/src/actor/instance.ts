@@ -18,6 +18,7 @@ import { CachedSerializer } from "./protocol/serde";
 import { Inspector } from "@/actor/inspect";
 import { ActorContext } from "./context";
 import invariant from "invariant";
+import { SqlConnection } from "./sql/mod";
 
 /**
  * Options for the `_saveState` method.
@@ -97,6 +98,8 @@ export class ActorInstance<S, CP, CS, V> {
 	/** Raw state without the proxy wrapper */
 	#persistRaw!: PersistedActor<S, CP, CS>;
 
+	#sqlConn?: SqlConnection;
+
 	#writePersistLock = new Lock<void>(void 0);
 
 	#lastSaveTime = 0;
@@ -158,6 +161,13 @@ export class ActorInstance<S, CP, CS, V> {
 		this.#schedule = new Schedule(this, actorDriver);
 		this.inspector = new Inspector(this);
 
+		// Create SQL connection
+		if (this.#config.sql) {
+			if (!this.#actorDriver.createSqlConnection) throw new errors.DriverDoesNotSupportSql();
+			this.#sqlConn = this.#actorDriver.createSqlConnection();
+		}
+
+
 		// Initialize server
 		//
 		// Store the promise so network requests can await initialization
@@ -211,6 +221,16 @@ export class ActorInstance<S, CP, CS, V> {
 	#validateStateEnabled() {
 		if (!this.stateEnabled) {
 			throw new errors.StateNotEnabled();
+		}
+	}
+
+	get sqlEnabled() {
+		return this.#config.sql;
+	}
+
+	#validateSqlEnabled() {
+		if (!this.sqlEnabled) {
+			throw new errors.SqlNotEnabled();
 		}
 	}
 
@@ -844,6 +864,12 @@ export class ActorInstance<S, CP, CS, V> {
 	get state(): S {
 		this.#validateStateEnabled();
 		return this.#persist.s;
+	}
+
+	get sql(): SqlConnection {
+		this.#validateSqlEnabled();
+		invariant(this.#sqlConn !== undefined, "#sqlConn is undefined");
+		return this.#sqlConn;
 	}
 
 	/**

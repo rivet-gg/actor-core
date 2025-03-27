@@ -52,6 +52,16 @@
         "default": "./dist/actor/errors.cjs"
       }
     },
+    "./sql": {
+      "import": {
+        "types": "./dist/actor/sql/mod.d.ts",
+        "default": "./dist/actor/sql/mod.js"
+      },
+      "require": {
+        "types": "./dist/actor/sql/mod.d.cts",
+        "default": "./dist/actor/sql/mod.cjs"
+      }
+    },
     "./utils": {
       "import": {
         "types": "./dist/utils.d.ts",
@@ -135,7 +145,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup src/mod.ts src/client/mod.ts src/common/log.ts src/actor/errors.ts src/topologies/coordinate/mod.ts src/topologies/partition/mod.ts src/utils.ts src/driver-helpers/mod.ts src/cli/mod.ts src/actor/protocol/inspector/mod.ts src/actor/protocol/http/rpc.ts src/test/mod.ts",
+    "build": "tsup src/mod.ts src/client/mod.ts src/common/log.ts src/actor/errors.ts src/actor/sql/mod.ts src/topologies/coordinate/mod.ts src/topologies/partition/mod.ts src/utils.ts src/driver-helpers/mod.ts src/cli/mod.ts src/actor/protocol/inspector/mod.ts src/actor/protocol/http/rpc.ts src/test/mod.ts",
     "check-types": "tsc --noEmit",
     "boop": "tsc --outDir dist/test -d",
     "test": "vitest run",
@@ -153,6 +163,8 @@
     "@types/invariant": "^2",
     "@types/node": "^22.13.1",
     "@types/ws": "^8",
+    "drizzle-kit": "^0.30.5",
+    "drizzle-orm": "^0.41.0",
     "eventsource": "^3.0.5",
     "tsup": "^8.4.0",
     "typescript": "^5.7.3",

@@ -4,6 +4,7 @@ import { ActorInstance, SaveStateOptions } from "./instance";
 import { Conn, ConnId } from "./connection";
 import { ActorTags } from "@/common/utils";
 import { Schedule } from "./schedule";
+import { SqlConnection } from "@/actor/sql/mod";
 
 
 /**
@@ -21,6 +22,10 @@ export class ActorContext<S, CP, CS, V> {
 	 */
 	get state(): S {
 		return this.#actor.state;
+	}
+
+	get sql(): SqlConnection {
+		return this.#actor.sql;
 	}
 
 	/**

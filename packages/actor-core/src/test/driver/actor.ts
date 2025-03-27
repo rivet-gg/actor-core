@@ -1,5 +1,13 @@
-import type { ActorDriver, KvKey, KvValue, AnyActorInstance } from "@/driver-helpers/mod";
+import type {
+	ActorDriver,
+	KvKey,
+	KvValue,
+	AnyActorInstance,
+} from "@/driver-helpers/mod";
 import type { TestGlobalState } from "./global_state";
+import { SqlConnection } from "@/actor/sql/mod";
+import Database from "better-sqlite3";
+import { TestSqlConnection } from "./sql";
 
 export interface ActorDriverContext {
 	state: TestGlobalState;
@@ -14,6 +22,10 @@ export class TestActorDriver implements ActorDriver {
 
 	get context(): ActorDriverContext {
 		return { state: this.#state };
+	}
+
+	createSqlConnection(): SqlConnection {
+		return new TestSqlConnection(new Database(":memory:"));
 	}
 
 	async kvGet(actorId: string, key: KvKey): Promise<KvValue | undefined> {

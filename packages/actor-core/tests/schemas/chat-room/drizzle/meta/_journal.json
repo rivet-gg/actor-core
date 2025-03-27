@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1743016581641,
+      "tag": "0000_military_elektra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1743034703736,
+      "tag": "0001_greedy_raza",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1743034919351,
+      "tag": "0002_left_christian_walker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1743036218845,
+      "tag": "0003_massive_rogue",
+      "breakpoints": true
+    }
+  ]
+}

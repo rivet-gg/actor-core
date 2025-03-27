@@ -19,6 +19,7 @@ export const ActorConfigSchema = z
 		onBeforeActionResponse: z.function().optional(),
 		actions: z.record(z.function()),
 		state: z.any().optional(),
+		sql: z.boolean().default(false),
 		createState: z.function().optional(),
 		connState: z.any().optional(),
 		createConnState: z.function().optional(),
@@ -81,7 +82,11 @@ export interface OnConnectOptions<CP> {
 // This must have only one or the other or else S will not be able to be inferred
 type CreateState<S, CP, CS, V> =
 	| { state: S }
-	| { createState: (c: ActorContext<undefined, undefined, undefined, undefined>) => S | Promise<S> }
+	| {
+			createState: (
+				c: ActorContext<undefined, undefined, undefined, undefined>,
+			) => S | Promise<S>;
+	  }
 	| Record<never, never>;
 
 // Creates connection state config
@@ -114,7 +119,10 @@ type CreateVars<S, CP, CS, V> =
 			/**
 			 * @experimental
 			 */
-			createVars: (c: ActorContext<undefined, undefined, undefined, undefined>, driverCtx: unknown) => V | Promise<V>;
+			createVars: (
+				c: ActorContext<undefined, undefined, undefined, undefined>,
+				driverCtx: unknown,
+			) => V | Promise<V>;
 	  }
 	| Record<never, never>;
 

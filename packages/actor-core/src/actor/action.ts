@@ -5,8 +5,8 @@ import type { ActorTags } from "@/common/utils";
 import type { Schedule } from "./schedule";
 import type { ConnId } from "./connection";
 import type { SaveStateOptions } from "./instance";
-import { Actions } from "./config";
 import { ActorContext } from "./context";
+import { SqlConnection } from "@/actor/sql/mod";
 
 /**
  * Context for a remote procedure call.
@@ -34,6 +34,10 @@ export class ActionContext<S, CP, CS, V> {
 	 */
 	get state(): S {
 		return this.#actorContext.state;
+	}
+
+	get sql(): SqlConnection {
+		return this.#actorContext.sql
 	}
 
 	/**

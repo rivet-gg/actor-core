@@ -2,16 +2,19 @@ import type * as messageToClient from "@/actor/protocol/message/to-client";
 import type { CachedSerializer } from "@/actor/protocol/serde";
 import type { AnyActorInstance } from "./instance";
 import { AnyConn } from "./connection";
+import type { SqlConnection } from "./sql/mod";
 
 export type ConnDrivers = Record<string, ConnDriver>;
 
 export type KvKey = unknown[];
 export type KvValue = unknown;
 
-
 export interface ActorDriver {
 	//load(): Promise<LoadOutput>;
 	get context(): unknown;
+
+	// SQL connection
+	createSqlConnection?(): SqlConnection;
 
 	// HACK: Clean these up
 	kvGet(actorId: string, key: KvKey): Promise<KvValue | undefined>;

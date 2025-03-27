@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "actor-core": "workspace:*",
+    "better-sqlite3": "^11.9.1",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2"
   },
