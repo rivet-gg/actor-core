@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"yarn dev:server\" \"yarn dev:client\"",
     "dev:client": "next dev",
-    "dev:server": "tsx src/server.ts",
+    "dev:server": "tsx --watch src/server.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
@@ -17,11 +17,13 @@
     "@actor-core/react": "workspace:*",
     "@actor-core/rivet": "workspace:*",
     "actor-core": "workspace:*",
+    "lodash-es": "^4.17.21",
     "next": "^14.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@typescript-eslint/eslint-plugin": "^7.1.1",

@@ -8,100 +8,95 @@ export interface CursorState {
   y: number;
 }
 
-export interface CursorRoom {
-  cursors: Record<string, CursorState>;
-  getCursors(): Promise<Record<string, CursorState>>;
-  updateCursor(x: number, y: number): Promise<void>;
-  setName(name: string): Promise<void>;
-  setColor(color: string): Promise<void>;
-}
-
 interface State {
   cursors: Record<string, CursorState>;
 }
 
-type Context = ActionContext<State, void, void, void>;
-
-interface CursorActions {
-  [key: string]: (ctx: Context, ...args: any[]) => any;
-  getCursors(ctx: Context): Promise<Record<string, CursorState>>;
-  updateCursor(ctx: Context, x: number, y: number): Promise<void>;
-  setName(ctx: Context, name: string): Promise<void>;
-  setColor(ctx: Context, color: string): Promise<void>;
-}
-
-export const CursorRoom = actor<State, void, void, void, CursorActions>({
+export const cursorRoom = actor({
   state: {
     cursors: {},
-  },
+  } as State,
 
   actions: {
-    async getCursors(ctx) {
-      return ctx.state.cursors;
+    async getCursors(c) {
+      console.log('getCursors - Current connections:', Array.from(c.conns.keys()));
+      console.log('getCursors - Current cursors:', Object.keys(c.state.cursors));
+      return c.state.cursors;
     },
 
-    async updateCursor(ctx, x: number, y: number) {
-      const id = Array.from(ctx.conns.values())[0].id;
-      const cursor = ctx.state.cursors[id] || {
-        color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-        x: 0,
-        y: 0,
-      };
+    async updateCursor(c, x: number, y: number) {
+      const id = c.conn.id;
+      console.log('updateCursor - Using connection:', id);
 
-      ctx.state.cursors[id] = {
-        ...cursor,
+      // Simply update cursor position
+      c.state.cursors[id] = {
+        ...c.state.cursors[id],
         x,
         y,
       };
 
-      ctx.broadcast("cursorMoved", {
+      console.log('updateCursor - Cursor state:', c.state.cursors[id]);
+      c.broadcast("cursorMoved", {
         id,
-        cursor: ctx.state.cursors[id],
+        cursor: c.state.cursors[id],
       });
     },
 
-    async setName(ctx, name: string) {
-      const id = Array.from(ctx.conns.values())[0].id;
-      const cursor = ctx.state.cursors[id];
+    async setName(c, name: string) {
+      const id = c.conn.id;
+      console.log('setName - Using connection:', id, name);
+      
+      const cursor = c.state.cursors[id];
       if (cursor) {
         cursor.name = name;
-        ctx.broadcast("cursorUpdated", {
+        c.broadcast("cursorMoved", {
           id,
           cursor,
         });
+      } else {
+        console.error('setName - Cursor not found for connection:', id);
       }
     },
 
-    async setColor(ctx, color: string) {
-      const id = Array.from(ctx.conns.values())[0].id;
-      const cursor = ctx.state.cursors[id];
+    async setColor(c, color: string) {
+      const id = c.conn.id;
+      console.log('setColor - Using connection:', id);
+      
+      const cursor = c.state.cursors[id];
       if (cursor) {
         cursor.color = color;
-        ctx.broadcast("cursorUpdated", {
+        c.broadcast("cursorMoved", {
           id,
           cursor,
         });
+      } else {
+        console.error('setColor - Cursor not found for connection:', id);
       }
     },
   },
 
-  onConnect(ctx) {
-    const id = Array.from(ctx.conns.values())[0].id;
-    ctx.state.cursors[id] = {
+  onConnect(c, conn) {
+    const id = conn.id;
+    console.log('onConnect - All connections:', Array.from(c.conns.keys()));
+    console.log('onConnect - Using connection:', id);
+    
+    // Create cursor immediately on connect
+    c.state.cursors[id] = {
       color: `hsl(${Math.random() * 360}, 70%, 50%)`,
       x: 0,
       y: 0,
     };
-
-    ctx.broadcast("cursorAdded", {
-      id,
-      cursor: ctx.state.cursors[id],
-    });
+    console.log('onConnect - Created cursor:', c.state.cursors[id]);
   },
 
-  onDisconnect(ctx) {
-    const id = Array.from(ctx.conns.values())[0].id;
-    delete ctx.state.cursors[id];
-    ctx.broadcast("cursorRemoved", id);
+  onDisconnect(c, conn) {
+    const id = conn.id;
+    console.log('onDisconnect - Connection disconnected:', id);
+    
+    // Remove the cursor for this connection
+    delete c.state.cursors[id];
+    
+    // Broadcast removal to all remaining connections
+    c.broadcast("cursorRemoved", id);
   },
 });

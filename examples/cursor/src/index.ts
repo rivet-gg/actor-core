@@ -1,20 +1,13 @@
 import { setup } from "actor-core";
-import { CursorRoom } from "./cursor-room";
+import { cursorRoom } from "./cursor-room";
 
 export const app = setup({
   actors: {
-    "cursor-room": CursorRoom,
+    cursorRoom,
   },
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
-    credentials: true
+    origin: ["http://localhost:3000"],
   },
-  manager: {
-    enabled: true
-  },
-  ws: {
-    enabled: true
-  }
 });
 
 export type App = typeof app; 
