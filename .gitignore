@@ -184,3 +184,6 @@ Cargo.lock
 **/.wrangler
 **/.DS_Store
 .aider*
+
+# tsup bundled artifacts
+**/tsup.config.bundled_*.mjs

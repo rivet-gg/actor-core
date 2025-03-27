@@ -10,7 +10,8 @@
     "packages/misc/*",
     "packages/frameworks/*",
     "examples/chat-room/",
-    "examples/counter/"
+    "examples/counter/",
+    "examples/cursor/"
   ],
   "scripts": {
     "start": "npx turbo watch build",

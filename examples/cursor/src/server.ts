@@ -1,10 +1,14 @@
+import { setup } from "actor-core";
 import { serve } from "@actor-core/nodejs";
-import { setupLogging } from "actor-core/log";
-import { app } from "./index";
+import { cursorRoom } from "./cursor-room";
 
-setupLogging();
+const app = setup({
+  actors: {
+    cursorRoom,
+  },
+  cors: {
+    origin: ["http://localhost:3000"],
+  },
+});
 
-// Start the server using the NodeJS platform
-const server = serve(app);
-
-console.log("Server listening on http://localhost:6420"); 
+serve(app); 
