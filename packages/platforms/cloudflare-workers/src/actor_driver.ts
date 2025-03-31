@@ -1,4 +1,4 @@
-import { ActorDriver, KvKey, KvValue, AnyActorInstance } from "actor-core/driver-helpers";
+import type { ActorDriver, KvKey, KvValue, AnyActorInstance } from "actor-core/driver-helpers";
 
 export interface ActorDriverContext {
 	ctx: DurableObjectState;
@@ -55,6 +55,14 @@ export class CloudflareWorkersActorDriver implements ActorDriver {
 
 	async setAlarm(_actor: AnyActorInstance, timestamp: number): Promise<void> {
 		await this.#doCtx.storage.setAlarm(timestamp);
+	}
+
+	async getAlarm(_actor: AnyActorInstance): Promise<number | null> {
+		return this.#doCtx.storage.getAlarm();
+	}
+
+	async deleteAlarm(_actor: AnyActorInstance): Promise<void> {
+		await this.#doCtx.storage.deleteAlarm();
 	}
 
 	#serializeKey(key: KvKey): string {
