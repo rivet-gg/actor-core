@@ -36,4 +36,12 @@ export class RedisActorDriver implements ActorDriver {
 			actor.onAlarm();
 		}, delay);
 	}
+
+	getAlarm(actor: AnyActorInstance): Promise<number | null> {
+		throw new Error("Method not implemented.");
+	}
+
+	deleteAlarm(actor: AnyActorInstance): Promise<void> {
+		throw new Error("Method not implemented.");
+	}
 }

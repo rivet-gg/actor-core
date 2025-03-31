@@ -32,4 +32,12 @@ export class RivetActorDriver implements ActorDriver {
 			actor.onAlarm();
 		}, timeout);
 	}
+
+	getAlarm(actor: AnyActorInstance): Promise<number | null> {
+		throw new Error("Method not implemented.");
+	}
+
+	deleteAlarm(actor: AnyActorInstance): Promise<void> {
+		throw new Error("Method not implemented.");
+	}
 }
