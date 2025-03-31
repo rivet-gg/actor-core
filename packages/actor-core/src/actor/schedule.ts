@@ -15,6 +15,15 @@ interface ScheduleIndexEvent {
 
 interface ScheduleEvent {
 	timestamp: number;
+	createdAt: number;
+	fn: string;
+	args: unknown[];
+}
+
+export interface Alarm {
+	id: string;
+	createdAt: number;
+	triggersAt: number;
 	fn: string;
 	args: unknown[];
 }
@@ -28,27 +37,109 @@ export class Schedule {
 		this.#driver = driver;
 	}
 
-	async after(duration: number, fn: string, ...args: unknown[]) {
-		await this.#scheduleEvent(Date.now() + duration, fn, args);
+	async after(duration: number, fn: string, ...args: unknown[]): Promise<string> {
+		return this.#scheduleEvent(Date.now() + duration, fn, args);
 	}
 
-	async at(timestamp: number, fn: string, ...args: unknown[]) {
-		await this.#scheduleEvent(timestamp, fn, args);
+	async at(timestamp: number, fn: string, ...args: unknown[]): Promise<string> {
+		return this.#scheduleEvent(timestamp, fn, args);
+	}
+
+	async get(alarmId: string): Promise<Alarm | null> {
+		const event = await this.#driver.kvGet(
+			this.#actor.id,
+			KEYS.SCHEDULE.event(alarmId)
+		) as ScheduleEvent | undefined;
+
+		if (!event) return null;
+
+		return {
+			id: alarmId,
+			createdAt: event.createdAt,
+			triggersAt: event.timestamp,
+			fn: event.fn,
+			args: event.args
+		};
+	}
+
+	async list(): Promise<readonly Alarm[]> {
+		const schedule: ScheduleState = ((await this.#driver.kvGet(
+			this.#actor.id,
+			KEYS.SCHEDULE.SCHEDULE
+		)) as ScheduleState) ?? { events: [] };
+
+		const alarms: Alarm[] = [];
+		for (const event of schedule.events) {
+			const scheduleEvent = await this.#driver.kvGet(
+				this.#actor.id,
+				KEYS.SCHEDULE.event(event.eventId)
+			) as ScheduleEvent;
+
+			if (scheduleEvent) {
+				alarms.push(Object.freeze({
+					id: event.eventId,
+					createdAt: scheduleEvent.createdAt,
+					triggersAt: scheduleEvent.timestamp,
+					fn: scheduleEvent.fn,
+					args: scheduleEvent.args
+				}));
+			}
+		}
+
+		return Object.freeze(alarms);
+	}
+
+	async cancel(alarmId: string): Promise<void> {
+		// Get the schedule index
+		const schedule: ScheduleState = ((await this.#driver.kvGet(
+			this.#actor.id,
+			KEYS.SCHEDULE.SCHEDULE
+		)) as ScheduleState) ?? { events: [] };
+
+		// Find and remove the event from the index
+		const eventIndex = schedule.events.findIndex(x => x.eventId === alarmId);
+		if (eventIndex === -1) return;
+
+		const [removedEvent] = schedule.events.splice(eventIndex, 1);
+
+		// Delete the event data
+		await this.#driver.kvDelete(
+			this.#actor.id,
+			KEYS.SCHEDULE.event(alarmId)
+		);
+
+		// Update the schedule index
+		await this.#driver.kvPut(
+			this.#actor.id,
+			KEYS.SCHEDULE.SCHEDULE,
+			schedule
+		);
+
+		// If we removed the first event (next to execute), update the alarm
+		if (eventIndex === 0) {
+			if (schedule.events.length > 0) {
+				// Set alarm to next event
+				await this.#driver.setAlarm(this.#actor, schedule.events[0].timestamp);
+			} else {
+				// No more events, delete the alarm
+				await this.#driver.deleteAlarm(this.#actor);
+			}
+		}
 	}
 
 	async #scheduleEvent(
 		timestamp: number,
 		fn: string,
 		args: unknown[],
-	): Promise<void> {
+	): Promise<string> {
 		// Save event
 		const eventId = crypto.randomUUID();
 		await this.#driver.kvPut(
 			this.#actor.id,
-			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-			KEYS.SCHEDULE.event(eventId) as any,
+			KEYS.SCHEDULE.event(eventId),
 			{
 				timestamp,
+				createdAt: Date.now(),
 				fn,
 				args,
 			},
@@ -58,8 +149,7 @@ export class Schedule {
 		// Read index
 		const schedule: ScheduleState = ((await this.#driver.kvGet(
 			this.#actor.id,
-			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-			KEYS.SCHEDULE.SCHEDULE as any,
+			KEYS.SCHEDULE.SCHEDULE,
 		)) as ScheduleState) ?? {
 			events: [],
 		};
@@ -84,6 +174,8 @@ export class Schedule {
 		if (insertIndex === 0 || schedule.events.length === 1) {
 			await this.#driver.setAlarm(this.#actor, newEvent.timestamp);
 		}
+
+		return eventId;
 	}
 
 	async __onAlarm() {
