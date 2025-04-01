@@ -135,6 +135,13 @@
         ]
       },
       {
+        "tab": "Examples",
+        "pages": [
+          "examples/Live-Cursors",
+          "examples/chat"
+        ]
+      },
+      {
         "tab": "Changelog",
         "pages": [
           {
