@@ -7,6 +7,7 @@ export interface ActorDriverContext {
 
 export class MemoryActorDriver implements ActorDriver {
 	#state: MemoryGlobalState;
+	#alarms = new Map<string, { timeout: NodeJS.Timeout; timestamp: number }>();
 
 	constructor(state: MemoryGlobalState) {
 		this.#state = state;
@@ -64,9 +65,29 @@ export class MemoryActorDriver implements ActorDriver {
 	}
 
 	async setAlarm(actor: AnyActorInstance, timestamp: number): Promise<void> {
-		setTimeout(() => {
+		// Clear any existing alarm
+		await this.deleteAlarm(actor);
+
+		// Set new alarm
+		const timeout = setTimeout(() => {
 			actor.onAlarm();
+			this.#alarms.delete(actor.id);
 		}, timestamp - Date.now());
+
+		this.#alarms.set(actor.id, { timeout, timestamp });
+	}
+
+	async getAlarm(actor: AnyActorInstance): Promise<number | null> {
+		const alarm = this.#alarms.get(actor.id);
+		return alarm?.timestamp ?? null;
+	}
+
+	async deleteAlarm(actor: AnyActorInstance): Promise<void> {
+		const alarm = this.#alarms.get(actor.id);
+		if (alarm) {
+			clearTimeout(alarm.timeout);
+			this.#alarms.delete(actor.id);
+		}
 	}
 
 	// Simple key serialization without depending on keys.ts
