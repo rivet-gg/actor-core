@@ -1,4 +1,4 @@
-# TODO: Cache both yarn & cargo
+# TODO: Cache both pnpm & cargo
 
 name: 'Test'
 on: 
@@ -10,39 +10,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # https://github.com/pnpm/action-setup?tab=readme-ov-file#use-cache-to-reduce-installation-time
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Setup Node.js
-      - name: Set up Node.js
+      - uses: pnpm/action-setup@v4
+        name: Install pnpm
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22.14'
-          # Note: We're not using the built-in cache here because we need to use corepack
-      
-      - name: Setup Corepack
-        run: corepack enable
-      
-      - id: yarn-cache-dir-path
-        name: Get yarn cache directory path
-        run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
-      
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        id: cache
-        with:
-          path: |
-            ${{ steps.yarn-cache-dir-path.outputs.dir }}
-            .turbo
-          key: ${{ runner.os }}-deps-${{ hashFiles('**/yarn.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-deps-${{ hashFiles('**/yarn.lock') }}-
-            ${{ runner.os }}-deps-
-      
+          cache: 'pnpm'
+
       - name: Install dependencies
-        run: yarn install
+        run: pnpm install
         
       - name: Run actor-core tests
-        run: yarn test
+        run: pnpm test
 
       # - name: Install Rust
       #   uses: dtolnay/rust-toolchain@stable

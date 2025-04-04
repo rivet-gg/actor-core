@@ -1,46 +1,28 @@
 #!/usr/bin/env tsx
-import { $, chalk, fs } from "zx";
+import { $, chalk } from "zx";
 
 async function getPublicPackages() {
 	console.log(chalk.blue("Getting list of public packages..."));
 	const { stdout: packagesStdout } =
-		await $`yarn workspaces list --json --no-private`;
+		await $`pnpm recursive list --json`;
 
-	return packagesStdout
-		.trim()
-		.split("\n")
-		.map((line) => JSON.parse(line));
+	const list = JSON.parse(packagesStdout);
+
+	const packages = list.filter((pkg) => {
+		return pkg.private !== true;
+	});
+
+	return packages.map((pkg) => pkg.name)
 }
 
-async function saveYarnrc() {
-	const contents = await fs.promises.readFile(".yarnrc.yml", "utf-8");
-
-	return {
-		async restore() {
-			await fs.promises.writeFile(".yarnrc.yml", contents);
-		},
-	};
-}
-
-async function setupYarn() {
+async function setupNpm() {
 	// generate token
 	await $`npx npm-cli-login -u test -p 1234 -e test@domain.test -r http://0.0.0.0:4873 --config-path .npmrc`;
-
-	const npmrc = await fs.promises.readFile(".npmrc", "utf-8");
-	const [, token] = npmrc.split("=");
-
-	await $`yarn config set npmRegistryServer http://0.0.0.0:4873`;
-	await $`yarn config set unsafeHttpWhitelist --json '["0.0.0.0"]'`;
-	await $`yarn config set npmAlwaysAuth false`;
-	await $`yarn config set enableStrictSsl false`;
-	await $`yarn config set npmAuthToken "${token}"`;
 }
 
 async function run() {
-	const yarnrc = await saveYarnrc();
 
-	try {
-		await setupYarn();
+		await setupNpm();
 
 		const pkgs = await getPublicPackages();
 
@@ -49,11 +31,9 @@ async function run() {
 			console.log(chalk.blue(`Publishing package ${pkg.name}...`));
 			await $({
 				stdio: "inherit",
-			})`yarn workspace ${pkg.name} npm publish --access public`;
+			})`pnpm publish --filter=${pkg.name} --access public`;
 		}
-	} finally {
-		await yarnrc.restore();
-	}
+
 }
 
 run().catch((err) => {

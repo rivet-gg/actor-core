@@ -1,26 +1,17 @@
 {
   "private": true,
-  "packageManager": "yarn@4.2.2",
   "name": "@actor-core/workspace",
-  "workspaces": [
-    "packages/*",
-    "packages/platforms/*",
-    "packages/drivers/*",
-    "packages/components/*",
-    "packages/misc/*",
-    "packages/frameworks/*"
-  ],
   "scripts": {
     "start": "npx turbo watch build",
     "dev": "npx turbo watch dev",
     "build": "npx turbo build",
     "test": "npx turbo test",
     "check-types": "npx turbo check-types",
-    "fmt": "yarn biome check --write .",
-    "dev-docs": "cd docs && yarn dlx mintlify@latest dev",
-    "dev-docs-middleware": "cd packages/misc/docs-middleware && yarn dev",
-    "deploy-docs-middleware": "cd packages/misc/docs-middleware && yarn deploy",
-    "docs-broken-links": "cd docs && yarn dlx mintlify@latest broken-links",
+    "fmt": "pnpm biome check --write .",
+    "dev-docs": "cd docs && pnpm dlx mintlify@latest dev",
+    "dev-docs-middleware": "cd packages/misc/docs-middleware && pnpm dev",
+    "deploy-docs-middleware": "cd packages/misc/docs-middleware && pnpm deploy",
+    "docs-broken-links": "cd docs && pnpm dlx mintlify@latest broken-links",
     "docs-bump": "git checkout main && git pull --ff && date > docs/.bump && git add docs/.bump && git commit -m \"chore: bump mintlify\" && git push origin main"
   },
   "devDependencies": {
@@ -40,5 +31,6 @@
   },
   "dependencies": {
     "esbuild": "^0.25.1"
-  }
+  },
+  "packageManager": "pnpm@8.15.1+sha1.8adba2d20330c02d3856e18c4eb3819d1d3ca6aa"
 }

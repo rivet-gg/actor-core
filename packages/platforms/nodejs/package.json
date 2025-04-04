@@ -29,6 +29,7 @@
     "actor-core": "*"
   },
   "devDependencies": {
+    "@types/node": "^22.13.1",
     "actor-core": "workspace:*",
     "hono": "^4.7.0",
     "tsup": "^8.4.0",

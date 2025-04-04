@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "dev": "yarn build --watch"
+    "dev": "pnpm build --watch"
   },
   "license": "Apache-2.0",
   "files": [

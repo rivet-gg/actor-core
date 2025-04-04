@@ -28,7 +28,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "dev": "yarn build --watch",
+    "dev": "pnpm build --watch",
     "test": "vitest run",
     "check-types": "tsc --noEmit"
   },
