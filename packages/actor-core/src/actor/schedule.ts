@@ -2,6 +2,8 @@ import type { AnyActorInstance } from "./instance";
 import type { ActorDriver } from "./driver";
 import { KEYS } from "./keys";
 import { logger } from "./log";
+import { ActionNotFound } from "./errors";
+import { ActionContext } from "./action";
 
 interface ScheduleState {
 	// Sorted by timestamp asc
@@ -128,16 +130,20 @@ export class Schedule {
 		for (const event of scheduleEvents) {
 			try {
 				// Look up function
-				const fn: unknown = this.#actor[event.fn as keyof AnyActorInstance];
-				if (!fn) throw new Error(`Missing function for alarm ${event.fn}`);
-				if (typeof fn !== "function")
-					throw new Error(
-						`Alarm function lookup for ${event.fn} returned ${typeof fn}`,
-					);
+				const rpcFunction = this.#actor.config.actions[event.fn];
+				if (typeof rpcFunction !== "function") {
+					logger().warn("action not found for alarm", { actionName: event.fn });
+					throw new ActionNotFound();
+				}
 
 				// Call function
 				try {
-					await fn.apply(this.#actor, event.args);
+					// HACK: Pass undefined as connection
+					const ctx = new ActionContext(
+						this.#actor.actorContext,
+						undefined as any,
+					);
+					await rpcFunction.call(this.#actor, ctx, ...event.args);
 				} catch (error) {
 					await this.#driver.kvPut(
 						this.#actor.id,
