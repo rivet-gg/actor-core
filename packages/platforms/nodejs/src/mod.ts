@@ -100,5 +100,10 @@ export function serve(
 		port: config.port,
 	});
 
+	logger().info("actorcore routes", {
+		routes: "hello",
+		thisIsATest: "test",
+	});
+
 	return server;
 }
