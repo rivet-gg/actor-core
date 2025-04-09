@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ActorCore Chat</title>
+    <!-- Add Actor Core client script -->
+    <script src="https://cdn.jsdelivr.net/npm/actor-core@0.3.0/dist/client/index.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background-color: #4a69bd;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 0 0 5px 5px;
+            overflow: hidden;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
+            max-width: 70%;
+        }
+        .message.user {
+            background-color: #e3f2fd;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .message.other {
+            background-color: #f1f1f1;
+            align-self: flex-start;
+        }
+        .message .username {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .message .time {
+            font-size: 0.8em;
+            color: #777;
+        }
+        .system-message {
+            text-align: center;
+            color: #777;
+            margin: 10px 0;
+            font-style: italic;
+        }
+        .input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ddd;
+        }
+        #message-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        button {
+            background-color: #4a69bd;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3c5aa6;
+        }
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .users-list {
+            width: 200px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 1px solid #ddd;
+        }
+        .users-list h3 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ActorCore Chat</h1>
+        </div>
+        
+        <!-- Login Form -->
+        <div id="login-form" class="login-container">
+            <h2>Join Chat</h2>
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" placeholder="Enter your username">
+            </div>
+            <div class="form-group">
+                <label for="room">Room ID (optional):</label>
+                <input type="text" id="room" placeholder="Leave empty for 'general'">
+            </div>
+            <button id="join-btn">Join Chat</button>
+        </div>
+        
+        <!-- Chat Interface (hidden initially) -->
+        <div id="chat-interface" class="chat-container" style="display: none;">
+            <div class="chat-messages" id="messages"></div>
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="Type your message...">
+                <button id="send-btn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginForm = document.getElementById('login-form');
+            const chatInterface = document.getElementById('chat-interface');
+            const messagesContainer = document.getElementById('messages');
+            const messageInput = document.getElementById('message-input');
+            const sendBtn = document.getElementById('send-btn');
+            const joinBtn = document.getElementById('join-btn');
+            const usernameInput = document.getElementById('username');
+            const roomInput = document.getElementById('room');
+            
+            let client;
+            let chatRoom;
+            let currentUser = {
+                id: '',
+                username: ''
+            };
+
+            // Handle join button click
+            joinBtn.addEventListener('click', async () => {
+                const username = usernameInput.value.trim();
+                if (!username) {
+                    alert('Please enter a username');
+                    return;
+                }
+                
+                const roomId = roomInput.value.trim() || 'general';
+                currentUser.id = `user_${Math.floor(Math.random() * 10000)}`;
+                currentUser.username = username;
+                
+                try {
+                    // Connect to the chat server
+                    await connectToChat(currentUser.id, username, roomId);
+                    
+                    // Hide login form and show chat interface
+                    loginForm.style.display = 'none';
+                    chatInterface.style.display = 'flex';
+                    
+                    // Focus on message input
+                    messageInput.focus();
+                } catch (error) {
+                    alert(`Error connecting to chat: ${error.message}`);
+                }
+            });
+            
+            // Handle send button click
+            sendBtn.addEventListener('click', sendMessage);
+            
+            // Handle enter key in message input
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            async function connectToChat(userId, username, roomId) {
+                try {
+                    // Create a new client with the correct URL
+                    // Use window.location to dynamically determine the host
+                    const protocol = window.location.protocol;
+                    const hostname = window.location.hostname;
+                    const port = 3000; // Updated to match server port
+                    
+                    client = new actorCore.Client(`${protocol}//${hostname}:${port}`);
+                    
+                    // Connect to the chat room using POST request format
+                    chatRoom = await client.post('/manager/actors', {
+                        query: {
+                            getForId: {
+                                id: `chat_room_${roomId}`,
+                                name: 'chat_room'
+                            }
+                        },
+                        parameters: {
+                            userId,
+                            username
+                        }
+                    });
+                    
+                    // Listen for new messages
+                    chatRoom.on('newMessage', (message) => {
+                        addMessage(message);
+                    });
+                    
+                    // Listen for user joined events
+                    chatRoom.on('userJoined', (data) => {
+                        addSystemMessage(`${data.username} joined the room`);
+                    });
+                    
+                    // Listen for user left events
+                    chatRoom.on('userLeft', (data) => {
+                        addSystemMessage(`${data.username} left the room`);
+                    });
+                    
+                    // Listen for room state
+                    chatRoom.on('roomState', (state) => {
+                        // Display room name
+                        document.querySelector('.header h1').textContent = `ActorCore Chat - ${state.roomName}`;
+                        
+                        // Display recent messages
+                        if (state.messages && state.messages.length > 0) {
+                            messagesContainer.innerHTML = '';
+                            state.messages.forEach(msg => {
+                                addMessage(msg);
+                            });
+                        }
+                    });
+                    
+                    console.log(`Connected to room: ${roomId}`);
+                } catch (error) {
+                    console.error('Error connecting to chat:', error);
+                    throw error;
+                }
+            }
+            
+            async function sendMessage() {
+                const content = messageInput.value.trim();
+                if (!content) return;
+                
+                try {
+                    await chatRoom.sendMessage(content);
+                    messageInput.value = '';
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    alert(`Error sending message: ${error.message}`);
+                }
+            }
+            
+            function addMessage(message) {
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${message.userId === currentUser.id ? 'user' : 'other'}`;
+                
+                const usernameElement = document.createElement('div');
+                usernameElement.className = 'username';
+                usernameElement.textContent = message.username;
+                
+                const contentElement = document.createElement('div');
+                contentElement.className = 'content';
+                contentElement.textContent = message.content;
+                
+                const timeElement = document.createElement('div');
+                timeElement.className = 'time';
+                timeElement.textContent = new Date(message.timestamp).toLocaleTimeString();
+                
+                messageElement.appendChild(usernameElement);
+                messageElement.appendChild(contentElement);
+                messageElement.appendChild(timeElement);
+                
+                messagesContainer.appendChild(messageElement);
+                
+                // Scroll to bottom
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            function addSystemMessage(text) {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'system-message';
+                messageElement.textContent = text;
+                
+                messagesContainer.appendChild(messageElement);
+                
+                // Scroll to bottom
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            // Handle window close
+            window.addEventListener('beforeunload', async () => {
+                if (chatRoom) {
+                    try {
+                        await chatRoom.disconnect();
+                    } catch (error) {
+                        console.error('Error disconnecting:', error);
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html> 
