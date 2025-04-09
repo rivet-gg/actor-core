@@ -38,18 +38,18 @@ export interface ActorAccessor<AD extends AnyActorDefinition> {
 	 *
 	 * @template A The actor class that this handle is connected to.
 	 * @param {Omit<GetOptions, 'name'>} [opts] - Options for getting the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	get(opts?: Omit<GetOptions, "name">): Promise<ActorHandle<AD>>;
+	get(opts?: Omit<GetOptions, "name">): ActorHandle<AD>;
 
 	/**
 	 * Creates a new actor with the name automatically injected from the property accessor.
 	 *
 	 * @template A The actor class that this handle is connected to.
 	 * @param {Omit<CreateOptions, 'name'>} opts - Options for creating the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	create(opts: Omit<CreateOptions, "name">): Promise<ActorHandle<AD>>;
+	create(opts: Omit<CreateOptions, "name">): ActorHandle<AD>;
 
 	/**
 	 * Gets an actor by its ID.
@@ -57,9 +57,9 @@ export interface ActorAccessor<AD extends AnyActorDefinition> {
 	 * @template A The actor class that this handle is connected to.
 	 * @param {string} actorId - The ID of the actor.
 	 * @param {GetWithIdOptions} [opts] - Options for getting the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	getWithId(actorId: string, opts?: GetWithIdOptions): Promise<ActorHandle<AD>>;
+	getWithId(actorId: string, opts?: GetWithIdOptions): ActorHandle<AD>;
 }
 
 /**
@@ -147,19 +147,19 @@ export interface ActorAccessor<AD extends AnyActorDefinition> {
 	 * The actor name is automatically injected from the property accessor.
 	 *
 	 * @template A The actor class that this handle is connected to.
-	 * @param {Omit<GetOptions, 'name'>} [opts] - Options for getting the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @param {GetOptions} [opts] - Options for getting the actor.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	get(opts?: GetOptions): Promise<ActorHandle<AD>>;
+	get(opts?: GetOptions): ActorHandle<AD>;
 
 	/**
 	 * Creates a new actor with the name automatically injected from the property accessor.
 	 *
 	 * @template A The actor class that this handle is connected to.
-	 * @param {Omit<CreateOptions, 'name'>} opts - Options for creating the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @param {CreateOptions} opts - Options for creating the actor.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	create(opts: CreateOptions): Promise<ActorHandle<AD>>;
+	create(opts: CreateOptions): ActorHandle<AD>;
 
 	/**
 	 * Gets an actor by its ID.
@@ -167,9 +167,9 @@ export interface ActorAccessor<AD extends AnyActorDefinition> {
 	 * @template A The actor class that this handle is connected to.
 	 * @param {string} actorId - The ID of the actor.
 	 * @param {GetWithIdOptions} [opts] - Options for getting the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	getWithId(actorId: string, opts?: GetWithIdOptions): Promise<ActorHandle<AD>>;
+	getWithId(actorId: string, opts?: GetWithIdOptions): ActorHandle<AD>;
 }
 
 /**
@@ -233,34 +233,39 @@ export class ClientRaw {
 	 * @template AD The actor class that this handle is connected to.
 	 * @param {string} actorId - The ID of the actor.
 	 * @param {GetWithIdOptions} [opts] - Options for getting the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 */
-	async getWithId<AD extends AnyActorDefinition>(
+	getWithId<AD extends AnyActorDefinition>(
 		actorId: string,
 		opts?: GetWithIdOptions,
-	): Promise<ActorHandle<AD>> {
+	): ActorHandle<AD> {
 		logger().debug("get actor with id ", {
 			actorId,
 			params: opts?.params,
 		});
 
-		const resJson = await this.#sendManagerRequest<
-			ActorsRequest,
-			ActorsResponse
-		>("POST", "/manager/actors", {
-			query: {
-				getForId: {
-					actorId,
-				},
-			},
-		});
-
-		const handle = await this.#createHandle(
-			resJson.endpoint,
-			opts?.params,
-			resJson.supportedTransports,
+		// Create a proxy immediately, without waiting for connection
+		const handle = this.#createLazyHandle<AD>(
+			async () => {
+				const resJson = await this.#sendManagerRequest<
+					ActorsRequest,
+					ActorsResponse
+				>("POST", "/manager/actors", {
+					query: {
+						getForId: {
+							actorId,
+						},
+					},
+				});
+				return {
+					endpoint: resJson.endpoint,
+					params: opts?.params,
+					supportedTransports: resJson.supportedTransports,
+				};
+			}
 		);
-		return this.#createProxy(handle) as ActorHandle<AD>;
+
+		return handle;
 	}
 
 	/**
@@ -268,12 +273,15 @@ export class ClientRaw {
 	 *
 	 * @example
 	 * ```
-	 * const room = await client.get<ChatRoom>({
+	 * const room = client.get<ChatRoom>({
 	 *   name: 'chat_room',
 	 *   // Get or create the actor for the channel `random`
 	 *   channel: 'random'
 	 * });
 	 *
+	 * // Explicitly connect if needed (or call methods directly and they'll throw if connection fails)
+	 * await room.connect();
+	 * 
 	 * // This actor will have the tags: { name: 'chat_room', channel: 'random' }
 	 * await room.sendMessage('Hello, world!');
 	 * ```
@@ -281,13 +289,13 @@ export class ClientRaw {
 	 * @template AD The actor class that this handle is connected to.
 	 * @param {ActorTags} tags - The tags to identify the actor.
 	 * @param {GetOptions} [opts] - Options for getting the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 * @see {@link https://rivet.gg/docs/manage#client.get}
 	 */
-	async get<AD extends AnyActorDefinition>(
+	get<AD extends AnyActorDefinition>(
 		name: string,
 		opts?: GetOptions,
-	): Promise<ActorHandle<AD>> {
+	): ActorHandle<AD> {
 		let tags = opts?.tags ?? {};
 
 		// Build create config
@@ -308,25 +316,30 @@ export class ClientRaw {
 			create,
 		});
 
-		const resJson = await this.#sendManagerRequest<
-			ActorsRequest,
-			ActorsResponse
-		>("POST", "/manager/actors", {
-			query: {
-				getOrCreateForTags: {
-					name,
-					tags,
-					create,
-				},
-			},
-		});
-
-		const handle = await this.#createHandle(
-			resJson.endpoint,
-			opts?.params,
-			resJson.supportedTransports,
+		// Create a proxy immediately, without waiting for connection
+		const handle = this.#createLazyHandle<AD>(
+			async () => {
+				const resJson = await this.#sendManagerRequest<
+					ActorsRequest,
+					ActorsResponse
+				>("POST", "/manager/actors", {
+					query: {
+						getOrCreateForTags: {
+							name,
+							tags,
+							create,
+						},
+					},
+				});
+				return {
+					endpoint: resJson.endpoint,
+					params: opts?.params,
+					supportedTransports: resJson.supportedTransports,
+				};
+			}
 		);
-		return this.#createProxy(handle) as ActorHandle<AD>;
+
+		return handle;
 	}
 
 	/**
@@ -335,7 +348,7 @@ export class ClientRaw {
 	 * @example
 	 * ```
 	 * // Create a new document actor
-	 * const doc = await client.create<MyDocument>({
+	 * const doc = client.create<MyDocument>({
 	 *   create: {
 	 *     tags: {
 	 *       name: 'my_document',
@@ -343,27 +356,27 @@ export class ClientRaw {
 	 *     }
 	 *   }
 	 * });
+	 * 
+	 * // Explicitly connect if needed
+	 * await doc.connect();
 	 *
 	 * await doc.doSomething();
 	 * ```
 	 *
 	 * @template AD The actor class that this handle is connected to.
 	 * @param {CreateOptions} opts - Options for creating the actor.
-	 * @returns {Promise<ActorHandle<AD>>} - A promise resolving to the actor handle.
+	 * @returns {ActorHandle<AD>} - The actor handle, which will connect in the background.
 	 * @see {@link https://rivet.gg/docs/manage#client.create}
 	 */
-	async create<AD extends AnyActorDefinition>(
+	create<AD extends AnyActorDefinition>(
 		name: string,
 		opts: CreateOptions,
-	): Promise<ActorHandle<AD>> {
+	): ActorHandle<AD> {
 		// Build create config
 		const create = {
 			name,
 			...opts.create,
 		};
-
-		// Default to the chosen region
-		//if (!create.region) create.region = (await this.#regionPromise)?.id;
 
 		logger().debug("create actor", {
 			name,
@@ -371,21 +384,26 @@ export class ClientRaw {
 			create,
 		});
 
-		const resJson = await this.#sendManagerRequest<
-			ActorsRequest,
-			ActorsResponse
-		>("POST", "/manager/actors", {
-			query: {
-				create,
-			},
-		});
-
-		const handle = await this.#createHandle(
-			resJson.endpoint,
-			opts?.params,
-			resJson.supportedTransports,
+		// Create a proxy immediately, without waiting for connection
+		const handle = this.#createLazyHandle<AD>(
+			async () => {
+				const resJson = await this.#sendManagerRequest<
+					ActorsRequest,
+					ActorsResponse
+				>("POST", "/manager/actors", {
+					query: {
+						create,
+					},
+				});
+				return {
+					endpoint: resJson.endpoint,
+					params: opts?.params,
+					supportedTransports: resJson.supportedTransports,
+				};
+			}
 		);
-		return this.#createProxy(handle) as ActorHandle<AD>;
+
+		return handle;
 	}
 
 	async #createHandle(
@@ -407,6 +425,103 @@ export class ClientRaw {
 		this[ACTOR_HANDLES_SYMBOL].add(handle);
 		handle[CONNECT_SYMBOL]();
 		return handle;
+	}
+
+	/**
+	 * Creates a lazy handle that will create a real handle when needed.
+	 * This is used to implement non-async get/create/getWithId methods.
+	 * 
+	 * @template AD The actor definition type
+	 * @param {() => Promise<{endpoint: string, params: unknown, supportedTransports: Transport[]}>} fetchActorInfo Function to fetch actor info when needed
+	 * @returns {ActorHandle<AD>} A handle that will lazily connect when used
+	 */
+	#createLazyHandle<AD extends AnyActorDefinition>(
+		fetchActorInfo: () => Promise<{
+			endpoint: string;
+			params: unknown;
+			supportedTransports: Transport[];
+		}>,
+	): ActorHandle<AD> {
+		// Set up the lazy connection with default values
+		let realHandle: ActorHandleRaw | undefined;
+		let fetchPromise: Promise<ActorHandleRaw> | undefined;
+		
+		// Function to get or create the real handle
+		const getOrCreateRealHandle = async (): Promise<ActorHandleRaw> => {
+			// Return existing handle if we already have one
+			if (realHandle) return realHandle;
+			
+			// Return existing promise if we're already fetching
+			if (fetchPromise) return fetchPromise;
+			
+			// Create a new promise to fetch the actor info
+			fetchPromise = (async () => {
+				try {
+					const imports = await this.#dynamicImportsPromise;
+					const actorInfo = await fetchActorInfo();
+					
+					// Create the real handle
+					realHandle = new ActorHandleRaw(
+						this,
+						actorInfo.endpoint,
+						actorInfo.params,
+						this.#encodingKind,
+						this.#supportedTransports,
+						actorInfo.supportedTransports,
+						imports,
+					);
+					
+					// Register and connect the handle
+					this[ACTOR_HANDLES_SYMBOL].add(realHandle);
+					realHandle[CONNECT_SYMBOL]();
+					
+					return realHandle;
+				} catch (error) {
+					// Clear the promise so we can try again
+					fetchPromise = undefined;
+					throw error;
+				}
+			})();
+			
+			return fetchPromise;
+		};
+		
+		// Create a proxy that appears to be an ActorHandle but lazily instantiates the real one
+		const lazyHandle = new Proxy({} as ActorHandleRaw, {
+			get(target, prop, receiver) {
+				// Special case for connect() method
+				if (prop === 'connect') {
+					return async () => {
+						const handle = await getOrCreateRealHandle();
+						return handle.connect();
+					};
+				}
+				
+				// For Symbol.toStringTag and other built-in symbols
+				if (typeof prop === 'symbol') {
+					// Handle the case where the real handle exists
+					if (realHandle) {
+						return Reflect.get(realHandle, prop, receiver);
+					}
+					// Otherwise return something sensible for the symbol
+					return undefined;
+				}
+				
+				// For normal properties and methods
+				return async (...args: unknown[]) => {
+					const handle = await getOrCreateRealHandle();
+					const method = Reflect.get(handle, prop, receiver);
+					
+					if (typeof method === 'function') {
+						return method.apply(handle, args);
+					} else {
+						return method;
+					}
+				};
+			},
+		});
+		
+		return this.#createProxy(lazyHandle) as ActorHandle<AD>;
 	}
 
 	#createProxy<AD extends AnyActorDefinition>(
@@ -643,12 +758,12 @@ export function createClient<A extends ActorCoreApp<any>>(
 				return {
 					get: (
 						opts?: GetOptions,
-					): Promise<ActorHandle<ExtractActorsFromApp<A>[typeof prop]>> => {
+					): ActorHandle<ExtractActorsFromApp<A>[typeof prop]> => {
 						return target.get<ExtractActorsFromApp<A>[typeof prop]>(prop, opts);
 					},
 					create: (
 						opts: CreateOptions,
-					): Promise<ActorHandle<ExtractActorsFromApp<A>[typeof prop]>> => {
+					): ActorHandle<ExtractActorsFromApp<A>[typeof prop]> => {
 						return target.create<ExtractActorsFromApp<A>[typeof prop]>(
 							prop,
 							opts,
@@ -657,7 +772,7 @@ export function createClient<A extends ActorCoreApp<any>>(
 					getWithId: (
 						actorId: string,
 						opts?: GetWithIdOptions,
-					): Promise<ActorHandle<ExtractActorsFromApp<A>[typeof prop]>> => {
+					): ActorHandle<ExtractActorsFromApp<A>[typeof prop]> => {
 						return target.getWithId<ExtractActorsFromApp<A>[typeof prop]>(
 							actorId,
 							opts,

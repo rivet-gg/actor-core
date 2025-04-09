@@ -76,6 +76,12 @@ export class ActorHandleRaw {
 	/** Promise used to indicate the socket has connected successfully. This will be rejected if the connection fails. */
 	#onOpenPromise?: PromiseWithResolvers<undefined>;
 
+	/** Promise that resolves when the actor is connected */
+	#connectPromise?: Promise<void>;
+
+	/** Error that occurred during connection, if any */
+	#connectError?: Error;
+
 	// TODO: ws message queue
 
 	/**
@@ -108,6 +114,7 @@ export class ActorHandleRaw {
 	 * @param {string} name - The name of the RPC function to call.
 	 * @param {...Args} args - The arguments to pass to the RPC function.
 	 * @returns {Promise<Response>} - A promise that resolves to the response of the RPC function.
+	 * @throws {Error} - If the actor is not connected and connect() has not been called or failed.
 	 */
 	async action<Args extends Array<unknown> = unknown[], Response = unknown>(
 		name: string,
@@ -115,7 +122,32 @@ export class ActorHandleRaw {
 	): Promise<Response> {
 		logger().debug("action", { name, args });
 
-		// TODO: Add to queue if socket is not open
+		// Check if we have a connection error
+		if (this.#connectError) {
+			throw new errors.ActionError("ACTOR_NOT_AVAILABLE", "Actor is not available", {
+				cause: this.#connectError,
+			});
+		}
+
+		// Wait for connection to complete if connect() was called
+		if (this.#connectPromise) {
+			try {
+				await this.#connectPromise;
+			} catch (error) {
+				this.#connectError = error instanceof Error ? error : new Error(String(error));
+				throw new errors.ActionError("ACTOR_NOT_AVAILABLE", "Actor is not available", {
+					cause: this.#connectError,
+				});
+			}
+		}
+
+		// Ensure we have a transport
+		if (!this.#transport) {
+			throw new errors.ActionError(
+				"ACTOR_NOT_CONNECTED",
+				"Actor is not connected, call connect() first",
+			);
+		}
 
 		const rpcId = this.#rpcIdCounter;
 		this.#rpcIdCounter += 1;
@@ -133,8 +165,6 @@ export class ActorHandleRaw {
 				},
 			},
 		} satisfies wsToServer.ToServer);
-
-		// TODO: Throw error if disconnect is called
 
 		const { i: responseId, o: output } = await promise;
 		if (responseId !== rpcId)
@@ -165,17 +195,92 @@ export class ActorHandleRaw {
 
 	/**
 	 * Do not call this directly.
-enc
-	 * Establishes a connection to the server using the specified endpoint & encoding & driver.
+	 *
+	 * Lazily establishes a connection to the server in the background.
 	 *
 	 * @protected
 	 */
 	public [CONNECT_SYMBOL]() {
+		// Start connecting in the background
 		this.#connectWithRetry();
+	}
+
+	/**
+	 * Explicitly connect to the actor.
+	 * 
+	 * @returns {Promise<void>} - A promise that resolves when the connection is established.
+	 * @throws {Error} - If the connection fails.
+	 */
+	public async connect(): Promise<void> {
+		// Return existing promise if we're already connecting
+		if (this.#connectPromise) {
+			return this.#connectPromise;
+		}
+
+		// Start connecting if not already
+		if (!this.#connecting) {
+			this.#connectWithRetry();
+		}
+
+		// Create a promise that will resolve when the connection is established
+		const { promise, resolve, reject } = Promise.withResolvers<void>();
+		this.#connectPromise = promise;
+
+		// Check if we have a transport already (rare but possible)
+		if (this.#transport) {
+			resolve();
+			return promise;
+		}
+
+		// Setup an event listener to wait for the connection
+		const cleanup = () => {
+			this.#abortController.signal.removeEventListener("abort", onAbort);
+		};
+
+		const onAbort = () => {
+			cleanup();
+			reject(new Error("Connection aborted"));
+		};
+
+		// Listen for abort events
+		this.#abortController.signal.addEventListener("abort", onAbort);
+
+		// Start a timer to check for connection
+		const checkConnection = () => {
+			// If disposed, reject
+			if (this.#disposed) {
+				cleanup();
+				reject(new Error("Handle disposed"));
+				return;
+			}
+
+			// If connected, resolve
+			if (this.#transport) {
+				cleanup();
+				resolve();
+				return;
+			}
+
+			// If there was an error connecting, reject
+			if (this.#connectError) {
+				cleanup();
+				reject(this.#connectError);
+				return;
+			}
+
+			// Otherwise, continue checking
+			setTimeout(checkConnection, 100);
+		};
+
+		checkConnection();
+		return promise;
 	}
 
 	async #connectWithRetry() {
 		this.#connecting = true;
+
+		// Reset connect error
+		this.#connectError = undefined;
 
 		// Attempt to reconnect indefinitely
 		try {
@@ -185,6 +290,9 @@ enc
 				maxTimeout: 30_000,
 
 				onFailedAttempt: (error) => {
+					// Store the latest error
+					this.#connectError = error;
+					
 					logger().warn("failed to reconnect", {
 						attempt: error.attemptNumber,
 						error: stringifyError(error),
@@ -194,14 +302,19 @@ enc
 				// Cancel retry if aborted
 				signal: this.#abortController.signal,
 			});
+
+			// We successfully connected, clear any previous error
+			this.#connectError = undefined;
 		} catch (err) {
 			if ((err as Error).name === "AbortError") {
 				// Ignore abortions
 				logger().info("connection retry aborted");
-				return;
 			} else {
-				// Unknown error
-				throw err;
+				// Store the error
+				this.#connectError = err instanceof Error ? err : new Error(String(err));
+				logger().error("connection failed permanently", {
+					error: stringifyError(this.#connectError),
+				});
 			}
 		}
 
