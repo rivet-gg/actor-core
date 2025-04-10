@@ -1,13 +1,14 @@
 import * as path from "node:path";
 import { Argument, Command, Option } from "commander";
 import { workflow } from "../workflow";
-
-import { validateConfigTask } from "../workflows/validate-config";
 import chokidar from "chokidar";
 import { Text } from "ink";
 import open from "open";
 import { withResolvers } from "../utils/mod";
 import { spawn } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
+import dedent from "dedent";
+import * as pkg from "../../package.json";
 
 export const dev = new Command()
 	.name("dev")
@@ -30,6 +31,11 @@ export const dev = new Command()
 			true,
 		),
 	)
+	.addOption(
+		new Option("--runtime [runtime]", "Specify which platform to use").choices([
+			"cloudflare",
+		]),
+	)
 	.option("--no-open", "Do not open the browser with ActorCore Studio")
 	.action(action);
 
@@ -39,9 +45,41 @@ export async function action(
 		root: string;
 		port?: string;
 		open: boolean;
+		runtime?: string;
 	},
 ) {
 	const cwd = path.join(process.cwd(), opts.root);
+
+	if (opts.runtime === "cloudflare") {
+		console.log("");
+		console.log(` 🎭 ActorCore v${pkg.version}`);
+		console.log(" Handing over to Wrangler... 👋🏻");
+		console.log("");
+		await mkdir(path.join(cwd, ".actor-core"), { recursive: true });
+
+		const entry = path.join(cwd, ".actor-core", "cf-entry.js");
+		await writeFile(
+			entry,
+			dedent`
+			import { createHandler } from "@actor-core/cloudflare-workers";
+			import { app } from "${path.join(cwd, appPath)}";
+			app.config.inspector = {
+				enabled: true,
+			};
+			app.config.cors = {
+				origin: (origin) => origin,
+			};
+			const { handler, ActorHandler } = createHandler(app);
+			export { handler as default, ActorHandler };
+		`,
+		);
+
+		spawn("npx", ["wrangler@latest", "dev", "--port", "6240", entry], {
+			cwd,
+			stdio: "inherit",
+		});
+		return;
+	}
 
 	await workflow(
 		`Run locally your ActorCore project (${appPath})`,
@@ -60,21 +98,22 @@ export async function action(
 				ignored: (path) => path.includes("node_modules"),
 			});
 
-			function createServer() {
-				return spawn(
-					process.execPath,
-					[
-						path.join(
-							path.dirname(require.resolve("@actor-core/cli")),
-							"server-entry.js",
-						),
-					],
-					{
-						env: { ...process.env, PORT: opts.port, APP_PATH: appPath },
-						cwd,
-						stdio: "overlapped",
-					},
+			async function createServer() {
+				const serverEntry = path.join(
+					path.dirname(require.resolve("@actor-core/cli")),
+					"server-entry.js",
 				);
+
+				return spawn(process.execPath, [serverEntry], {
+					env: {
+						...process.env,
+						PORT: opts.port,
+						APP_PATH: appPath,
+						RUNTIME: opts.runtime,
+					},
+					cwd,
+					stdio: "overlapped",
+				});
 			}
 
 			let server: ReturnType<typeof spawn> | undefined = undefined;
@@ -103,11 +142,10 @@ export async function action(
 			createLock();
 
 			while (true) {
-				yield* validateConfigTask(ctx, cwd, appPath);
 				yield* ctx.task(
 					"Server started. Watching for changes",
 					async function* (ctx) {
-						server = createServer();
+						server = await createServer();
 						if (server?.stdout) {
 							yield ctx.attach(server.stdout, server.stderr);
 						}
