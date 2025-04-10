@@ -41,4 +41,12 @@ export class FileSystemActorDriver implements ActorDriver {
             actor.onAlarm();
         }, delay);
     }
+
+    async getAlarm(actor: AnyActorInstance): Promise<number | null> {
+        throw new Error("Method not implemented.");
+    }
+
+    async deleteAlarm(actor: AnyActorInstance): Promise<void> {
+        throw new Error("Method not implemented.");
+    }
 }
