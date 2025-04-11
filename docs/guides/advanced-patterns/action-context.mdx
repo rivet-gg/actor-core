@@ -1,0 +1,1352 @@
+---
+title: Action Context Access Pattern
+description: Learn how to effectively work with the action context object in ActorCore
+---
+
+# Action Context Access Pattern
+
+The action context object (`c` parameter) in ActorCore is a powerful interface that provides access to all the capabilities of an actor. Understanding how to effectively use the context object is essential for building robust actor-based applications. This guide covers advanced patterns for working with the action context.
+
+## Understanding the Context Object
+
+```typescript
+import { actor } from "actor-core";
+
+const contextExplorer = actor({
+  state: {
+    explorations: []
+  },
+  
+  actions: {
+    // Explore the available properties and methods on the context object
+    exploreContext: (c) => {
+      const exploration = {
+        timestamp: Date.now(),
+        contextProperties: {
+          // State access
+          hasState: !!c.state,
+          stateType: typeof c.state,
+          
+          // Variables access
+          hasVars: !!c.vars,
+          varsType: typeof c.vars,
+          
+          // Connection access
+          hasConn: !!c.conn,
+          connType: typeof c.conn,
+          
+          // Client access for actor-to-actor communication
+          hasClient: !!c.client,
+          clientType: typeof c.client,
+          
+          // Logging
+          hasLog: !!c.log,
+          logType: typeof c.log,
+          
+          // Broadcasting
+          hasBroadcast: !!c.broadcast,
+          broadcastType: typeof c.broadcast,
+          
+          // Scheduling
+          hasSchedule: !!c.schedule,
+          scheduleType: typeof c.schedule,
+          
+          // Actor metadata
+          hasId: !!c.id,
+          idType: typeof c.id,
+          
+          hasName: !!c.name,
+          nameType: typeof c.name,
+          
+          hasTags: !!c.tags,
+          tagsType: typeof c.tags,
+          
+          hasRegion: !!c.region,
+          regionType: typeof c.region,
+          
+          // All connections
+          hasConns: !!c.conns,
+          connsType: typeof c.conns,
+          
+          // State saving
+          hasSaveState: !!c.saveState,
+          saveStateType: typeof c.saveState
+        }
+      };
+      
+      c.state.explorations.push(exploration);
+      return exploration;
+    }
+  }
+});
+```
+
+## Accessing State
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const productCatalog = actor({
+  state: {
+    products: {} as Record<string, {
+      id: string,
+      name: string,
+      price: number,
+      inventory: number,
+      category: string,
+      lastUpdated: number
+    }>,
+    categories: {} as Record<string, {
+      id: string,
+      name: string,
+      description: string
+    }>
+  },
+  
+  actions: {
+    // Pattern 1: Direct state access
+    addProduct: (c, name: string, price: number, inventory: number, categoryId: string) => {
+      // Validate inputs
+      if (price <= 0) throw new UserError("Price must be positive");
+      if (inventory < 0) throw new UserError("Inventory cannot be negative");
+      
+      // Validate category exists
+      if (!c.state.categories[categoryId]) {
+        throw new UserError(`Category ${categoryId} does not exist`);
+      }
+      
+      const productId = crypto.randomUUID();
+      
+      // Update state directly
+      c.state.products[productId] = {
+        id: productId,
+        name,
+        price,
+        inventory,
+        category: categoryId,
+        lastUpdated: Date.now()
+      };
+      
+      return { productId };
+    },
+    
+    // Pattern 2: Destructuring for cleaner code
+    updateProduct: (c, productId: string, updates: Partial<{
+      name: string,
+      price: number,
+      inventory: number,
+      category: string
+    }>) => {
+      // Check product exists
+      if (!c.state.products[productId]) {
+        throw new UserError(`Product ${productId} not found`);
+      }
+      
+      // Destructure for cleaner code
+      const { products, categories } = c.state;
+      const product = products[productId];
+      
+      // Validate updates
+      if (updates.price !== undefined && updates.price <= 0) {
+        throw new UserError("Price must be positive");
+      }
+      
+      if (updates.inventory !== undefined && updates.inventory < 0) {
+        throw new UserError("Inventory cannot be negative");
+      }
+      
+      if (updates.category && !categories[updates.category]) {
+        throw new UserError(`Category ${updates.category} does not exist`);
+      }
+      
+      // Apply updates
+      Object.assign(product, updates, {
+        lastUpdated: Date.now()
+      });
+      
+      // Broadcast change
+      c.broadcast("productUpdated", {
+        productId,
+        updatedFields: Object.keys(updates),
+        timestamp: product.lastUpdated
+      });
+      
+      return { success: true };
+    },
+    
+    // Pattern 3: Working with arrays and complex objects
+    getProductsByCategory: (c, categoryId: string) => {
+      // Validate category exists
+      if (!c.state.categories[categoryId]) {
+        throw new UserError(`Category ${categoryId} does not exist`);
+      }
+      
+      // Filter products
+      const categoryProducts = Object.values(c.state.products)
+        .filter(product => product.category === categoryId);
+      
+      // Get category details
+      const category = c.state.categories[categoryId];
+      
+      return {
+        category: {
+          id: category.id,
+          name: category.name,
+          description: category.description
+        },
+        products: categoryProducts.map(product => ({
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          inventory: product.inventory
+        })),
+        totalProducts: categoryProducts.length,
+        totalInventory: categoryProducts.reduce((sum, p) => sum + p.inventory, 0)
+      };
+    }
+  }
+});
+```
+
+## Working with Actor Variables (Ephemeral State)
+
+```typescript
+import { actor } from "actor-core";
+
+const analyticsTracker = actor({
+  state: {
+    dailyStats: {} as Record<string, {
+      date: string,
+      pageViews: number,
+      uniqueVisitors: number,
+      averageSessionDuration: number
+    }>
+  },
+  
+  // Non-persisted variables are perfect for runtime state
+  createVars: () => ({
+    // Track currently active sessions
+    activeSessions: new Map<string, {
+      userId: string,
+      startTime: number,
+      lastActive: number,
+      pages: Set<string>
+    }>(),
+    
+    // Cached computations
+    cachedStats: null as null | {
+      date: string,
+      stats: any,
+      computedAt: number
+    },
+    
+    // Rate limiting
+    userRequestCounts: new Map<string, {
+      count: number,
+      resetAt: number
+    }>(),
+    
+    // Internal state for processing
+    isAggregating: false,
+    lastAggregation: 0
+  }),
+  
+  onStart: (c) => {
+    // Schedule daily aggregation at midnight
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    c.schedule.at(midnight.getTime(), "aggregateDailyStats");
+  },
+  
+  actions: {
+    // Track user activity
+    trackActivity: (c, userId: string, page: string) => {
+      const now = Date.now();
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Rate limiting using vars
+      if (!rateLimitCheck(c, userId, 100)) {
+        return { limited: true };
+      }
+      
+      // Initialize today's stats if needed
+      if (!c.state.dailyStats[today]) {
+        c.state.dailyStats[today] = {
+          date: today,
+          pageViews: 0,
+          uniqueVisitors: 0,
+          averageSessionDuration: 0
+        };
+      }
+      
+      // Update page views in state
+      c.state.dailyStats[today].pageViews++;
+      
+      // Session tracking in vars (non-persisted)
+      if (!c.vars.activeSessions.has(userId)) {
+        // New session
+        c.vars.activeSessions.set(userId, {
+          userId,
+          startTime: now,
+          lastActive: now,
+          pages: new Set([page])
+        });
+        
+        // Increment unique visitors in state
+        c.state.dailyStats[today].uniqueVisitors++;
+      } else {
+        // Update existing session
+        const session = c.vars.activeSessions.get(userId)!;
+        session.lastActive = now;
+        session.pages.add(page);
+      }
+      
+      // Reset cache since data changed
+      c.vars.cachedStats = null;
+      
+      return { tracked: true };
+    },
+    
+    // End user session and record duration
+    endSession: (c, userId: string) => {
+      const now = Date.now();
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Check if user has an active session
+      if (!c.vars.activeSessions.has(userId)) {
+        return { success: false, reason: "No active session" };
+      }
+      
+      // Get session data
+      const session = c.vars.activeSessions.get(userId)!;
+      const sessionDuration = (now - session.startTime) / 1000; // in seconds
+      
+      // Update average session duration
+      const dailyStats = c.state.dailyStats[today];
+      if (dailyStats) {
+        const currentTotalDuration = dailyStats.averageSessionDuration * dailyStats.uniqueVisitors;
+        const newTotalDuration = currentTotalDuration + sessionDuration;
+        dailyStats.averageSessionDuration = newTotalDuration / dailyStats.uniqueVisitors;
+      }
+      
+      // Remove session
+      c.vars.activeSessions.delete(userId);
+      
+      // Reset cache
+      c.vars.cachedStats = null;
+      
+      return {
+        success: true,
+        duration: sessionDuration,
+        pagesVisited: Array.from(session.pages)
+      };
+    },
+    
+    // Get cached or computed analytics
+    getAnalytics: (c, date?: string) => {
+      const targetDate = date || new Date().toISOString().split('T')[0];
+      
+      // Check cache first
+      if (
+        c.vars.cachedStats && 
+        c.vars.cachedStats.date === targetDate && 
+        Date.now() - c.vars.cachedStats.computedAt < 5 * 60 * 1000 // Cache valid for 5 minutes
+      ) {
+        return {
+          ...c.vars.cachedStats.stats,
+          fromCache: true
+        };
+      }
+      
+      // Compute stats
+      const stats = c.state.dailyStats[targetDate] || {
+        date: targetDate,
+        pageViews: 0,
+        uniqueVisitors: 0,
+        averageSessionDuration: 0
+      };
+      
+      // Add active sessions count
+      const activeSessionsCount = c.vars.activeSessions.size;
+      
+      // Compute enhanced analytics
+      const enhancedStats = {
+        ...stats,
+        activeSessionsCount,
+        computedAt: Date.now(),
+        fromCache: false
+      };
+      
+      // Cache for future requests
+      c.vars.cachedStats = {
+        date: targetDate,
+        stats: enhancedStats,
+        computedAt: Date.now()
+      };
+      
+      return enhancedStats;
+    },
+    
+    // Aggregate daily stats and clean up old sessions
+    aggregateDailyStats: (c) => {
+      // Set processing flag to avoid concurrent executions
+      if (c.vars.isAggregating) {
+        return { status: "already_running" };
+      }
+      
+      c.vars.isAggregating = true;
+      const now = Date.now();
+      
+      try {
+        // Clean up stale sessions (inactive for 30+ minutes)
+        const staleCutoff = now - 30 * 60 * 1000;
+        let closedSessions = 0;
+        
+        for (const [userId, session] of c.vars.activeSessions.entries()) {
+          if (session.lastActive < staleCutoff) {
+            // End the stale session
+            c.endSession(userId);
+            closedSessions++;
+          }
+        }
+        
+        // Schedule next run
+        const tomorrow = new Date();
+        tomorrow.setHours(24, 0, 0, 0);
+        c.schedule.at(tomorrow.getTime(), "aggregateDailyStats");
+        
+        // Reset rate limiting counters
+        c.vars.userRequestCounts.clear();
+        
+        c.vars.lastAggregation = now;
+        c.vars.isAggregating = false;
+        
+        return {
+          success: true,
+          staleSessions: closedSessions,
+          nextRun: tomorrow.getTime()
+        };
+      } catch (error) {
+        c.vars.isAggregating = false;
+        throw error;
+      }
+    }
+  }
+});
+
+// Helper for rate limiting
+function rateLimitCheck(c: any, userId: string, limit: number): boolean {
+  const now = Date.now();
+  
+  if (!c.vars.userRequestCounts.has(userId)) {
+    c.vars.userRequestCounts.set(userId, {
+      count: 1,
+      resetAt: now + 60 * 60 * 1000 // 1 hour window
+    });
+    return true;
+  }
+  
+  const userData = c.vars.userRequestCounts.get(userId)!;
+  
+  // Reset counter if expired
+  if (now > userData.resetAt) {
+    userData.count = 1;
+    userData.resetAt = now + 60 * 60 * 1000;
+    return true;
+  }
+  
+  // Check limit
+  if (userData.count >= limit) {
+    return false;
+  }
+  
+  // Increment counter
+  userData.count++;
+  return true;
+}
+```
+
+## Broadcasting with Context
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const chatChannel = actor({
+  state: {
+    name: "",
+    messages: [] as Array<{
+      id: string,
+      userId: string,
+      username: string,
+      text: string,
+      timestamp: number
+    }>
+  },
+  
+  createConnState: (c, { params }) => {
+    // Each connection has its own state
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now(),
+      isTyping: false,
+      lastActivity: Date.now()
+    };
+  },
+  
+  actions: {
+    // Set channel name
+    setName: (c, name: string) => {
+      if (!name.trim()) {
+        throw new UserError("Channel name cannot be empty");
+      }
+      
+      const oldName = c.state.name;
+      c.state.name = name;
+      
+      // Pattern 1: Basic broadcast to all connections
+      c.broadcast("channelRenamed", {
+        oldName,
+        newName: name,
+        updatedBy: c.conn.state.username
+      });
+      
+      return { success: true };
+    },
+    
+    // Send a message
+    sendMessage: (c, text: string) => {
+      if (!text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      // Create message record
+      const message = {
+        id: crypto.randomUUID(),
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: Date.now()
+      };
+      
+      // Add to messages
+      c.state.messages.push(message);
+      if (c.state.messages.length > 100) {
+        c.state.messages.shift(); // Keep only latest 100 messages
+      }
+      
+      // Update sender's activity timestamp
+      c.conn.state.lastActivity = message.timestamp;
+      c.conn.state.isTyping = false;
+      
+      // Pattern 2: Broadcast to all except sender
+      // First, find all other connections
+      for (const [connId, conn] of c.conns.entries()) {
+        // Skip the sender
+        if (connId === c.conn.id) continue;
+        
+        // Send to this connection
+        conn.send("newMessage", message);
+      }
+      
+      return { messageId: message.id };
+    },
+    
+    // Mark user as typing
+    setTyping: (c, isTyping: boolean) => {
+      // Update connection state
+      c.conn.state.isTyping = isTyping;
+      c.conn.state.lastActivity = Date.now();
+      
+      // Pattern 3: Broadcast user-specific information
+      c.broadcast("userTyping", {
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        isTyping
+      });
+      
+      return { success: true };
+    },
+    
+    // Send a direct message to specific users
+    sendDirectMessage: (c, userIds: string[], text: string) => {
+      if (!text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      if (!userIds.length) {
+        throw new UserError("Must specify at least one recipient");
+      }
+      
+      const message = {
+        id: crypto.randomUUID(),
+        senderId: c.conn.state.userId,
+        senderName: c.conn.state.username,
+        text,
+        timestamp: Date.now(),
+        direct: true
+      };
+      
+      // Pattern 4: Send to specific connections by userId
+      let sentCount = 0;
+      
+      for (const [_, conn] of c.conns.entries()) {
+        const connUserId = conn.state.userId;
+        
+        // Send to specified recipients and also back to sender
+        if (userIds.includes(connUserId) || connUserId === c.conn.state.userId) {
+          conn.send("directMessage", message);
+          sentCount++;
+        }
+      }
+      
+      return {
+        messageId: message.id,
+        sentTo: sentCount,
+        recipientCount: userIds.length
+      };
+    },
+    
+    // Get currently active users
+    getActiveUsers: (c) => {
+      const now = Date.now();
+      const activeTimeout = 5 * 60 * 1000; // 5 minutes
+      
+      const activeUsers = [];
+      const typingUsers = [];
+      
+      // Iterate over all connections
+      for (const [_, conn] of c.conns.entries()) {
+        // Check if user is active
+        if (now - conn.state.lastActivity < activeTimeout) {
+          activeUsers.push({
+            userId: conn.state.userId,
+            username: conn.state.username,
+            joinedAt: conn.state.joinedAt,
+            lastActivity: conn.state.lastActivity
+          });
+          
+          // Check if user is typing
+          if (conn.state.isTyping) {
+            typingUsers.push({
+              userId: conn.state.userId,
+              username: conn.state.username
+            });
+          }
+        }
+      }
+      
+      return {
+        channelName: c.state.name,
+        activeUserCount: activeUsers.length,
+        activeUsers,
+        typingUsers
+      };
+    }
+  }
+});
+```
+
+## Working with Scheduling Using Context
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const reminderService = actor({
+  state: {
+    reminders: {} as Record<string, {
+      id: string,
+      userId: string,
+      title: string,
+      message: string,
+      scheduledAt: number,
+      repeating: boolean,
+      repeatInterval?: number,
+      tags: string[],
+      status: "pending" | "delivered" | "cancelled"
+    }>
+  },
+  
+  onStart: (c) => {
+    // Reschedule any pending reminders when actor starts or restarts
+    const now = Date.now();
+    
+    for (const reminder of Object.values(c.state.reminders)) {
+      if (reminder.status === "pending" && reminder.scheduledAt > now) {
+        // Schedule using reminder ID as action name for identification
+        c.schedule.at(reminder.scheduledAt, "deliverReminder", reminder.id);
+      }
+    }
+  },
+  
+  actions: {
+    // Create a one-time reminder
+    createReminder: (c, userId: string, title: string, message: string, scheduledAt: number, tags: string[] = []) => {
+      // Validate inputs
+      if (!title.trim()) throw new UserError("Title cannot be empty");
+      if (scheduledAt <= Date.now()) throw new UserError("Scheduled time must be in the future");
+      
+      // Create reminder
+      const reminderId = crypto.randomUUID();
+      const reminder = {
+        id: reminderId,
+        userId,
+        title,
+        message,
+        scheduledAt,
+        repeating: false,
+        tags,
+        status: "pending" as const
+      };
+      
+      // Save to state
+      c.state.reminders[reminderId] = reminder;
+      
+      // Pattern 1: Schedule using context at a specific time
+      c.schedule.at(scheduledAt, "deliverReminder", reminderId);
+      
+      return { reminderId };
+    },
+    
+    // Create a repeating reminder
+    createRepeatingReminder: (c, userId: string, title: string, message: string, firstAt: number, repeatInterval: number, tags: string[] = []) => {
+      // Validate inputs
+      if (!title.trim()) throw new UserError("Title cannot be empty");
+      if (firstAt <= Date.now()) throw new UserError("First reminder time must be in the future");
+      if (repeatInterval < 60 * 1000) throw new UserError("Repeat interval must be at least 1 minute");
+      
+      // Create reminder
+      const reminderId = crypto.randomUUID();
+      const reminder = {
+        id: reminderId,
+        userId,
+        title,
+        message,
+        scheduledAt: firstAt,
+        repeating: true,
+        repeatInterval,
+        tags,
+        status: "pending" as const
+      };
+      
+      // Save to state
+      c.state.reminders[reminderId] = reminder;
+      
+      // Pattern 2: Schedule first occurrence
+      c.schedule.at(firstAt, "deliverReminder", reminderId);
+      
+      return { reminderId };
+    },
+    
+    // Cancel a reminder
+    cancelReminder: (c, reminderId: string) => {
+      // Check if reminder exists
+      if (!c.state.reminders[reminderId]) {
+        throw new UserError(`Reminder ${reminderId} not found`);
+      }
+      
+      const reminder = c.state.reminders[reminderId];
+      
+      // Can only cancel pending reminders
+      if (reminder.status !== "pending") {
+        return {
+          success: false,
+          status: reminder.status
+        };
+      }
+      
+      // Update status
+      reminder.status = "cancelled";
+      
+      // Pattern 3: No need to unschedule - just let the scheduled action check status
+      
+      return { success: true };
+    },
+    
+    // Get user's pending reminders
+    getUserReminders: (c, userId: string, status: "pending" | "delivered" | "cancelled" | "all" = "all") => {
+      // Filter reminders by user and status
+      const userReminders = Object.values(c.state.reminders)
+        .filter(reminder => reminder.userId === userId)
+        .filter(reminder => status === "all" || reminder.status === status)
+        .sort((a, b) => a.scheduledAt - b.scheduledAt);
+      
+      return userReminders;
+    },
+    
+    // Deliver a reminder
+    deliverReminder: (c, reminderId: string) => {
+      // Check if reminder exists
+      if (!c.state.reminders[reminderId]) {
+        c.log.warn(`Reminder ${reminderId} not found for delivery`);
+        return { success: false, reason: "not_found" };
+      }
+      
+      const reminder = c.state.reminders[reminderId];
+      
+      // Only deliver pending reminders
+      if (reminder.status !== "pending") {
+        return {
+          success: false,
+          status: reminder.status
+        };
+      }
+      
+      // Mark as delivered
+      reminder.status = "delivered";
+      
+      // Broadcast reminder
+      c.broadcast("reminderDelivered", {
+        reminderId,
+        userId: reminder.userId,
+        title: reminder.title,
+        message: reminder.message,
+        deliveredAt: Date.now(),
+        scheduledAt: reminder.scheduledAt
+      });
+      
+      // If repeating, schedule next occurrence
+      if (reminder.repeating && reminder.repeatInterval) {
+        // Create new reminder with same details
+        const nextReminderId = crypto.randomUUID();
+        const nextScheduledAt = Date.now() + reminder.repeatInterval;
+        
+        const nextReminder = {
+          ...reminder,
+          id: nextReminderId,
+          scheduledAt: nextScheduledAt,
+          status: "pending" as const
+        };
+        
+        c.state.reminders[nextReminderId] = nextReminder;
+        
+        // Pattern 4: Schedule the next occurrence
+        c.schedule.at(nextScheduledAt, "deliverReminder", nextReminderId);
+        
+        return {
+          success: true,
+          repeated: true,
+          nextReminderId,
+          nextScheduledAt
+        };
+      }
+      
+      return { success: true };
+    },
+    
+    // Find reminders by tags
+    findRemindersByTags: (c, userId: string, tags: string[]) => {
+      if (!tags.length) {
+        return { reminders: [] };
+      }
+      
+      // Find reminders that match any of the provided tags
+      const matchingReminders = Object.values(c.state.reminders)
+        .filter(reminder => reminder.userId === userId)
+        .filter(reminder => {
+          // Check for tag overlap
+          return reminder.tags.some(tag => tags.includes(tag));
+        })
+        .sort((a, b) => a.scheduledAt - b.scheduledAt);
+      
+      return { reminders: matchingReminders };
+    }
+  }
+});
+```
+
+## Accessing Connection in Context
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const multiplayerGame = actor({
+  state: {
+    gameState: "waiting", // waiting, playing, finished
+    players: {} as Record<string, {
+      userId: string,
+      username: string,
+      score: number,
+      position: { x: number, y: number },
+      color: string,
+      joinedAt: number,
+      isReady: boolean,
+      isActive: boolean
+    }>,
+    gameConfig: {
+      minPlayers: 2,
+      maxPlayers: 4,
+      roundTime: 60,
+      mapSize: 1000
+    },
+    roundNumber: 0,
+    roundStartTime: 0,
+    roundEndTime: 0
+  },
+  
+  // Store connection-specific state
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinTime: Date.now(),
+      lastInput: Date.now(),
+      inputCount: 0,
+      latency: 0
+    };
+  },
+  
+  onStart: (c) => {
+    // If game was in progress when actor restarted, try to recover
+    if (c.state.gameState === "playing") {
+      // Check if we need to restart the round
+      const now = Date.now();
+      const elapsedRoundTime = now - c.state.roundStartTime;
+      const remainingTime = c.state.gameConfig.roundTime * 1000 - elapsedRoundTime;
+      
+      if (remainingTime > 0) {
+        // Continue the round
+        c.schedule.after(remainingTime, "endRound");
+        
+        // Notify players
+        c.broadcast("gameResumed", {
+          roundNumber: c.state.roundNumber,
+          remainingTime: Math.floor(remainingTime / 1000)
+        });
+      } else {
+        // End the round immediately
+        c.schedule.after(0, "endRound");
+      }
+    }
+  },
+  
+  actions: {
+    // Join the game
+    joinGame: (c, color: string) => {
+      // Get user details from connection
+      const userId = c.conn.state.userId;
+      const username = c.conn.state.username;
+      
+      // Check if already in game
+      if (c.state.players[userId]) {
+        // Player reconnecting
+        c.state.players[userId].isActive = true;
+        
+        // Broadcast player reconnection
+        c.broadcast("playerReconnected", {
+          userId,
+          username
+        });
+        
+        return {
+          joined: false,
+          reconnected: true,
+          player: c.state.players[userId],
+          gameState: c.state.gameState
+        };
+      }
+      
+      // Check if game is already in progress
+      if (c.state.gameState === "playing") {
+        throw new UserError("Game already in progress");
+      }
+      
+      // Check if game is full
+      const activePlayers = Object.values(c.state.players)
+        .filter(p => p.isActive);
+      
+      if (activePlayers.length >= c.state.gameConfig.maxPlayers) {
+        throw new UserError("Game is full");
+      }
+      
+      // Add player to game
+      const initialPosition = getRandomPosition(c.state.gameConfig.mapSize);
+      
+      c.state.players[userId] = {
+        userId,
+        username,
+        score: 0,
+        position: initialPosition,
+        color,
+        joinedAt: Date.now(),
+        isReady: false,
+        isActive: true
+      };
+      
+      // Pattern 1: Broadcasting to all connections including the sender
+      c.broadcast("playerJoined", {
+        userId,
+        username,
+        position: initialPosition,
+        color
+      });
+      
+      // Return current game state to the joining player
+      return {
+        joined: true,
+        player: c.state.players[userId],
+        gameState: c.state.gameState,
+        players: Object.values(c.state.players).filter(p => p.isActive),
+        config: c.state.gameConfig
+      };
+    },
+    
+    // Leave the game
+    leaveGame: (c) => {
+      const userId = c.conn.state.userId;
+      
+      // Check if player is in the game
+      if (!c.state.players[userId]) {
+        return { success: false, reason: "not_in_game" };
+      }
+      
+      // Mark player as inactive
+      c.state.players[userId].isActive = false;
+      
+      // Pattern 2: Broadcasting to all OTHER connections
+      for (const [connId, conn] of c.conns.entries()) {
+        if (connId !== c.conn.id) {
+          conn.send("playerLeft", {
+            userId,
+            username: c.state.players[userId].username
+          });
+        }
+      }
+      
+      // If game is in progress, check if we need to end it
+      if (c.state.gameState === "playing") {
+        const activePlayers = Object.values(c.state.players)
+          .filter(p => p.isActive);
+        
+        if (activePlayers.length < c.state.gameConfig.minPlayers) {
+          // End the game
+          c.endGame("Not enough players");
+        }
+      }
+      
+      return { success: true };
+    },
+    
+    // Mark player as ready
+    setReady: (c, isReady: boolean) => {
+      const userId = c.conn.state.userId;
+      
+      // Check if player is in the game
+      if (!c.state.players[userId]) {
+        throw new UserError("Not in game");
+      }
+      
+      // Update ready state
+      c.state.players[userId].isReady = isReady;
+      
+      // Pattern 3: Broadcast player-specific update
+      c.broadcast("playerReady", {
+        userId,
+        isReady
+      });
+      
+      // Check if all players are ready
+      const activePlayers = Object.values(c.state.players)
+        .filter(p => p.isActive);
+      
+      const allReady = activePlayers.length >= c.state.gameConfig.minPlayers &&
+        activePlayers.every(p => p.isReady);
+      
+      if (allReady && c.state.gameState === "waiting") {
+        // Start the game
+        c.startGame();
+      }
+      
+      return { success: true };
+    },
+    
+    // Update player position
+    updatePosition: (c, position: { x: number, y: number }) => {
+      const userId = c.conn.state.userId;
+      
+      // Check if player is in the game
+      if (!c.state.players[userId] || !c.state.players[userId].isActive) {
+        return { success: false, reason: "not_active" };
+      }
+      
+      // Check if game is in progress
+      if (c.state.gameState !== "playing") {
+        return { success: false, reason: "game_not_in_progress" };
+      }
+      
+      // Validate position is within map bounds
+      const mapSize = c.state.gameConfig.mapSize;
+      if (
+        position.x < 0 || position.x > mapSize ||
+        position.y < 0 || position.y > mapSize
+      ) {
+        return { success: false, reason: "out_of_bounds" };
+      }
+      
+      // Update position
+      c.state.players[userId].position = position;
+      
+      // Update conn state to track activity
+      c.conn.state.lastInput = Date.now();
+      c.conn.state.inputCount++;
+      
+      // Pattern 4: Broadcast position update to all EXCEPT sender
+      for (const [connId, conn] of c.conns.entries()) {
+        if (connId !== c.conn.id) {
+          conn.send("playerMoved", {
+            userId,
+            position
+          });
+        }
+      }
+      
+      return { success: true };
+    },
+    
+    // Measure connection latency
+    pingLatency: (c, timestamp: number) => {
+      // Calculate round-trip time
+      const now = Date.now();
+      const latency = now - timestamp;
+      
+      // Update conn state
+      c.conn.state.latency = latency;
+      
+      return { timestamp: now, latency };
+    },
+    
+    // Start the game
+    startGame: (c) => {
+      // Check if already playing
+      if (c.state.gameState === "playing") {
+        return { success: false, reason: "already_started" };
+      }
+      
+      // Check if enough players
+      const activePlayers = Object.values(c.state.players)
+        .filter(p => p.isActive);
+      
+      if (activePlayers.length < c.state.gameConfig.minPlayers) {
+        throw new UserError(`Need at least ${c.state.gameConfig.minPlayers} players`);
+      }
+      
+      // Check if all ready
+      if (!activePlayers.every(p => p.isReady)) {
+        throw new UserError("All players must be ready");
+      }
+      
+      // Update game state
+      c.state.gameState = "playing";
+      c.state.roundNumber = 1;
+      c.state.roundStartTime = Date.now();
+      c.state.roundEndTime = c.state.roundStartTime + c.state.gameConfig.roundTime * 1000;
+      
+      // Reset player scores
+      for (const player of Object.values(c.state.players)) {
+        if (player.isActive) {
+          player.score = 0;
+          player.position = getRandomPosition(c.state.gameConfig.mapSize);
+        }
+      }
+      
+      // Pattern 5: Broadcast game start
+      c.broadcast("gameStarted", {
+        roundNumber: c.state.roundNumber,
+        startTime: c.state.roundStartTime,
+        endTime: c.state.roundEndTime,
+        duration: c.state.gameConfig.roundTime,
+        players: Object.values(c.state.players)
+          .filter(p => p.isActive)
+          .map(p => ({
+            userId: p.userId,
+            username: p.username,
+            position: p.position,
+            color: p.color
+          }))
+      });
+      
+      // Schedule round end
+      c.schedule.at(c.state.roundEndTime, "endRound");
+      
+      return { success: true };
+    },
+    
+    // End the current round
+    endRound: (c) => {
+      // Check if game is in progress
+      if (c.state.gameState !== "playing") {
+        return { success: false, reason: "not_playing" };
+      }
+      
+      // Calculate scores for this round (simplified)
+      for (const player of Object.values(c.state.players)) {
+        if (player.isActive) {
+          // Simplified scoring based on position
+          const positionScore = Math.floor(
+            (player.position.x + player.position.y) / 10
+          );
+          player.score += positionScore;
+        }
+      }
+      
+      // Check if game should end (3 rounds)
+      if (c.state.roundNumber >= 3) {
+        // End game
+        c.endGame("All rounds completed");
+        return { success: true, gameEnded: true };
+      }
+      
+      // Prepare next round
+      c.state.roundNumber++;
+      c.state.roundStartTime = Date.now();
+      c.state.roundEndTime = c.state.roundStartTime + c.state.gameConfig.roundTime * 1000;
+      
+      // Reset player positions
+      for (const player of Object.values(c.state.players)) {
+        if (player.isActive) {
+          player.position = getRandomPosition(c.state.gameConfig.mapSize);
+        }
+      }
+      
+      // Pattern 6: Broadcast round start
+      c.broadcast("roundStarted", {
+        roundNumber: c.state.roundNumber,
+        startTime: c.state.roundStartTime,
+        endTime: c.state.roundEndTime,
+        duration: c.state.gameConfig.roundTime,
+        players: Object.values(c.state.players)
+          .filter(p => p.isActive)
+          .map(p => ({
+            userId: p.userId,
+            username: p.username,
+            position: p.position,
+            color: p.color,
+            score: p.score
+          }))
+      });
+      
+      // Schedule round end
+      c.schedule.at(c.state.roundEndTime, "endRound");
+      
+      return { success: true };
+    },
+    
+    // End the game
+    endGame: (c, reason = "Game ended") => {
+      // Check if game is not already finished
+      if (c.state.gameState === "finished") {
+        return { success: false, reason: "already_finished" };
+      }
+      
+      // Update game state
+      c.state.gameState = "finished";
+      
+      // Sort players by score
+      const rankedPlayers = Object.values(c.state.players)
+        .filter(p => p.isActive)
+        .sort((a, b) => b.score - a.score);
+      
+      // Pattern 7: Broadcast game end
+      c.broadcast("gameEnded", {
+        reason,
+        endTime: Date.now(),
+        players: rankedPlayers.map((p, index) => ({
+          userId: p.userId,
+          username: p.username,
+          score: p.score,
+          rank: index + 1,
+          isWinner: index === 0
+        }))
+      });
+      
+      // Reset player ready state
+      for (const player of Object.values(c.state.players)) {
+        player.isReady = false;
+      }
+      
+      return { success: true };
+    },
+    
+    // Check active connections
+    checkConnections: (c) => {
+      const now = Date.now();
+      const inactiveTimeout = 2 * 60 * 1000; // 2 minutes
+      
+      // Check each connection's activity
+      for (const [connId, conn] of c.conns.entries()) {
+        const lastActivity = conn.state.lastInput;
+        const userId = conn.state.userId;
+        
+        // Skip if user is not in game
+        if (!c.state.players[userId] || !c.state.players[userId].isActive) {
+          continue;
+        }
+        
+        // Check if connection is inactive
+        if (now - lastActivity > inactiveTimeout) {
+          // Mark player as inactive
+          c.state.players[userId].isActive = false;
+          
+          // Pattern 8: Broadcast player disconnection
+          c.broadcast("playerDisconnected", {
+            userId,
+            username: c.state.players[userId].username,
+            reason: "inactivity"
+          });
+        }
+      }
+      
+      // If game is in progress, check if we need to end it
+      if (c.state.gameState === "playing") {
+        const activePlayers = Object.values(c.state.players)
+          .filter(p => p.isActive);
+        
+        if (activePlayers.length < c.state.gameConfig.minPlayers) {
+          // End the game
+          c.endGame("Not enough active players");
+        }
+      }
+      
+      // Schedule next check
+      c.schedule.after(30 * 1000, "checkConnections");
+      
+      return {
+        activeConnections: c.conns.size,
+        activePlayers: Object.values(c.state.players).filter(p => p.isActive).length
+      };
+    }
+  }
+});
+
+// Utility function to generate random positions
+function getRandomPosition(mapSize: number) {
+  return {
+    x: Math.floor(Math.random() * mapSize),
+    y: Math.floor(Math.random() * mapSize)
+  };
+}
+```
+
+## Context Access Best Practices
+
+1. **Use the context object consistently**: Always access actor functionality through the context parameter in action handlers.
+
+2. **Separate concerns**: Use state for persisted data and vars for runtime/ephemeral data.
+
+3. **Handle errors gracefully**: Use try/catch blocks when working with async operations on the context.
+
+4. **Targeted broadcasts**: Use broadcast selectively - send to all connections when needed, but consider targeted sends to specific connections when appropriate.
+
+5. **Connection awareness**: Remember that each connection has its own state and identity.
+
+6. **Schedule cleanup**: Always schedule cleanup for resources and temporary actors.
+
+7. **Type safety**: Leverage TypeScript to ensure type safety when working with the context object.
+
+8. **State immutability**: Treat state as mutable but avoid unnecessary changes.
+
+9. **Descriptive event names**: Use clear, descriptive names for events when broadcasting.
+
+10. **Context sharing**: Be aware that context properties are shared when calling methods or functions.
+
+Understanding the context object is fundamental to building effective ActorCore applications. By leveraging the patterns described in this guide, you can write more maintainable, scalable, and robust actor-based systems.

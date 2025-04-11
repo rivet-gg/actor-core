@@ -1,0 +1,1287 @@
+---
+title: Rate Limiting
+description: Implement rate limiting in ActorCore to protect your actors from abuse
+---
+
+# Rate Limiting
+
+Implementing rate limiting in your ActorCore applications helps protect your actors from abuse, ensures fair usage of resources, and maintains performance under load. This guide covers various approaches to rate limiting, from simple counters to advanced token bucket algorithms.
+
+## Simple Counter-Based Rate Limiting
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const userService = actor({
+  state: {
+    users: {} as Record<string, {
+      id: string,
+      username: string,
+      email: string,
+      createdAt: number
+    }>
+  },
+  
+  // Use vars for tracking rate limits (not persisted)
+  createVars: () => ({
+    // Track request counts per user
+    requestCounts: new Map<string, {
+      count: number,
+      windowStart: number
+    }>(),
+    
+    // Track API key usage
+    apiKeyUsage: new Map<string, {
+      count: number,
+      windowStart: number,
+      limit: number
+    }>()
+  }),
+  
+  actions: {
+    // Create a new user with rate limiting (prevent abuse)
+    createUser: (c, username: string, email: string, clientIp: string) => {
+      // Apply rate limit: 5 account creations per IP per hour
+      if (!checkRateLimit(c, `create_user:${clientIp}`, 5, 60 * 60 * 1000)) {
+        throw new UserError("Rate limit exceeded. Try again later.", {
+          retryAfter: getRateLimitReset(c, `create_user:${clientIp}`)
+        });
+      }
+      
+      // Check if username or email already exists
+      if (Object.values(c.state.users).some(u => 
+        u.username === username || u.email === email
+      )) {
+        throw new UserError("Username or email already exists");
+      }
+      
+      // Create user
+      const userId = crypto.randomUUID();
+      c.state.users[userId] = {
+        id: userId,
+        username,
+        email,
+        createdAt: Date.now()
+      };
+      
+      return { userId, username };
+    },
+    
+    // Get user profile with rate limiting (prevent data scraping)
+    getUser: (c, userId: string, apiKey: string) => {
+      // Apply stricter rate limit for unknown API keys
+      const keyLimit = getApiKeyLimit(apiKey) || 10;
+      
+      if (!checkApiLimit(c, apiKey, keyLimit, 60 * 1000)) {
+        throw new UserError("API rate limit exceeded", {
+          retryAfter: getApiRateLimitReset(c, apiKey)
+        });
+      }
+      
+      const user = c.state.users[userId];
+      if (!user) {
+        throw new UserError("User not found");
+      }
+      
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        createdAt: user.createdAt
+      };
+    },
+    
+    // Reset rate limits (usually called on a schedule)
+    resetRateLimits: (c) => {
+      // Clear all rate limit tracking
+      c.vars.requestCounts.clear();
+      c.vars.apiKeyUsage.clear();
+      
+      return { success: true };
+    }
+  }
+});
+
+// Helper function to check rate limit
+function checkRateLimit(
+  c: any, 
+  key: string, 
+  limit: number, 
+  windowMs: number
+): boolean {
+  const now = Date.now();
+  
+  if (!c.vars.requestCounts.has(key)) {
+    // First request for this key
+    c.vars.requestCounts.set(key, { 
+      count: 1, 
+      windowStart: now 
+    });
+    return true;
+  }
+  
+  const data = c.vars.requestCounts.get(key)!;
+  
+  // Check if window has reset
+  if (now - data.windowStart > windowMs) {
+    // Reset window
+    data.count = 1;
+    data.windowStart = now;
+    return true;
+  }
+  
+  // Check if limit is exceeded
+  if (data.count >= limit) {
+    return false;
+  }
+  
+  // Increment counter
+  data.count++;
+  return true;
+}
+
+// Get time remaining in rate limit window
+function getRateLimitReset(c: any, key: string): number {
+  if (!c.vars.requestCounts.has(key)) {
+    return 0;
+  }
+  
+  const data = c.vars.requestCounts.get(key)!;
+  const now = Date.now();
+  const windowMs = 60 * 60 * 1000; // 1 hour
+  
+  // Calculate time until window resets
+  const timeElapsed = now - data.windowStart;
+  const timeRemaining = Math.max(0, windowMs - timeElapsed);
+  
+  return Math.ceil(timeRemaining / 1000); // Return seconds
+}
+
+// API key specific helpers
+function getApiKeyLimit(apiKey: string): number | null {
+  // In a real app, would validate API key and fetch limit from database
+  // This is just a placeholder implementation
+  const knownKeys: Record<string, number> = {
+    "key1": 100,
+    "key2": 500,
+    "key3": 1000
+  };
+  
+  return knownKeys[apiKey] || null;
+}
+
+function checkApiLimit(
+  c: any, 
+  apiKey: string, 
+  limit: number, 
+  windowMs: number
+): boolean {
+  const now = Date.now();
+  
+  if (!c.vars.apiKeyUsage.has(apiKey)) {
+    // First request for this API key
+    c.vars.apiKeyUsage.set(apiKey, {
+      count: 1,
+      windowStart: now,
+      limit
+    });
+    return true;
+  }
+  
+  const data = c.vars.apiKeyUsage.get(apiKey)!;
+  
+  // Check if window has reset
+  if (now - data.windowStart > windowMs) {
+    // Reset window
+    data.count = 1;
+    data.windowStart = now;
+    return true;
+  }
+  
+  // Check if limit is exceeded
+  if (data.count >= limit) {
+    return false;
+  }
+  
+  // Increment counter
+  data.count++;
+  return true;
+}
+
+function getApiRateLimitReset(c: any, apiKey: string): number {
+  if (!c.vars.apiKeyUsage.has(apiKey)) {
+    return 0;
+  }
+  
+  const data = c.vars.apiKeyUsage.get(apiKey)!;
+  const now = Date.now();
+  const windowMs = 60 * 1000; // 1 minute
+  
+  // Calculate time until window resets
+  const timeElapsed = now - data.windowStart;
+  const timeRemaining = Math.max(0, windowMs - timeElapsed);
+  
+  return Math.ceil(timeRemaining / 1000); // Return seconds
+}
+```
+
+## Sliding Window Rate Limiting
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const chatService = actor({
+  state: {
+    channels: {} as Record<string, {
+      id: string,
+      name: string,
+      messages: Array<{
+        id: string,
+        userId: string,
+        username: string,
+        text: string,
+        timestamp: number
+      }>,
+      createdAt: number
+    }>
+  },
+  
+  // Connection-specific state
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  // Non-persisted rate limit tracking
+  createVars: () => ({
+    // Track message timestamps for sliding window
+    messageTimestamps: new Map<string, number[]>(),
+    
+    // Last cleanup time
+    lastCleanup: Date.now()
+  }),
+  
+  onStart: (c) => {
+    // Schedule regular cleanup of old rate limit data
+    c.schedule.after(5 * 60 * 1000, "cleanupRateLimits");
+  },
+  
+  actions: {
+    // Send a message with sliding window rate limiting
+    sendMessage: (c, channelId: string, text: string) => {
+      const userId = c.conn.state.userId;
+      const username = c.conn.state.username;
+      
+      // Check if channel exists
+      if (!c.state.channels[channelId]) {
+        throw new UserError("Channel not found");
+      }
+      
+      // Apply sliding window rate limit
+      // Allow 10 messages per user per 30 seconds
+      const key = `${channelId}:${userId}`;
+      if (!checkSlidingWindowLimit(c, key, 10, 30 * 1000)) {
+        const reset = getSlidingWindowReset(c, key, 10, 30 * 1000);
+        throw new UserError("Rate limit exceeded. Please slow down.", {
+          retryAfter: reset,
+          limit: 10,
+          windowSeconds: 30
+        });
+      }
+      
+      // Create message
+      const messageId = crypto.randomUUID();
+      const now = Date.now();
+      
+      const message = {
+        id: messageId,
+        userId,
+        username,
+        text,
+        timestamp: now
+      };
+      
+      // Add to channel
+      c.state.channels[channelId].messages.push(message);
+      
+      // Trim messages if needed (keep last 100)
+      if (c.state.channels[channelId].messages.length > 100) {
+        c.state.channels[channelId].messages = 
+          c.state.channels[channelId].messages.slice(-100);
+      }
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", channelId, message);
+      
+      return { messageId };
+    },
+    
+    // Create a new channel with basic rate limiting
+    createChannel: (c, name: string) => {
+      const userId = c.conn.state.userId;
+      
+      // Simple rate limit: 5 channels per user per hour
+      const key = `createChannel:${userId}`;
+      if (!checkSlidingWindowLimit(c, key, 5, 60 * 60 * 1000)) {
+        const reset = getSlidingWindowReset(c, key, 5, 60 * 60 * 1000);
+        throw new UserError("Channel creation rate limit exceeded", {
+          retryAfter: reset
+        });
+      }
+      
+      // Create channel
+      const channelId = crypto.randomUUID();
+      const now = Date.now();
+      
+      c.state.channels[channelId] = {
+        id: channelId,
+        name,
+        messages: [],
+        createdAt: now
+      };
+      
+      return { channelId, name };
+    },
+    
+    // Periodic cleanup of rate limit data
+    cleanupRateLimits: (c) => {
+      const now = Date.now();
+      let keysRemoved = 0;
+      let timestampsRemoved = 0;
+      
+      // Only run every 5 minutes to avoid excessive processing
+      if (now - c.vars.lastCleanup < 5 * 60 * 1000) {
+        // Schedule next cleanup
+        c.schedule.after(5 * 60 * 1000, "cleanupRateLimits");
+        return { 
+          skipped: true, 
+          nextCleanup: new Date(c.vars.lastCleanup + 5 * 60 * 1000).toISOString() 
+        };
+      }
+      
+      // Remove timestamps older than the largest window (1 hour)
+      const oldestToKeep = now - 60 * 60 * 1000;
+      
+      for (const [key, timestamps] of c.vars.messageTimestamps.entries()) {
+        // Filter out old timestamps
+        const newTimestamps = timestamps.filter(ts => ts >= oldestToKeep);
+        timestampsRemoved += timestamps.length - newTimestamps.length;
+        
+        if (newTimestamps.length === 0) {
+          // No timestamps left, remove the key
+          c.vars.messageTimestamps.delete(key);
+          keysRemoved++;
+        } else {
+          // Update with filtered timestamps
+          c.vars.messageTimestamps.set(key, newTimestamps);
+        }
+      }
+      
+      // Update last cleanup time
+      c.vars.lastCleanup = now;
+      
+      // Schedule next cleanup
+      c.schedule.after(5 * 60 * 1000, "cleanupRateLimits");
+      
+      return {
+        keysRemoved,
+        timestampsRemoved,
+        nextCleanup: new Date(now + 5 * 60 * 1000).toISOString()
+      };
+    }
+  }
+});
+
+// Helper function to check sliding window rate limit
+function checkSlidingWindowLimit(
+  c: any, 
+  key: string, 
+  limit: number, 
+  windowMs: number
+): boolean {
+  const now = Date.now();
+  
+  // Get timestamps for this key
+  const timestamps = c.vars.messageTimestamps.get(key) || [];
+  
+  // Calculate window start time
+  const windowStart = now - windowMs;
+  
+  // Filter to only include timestamps within the window
+  const recentTimestamps = timestamps.filter(ts => ts >= windowStart);
+  
+  // Check if limit is exceeded
+  if (recentTimestamps.length >= limit) {
+    return false;
+  }
+  
+  // Add current timestamp
+  recentTimestamps.push(now);
+  
+  // Update stored timestamps
+  c.vars.messageTimestamps.set(key, recentTimestamps);
+  
+  return true;
+}
+
+// Calculate seconds until rate limit resets
+function getSlidingWindowReset(
+  c: any, 
+  key: string, 
+  limit: number, 
+  windowMs: number
+): number {
+  const now = Date.now();
+  const timestamps = c.vars.messageTimestamps.get(key) || [];
+  
+  if (timestamps.length < limit) {
+    return 0; // No need to wait
+  }
+  
+  // Sort timestamps in ascending order
+  const sortedTimestamps = [...timestamps].sort((a, b) => a - b);
+  
+  // Get the oldest timestamp that affects the current window
+  const oldestRelevant = sortedTimestamps[sortedTimestamps.length - limit];
+  
+  // Calculate when this timestamp will leave the window
+  const resetTime = oldestRelevant + windowMs;
+  const secondsToReset = Math.ceil((resetTime - now) / 1000);
+  
+  return Math.max(0, secondsToReset);
+}
+```
+
+## Token Bucket Rate Limiting
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const apiGateway = actor({
+  state: {
+    apiKeys: {} as Record<string, {
+      key: string,
+      userId: string,
+      name: string,
+      plan: "free" | "basic" | "premium" | "enterprise",
+      createdAt: number,
+      lastUsed: number
+    }>
+  },
+  
+  // Token bucket implementation using vars
+  createVars: () => ({
+    // Map of API key to token bucket
+    buckets: new Map<string, {
+      tokens: number,
+      lastRefill: number,
+      maxTokens: number,
+      refillRate: number // tokens per second
+    }>(),
+    
+    // Track hourly and daily usage
+    usage: {
+      hourly: new Map<string, number>(),
+      daily: new Map<string, number>(),
+      lastHourReset: Date.now(),
+      lastDayReset: Date.now()
+    }
+  }),
+  
+  onStart: (c) => {
+    // Schedule usage tracking resets
+    scheduleNextHourReset(c);
+    scheduleNextDayReset(c);
+    
+    // Initialize sample API keys for testing
+    if (Object.keys(c.state.apiKeys).length === 0) {
+      const plans = ["free", "basic", "premium", "enterprise"] as const;
+      
+      for (const plan of plans) {
+        const apiKey = crypto.randomUUID();
+        c.state.apiKeys[apiKey] = {
+          key: apiKey,
+          userId: `user-${plan}`,
+          name: `${plan.charAt(0).toUpperCase() + plan.slice(1)} API Key`,
+          plan,
+          createdAt: Date.now(),
+          lastUsed: Date.now()
+        };
+      }
+    }
+  },
+  
+  actions: {
+    // Process API request with token bucket rate limiting
+    processRequest: (c, apiKey: string, endpoint: string, params: any) => {
+      // Validate API key
+      if (!c.state.apiKeys[apiKey]) {
+        throw new UserError("Invalid API key");
+      }
+      
+      const keyData = c.state.apiKeys[apiKey];
+      
+      // Get or initialize token bucket for this API key
+      const bucket = getOrCreateBucket(c, apiKey, keyData.plan);
+      
+      // Check if request can be processed
+      if (!consumeToken(c, apiKey)) {
+        const waitTime = getWaitTimeForToken(c, apiKey);
+        throw new UserError("Rate limit exceeded", {
+          retryAfter: waitTime,
+          plan: keyData.plan,
+          limit: bucket.maxTokens
+        });
+      }
+      
+      // Track usage
+      trackUsage(c, apiKey);
+      
+      // Update last used timestamp
+      keyData.lastUsed = Date.now();
+      
+      // Process the request (in a real app, would call a service)
+      const result = processApiEndpoint(endpoint, params);
+      
+      // Add rate limit headers to response
+      const remaining = getRemainingTokens(c, apiKey);
+      const resetAt = getNextTokenTime(c, apiKey);
+      
+      return {
+        result,
+        rateLimit: {
+          limit: bucket.maxTokens,
+          remaining,
+          resetAt: new Date(resetAt).toISOString(),
+          resetSeconds: Math.ceil((resetAt - Date.now()) / 1000)
+        }
+      };
+    },
+    
+    // Check current rate limit status without consuming a token
+    checkRateLimit: (c, apiKey: string) => {
+      // Validate API key
+      if (!c.state.apiKeys[apiKey]) {
+        throw new UserError("Invalid API key");
+      }
+      
+      const keyData = c.state.apiKeys[apiKey];
+      
+      // Get or initialize token bucket
+      const bucket = getOrCreateBucket(c, apiKey, keyData.plan);
+      
+      // Calculate current token count (with refill)
+      const tokens = getCurrentTokenCount(c, apiKey);
+      
+      // Get usage statistics
+      const hourlyUsage = c.vars.usage.hourly.get(apiKey) || 0;
+      const dailyUsage = c.vars.usage.daily.get(apiKey) || 0;
+      
+      // Calculate next token refill time
+      const nextToken = getNextTokenTime(c, apiKey);
+      
+      return {
+        apiKey: {
+          name: keyData.name,
+          plan: keyData.plan
+        },
+        currentLimit: {
+          maxTokens: bucket.maxTokens,
+          refillRate: bucket.refillRate,
+          currentTokens: tokens,
+          nextTokenAt: new Date(nextToken).toISOString(),
+          nextTokenIn: Math.ceil((nextToken - Date.now()) / 1000)
+        },
+        usage: {
+          hourly: hourlyUsage,
+          hourlyLimit: getHourlyLimit(keyData.plan),
+          daily: dailyUsage,
+          dailyLimit: getDailyLimit(keyData.plan),
+          hourlyReset: new Date(getNextHourReset(c)).toISOString(),
+          dailyReset: new Date(getNextDayReset(c)).toISOString()
+        }
+      };
+    },
+    
+    // Reset hourly usage tracking
+    resetHourlyUsage: (c) => {
+      c.vars.usage.hourly.clear();
+      c.vars.usage.lastHourReset = Date.now();
+      
+      // Schedule next reset
+      scheduleNextHourReset(c);
+      
+      return { 
+        success: true, 
+        nextReset: new Date(getNextHourReset(c)).toISOString() 
+      };
+    },
+    
+    // Reset daily usage tracking
+    resetDailyUsage: (c) => {
+      c.vars.usage.daily.clear();
+      c.vars.usage.lastDayReset = Date.now();
+      
+      // Schedule next reset
+      scheduleNextDayReset(c);
+      
+      return { 
+        success: true, 
+        nextReset: new Date(getNextDayReset(c)).toISOString() 
+      };
+    }
+  }
+});
+
+// Helper function to get or create a token bucket
+function getOrCreateBucket(c: any, apiKey: string, plan: string) {
+  if (!c.vars.buckets.has(apiKey)) {
+    // Create new bucket based on plan
+    const bucket = createBucketForPlan(plan);
+    c.vars.buckets.set(apiKey, bucket);
+    return bucket;
+  }
+  
+  return c.vars.buckets.get(apiKey)!;
+}
+
+// Create a token bucket configured for the plan
+function createBucketForPlan(plan: string) {
+  // Define limits based on plan
+  let maxTokens: number;
+  let refillRate: number;
+  
+  switch (plan) {
+    case "free":
+      maxTokens = 20;
+      refillRate = 0.2; // 1 token every 5 seconds
+      break;
+    case "basic":
+      maxTokens = 40;
+      refillRate = 0.5; // 1 token every 2 seconds
+      break;
+    case "premium":
+      maxTokens = 100;
+      refillRate = 2; // 2 tokens per second
+      break;
+    case "enterprise":
+      maxTokens = 500;
+      refillRate = 10; // 10 tokens per second
+      break;
+    default:
+      maxTokens = 10;
+      refillRate = 0.1; // 1 token every 10 seconds
+  }
+  
+  return {
+    tokens: maxTokens, // Start with a full bucket
+    lastRefill: Date.now(),
+    maxTokens,
+    refillRate
+  };
+}
+
+// Calculate current token count with refill
+function getCurrentTokenCount(c: any, apiKey: string): number {
+  const bucket = c.vars.buckets.get(apiKey);
+  if (!bucket) return 0;
+  
+  const now = Date.now();
+  const timeElapsed = (now - bucket.lastRefill) / 1000; // seconds
+  const tokensToAdd = timeElapsed * bucket.refillRate;
+  
+  // Calculate new token count, but don't actually update the bucket
+  return Math.min(bucket.maxTokens, bucket.tokens + tokensToAdd);
+}
+
+// Try to consume a token
+function consumeToken(c: any, apiKey: string): boolean {
+  const bucket = c.vars.buckets.get(apiKey);
+  if (!bucket) return false;
+  
+  const now = Date.now();
+  const timeElapsed = (now - bucket.lastRefill) / 1000; // seconds
+  const tokensToAdd = timeElapsed * bucket.refillRate;
+  
+  // Refill the bucket
+  bucket.tokens = Math.min(bucket.maxTokens, bucket.tokens + tokensToAdd);
+  bucket.lastRefill = now;
+  
+  // Try to consume a token
+  if (bucket.tokens < 1) {
+    return false;
+  }
+  
+  // Consume the token
+  bucket.tokens -= 1;
+  return true;
+}
+
+// Get remaining tokens
+function getRemainingTokens(c: any, apiKey: string): number {
+  return Math.floor(getCurrentTokenCount(c, apiKey));
+}
+
+// Calculate wait time until next token is available
+function getWaitTimeForToken(c: any, apiKey: string): number {
+  const bucket = c.vars.buckets.get(apiKey);
+  if (!bucket) return 60; // Default to 60 seconds
+  
+  const now = Date.now();
+  const timeElapsed = (now - bucket.lastRefill) / 1000; // seconds
+  const tokensToAdd = timeElapsed * bucket.refillRate;
+  const currentTokens = Math.min(bucket.maxTokens, bucket.tokens + tokensToAdd);
+  
+  if (currentTokens >= 1) {
+    return 0; // Token already available
+  }
+  
+  // Calculate time needed to reach 1 token
+  const tokenDeficit = 1 - currentTokens;
+  const secondsToWait = tokenDeficit / bucket.refillRate;
+  
+  return Math.ceil(secondsToWait);
+}
+
+// Calculate when the next token will be available
+function getNextTokenTime(c: any, apiKey: string): number {
+  const bucket = c.vars.buckets.get(apiKey);
+  if (!bucket) return Date.now() + 60000; // Default to 1 minute
+  
+  const now = Date.now();
+  const currentTokens = getCurrentTokenCount(c, apiKey);
+  
+  if (currentTokens >= 1) {
+    return now; // Token already available
+  }
+  
+  // Calculate time needed to reach 1 token
+  const tokenDeficit = 1 - currentTokens;
+  const secondsToWait = tokenDeficit / bucket.refillRate;
+  
+  return now + (secondsToWait * 1000);
+}
+
+// Track API usage
+function trackUsage(c: any, apiKey: string): void {
+  // Update hourly usage
+  const hourlyUsage = (c.vars.usage.hourly.get(apiKey) || 0) + 1;
+  c.vars.usage.hourly.set(apiKey, hourlyUsage);
+  
+  // Update daily usage
+  const dailyUsage = (c.vars.usage.daily.get(apiKey) || 0) + 1;
+  c.vars.usage.daily.set(apiKey, dailyUsage);
+}
+
+// Get next hour reset time
+function getNextHourReset(c: any): number {
+  const lastReset = c.vars.usage.lastHourReset;
+  return lastReset + (60 * 60 * 1000); // 1 hour
+}
+
+// Get next day reset time
+function getNextDayReset(c: any): number {
+  const lastReset = c.vars.usage.lastDayReset;
+  return lastReset + (24 * 60 * 60 * 1000); // 24 hours
+}
+
+// Schedule next hourly reset
+function scheduleNextHourReset(c: any): void {
+  const nextReset = getNextHourReset(c);
+  c.schedule.at(nextReset, "resetHourlyUsage");
+}
+
+// Schedule next daily reset
+function scheduleNextDayReset(c: any): void {
+  const nextReset = getNextDayReset(c);
+  c.schedule.at(nextReset, "resetDailyUsage");
+}
+
+// Get hourly limit based on plan
+function getHourlyLimit(plan: string): number {
+  switch (plan) {
+    case "free": return 1000;
+    case "basic": return 5000;
+    case "premium": return 20000;
+    case "enterprise": return 100000;
+    default: return 500;
+  }
+}
+
+// Get daily limit based on plan
+function getDailyLimit(plan: string): number {
+  switch (plan) {
+    case "free": return 10000;
+    case "basic": return 50000;
+    case "premium": return 200000;
+    case "enterprise": return 1000000;
+    default: return 5000;
+  }
+}
+
+// Process API endpoint (mock implementation)
+function processApiEndpoint(endpoint: string, params: any): any {
+  // In a real app, would call appropriate service based on endpoint
+  switch (endpoint) {
+    case "/users":
+      return { users: ["user1", "user2", "user3"] };
+    case "/products":
+      return { products: ["product1", "product2", "product3"] };
+    default:
+      return { message: "Endpoint processed", params };
+  }
+}
+```
+
+## Connection-Based Rate Limiting
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const chatRoom = actor({
+  state: {
+    name: "",
+    messages: [] as Array<{
+      id: string,
+      userId: string,
+      username: string,
+      text: string,
+      timestamp: number
+    }>
+  },
+  
+  // Connection-specific state with rate limiting
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now(),
+      // Rate limiting state for this connection
+      rateLimit: {
+        messageCount: 0,
+        messageWindowStart: Date.now(),
+        typingCount: 0,
+        typingWindowStart: Date.now(),
+        warned: false
+      }
+    };
+  },
+  
+  actions: {
+    // Send a message with connection-based rate limiting
+    sendMessage: (c, text: string) => {
+      // Get rate limit data from connection state
+      const rateLimit = c.conn.state.rateLimit;
+      const now = Date.now();
+      
+      // Check if window has reset (10 seconds)
+      if (now - rateLimit.messageWindowStart > 10000) {
+        // Reset window
+        rateLimit.messageCount = 0;
+        rateLimit.messageWindowStart = now;
+        rateLimit.warned = false;
+      }
+      
+      // Check rate limit: 5 messages per 10 seconds
+      if (rateLimit.messageCount >= 5) {
+        const resetTime = (rateLimit.messageWindowStart + 10000 - now) / 1000;
+        throw new UserError("You're sending messages too quickly. Please wait.", {
+          retryAfter: Math.ceil(resetTime)
+        });
+      }
+      
+      // Increment counter
+      rateLimit.messageCount++;
+      
+      // Send warning if approaching limit
+      if (rateLimit.messageCount >= 4 && !rateLimit.warned) {
+        rateLimit.warned = true;
+        c.conn.send("rateWarning", {
+          type: "message",
+          count: rateLimit.messageCount,
+          limit: 5,
+          windowSeconds: 10
+        });
+      }
+      
+      // Process message
+      const messageId = crypto.randomUUID();
+      const message = {
+        id: messageId,
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: now
+      };
+      
+      // Add to room
+      c.state.messages.push(message);
+      if (c.state.messages.length > 100) {
+        c.state.messages = c.state.messages.slice(-100);
+      }
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", message);
+      
+      return { messageId };
+    },
+    
+    // Update typing status with rate limiting
+    updateTyping: (c, isTyping: boolean) => {
+      // Get rate limit data
+      const rateLimit = c.conn.state.rateLimit;
+      const now = Date.now();
+      
+      // Check if typing window has reset (5 seconds)
+      if (now - rateLimit.typingWindowStart > 5000) {
+        rateLimit.typingCount = 0;
+        rateLimit.typingWindowStart = now;
+      }
+      
+      // Check rate limit: 10 typing updates per 5 seconds
+      if (rateLimit.typingCount >= 10) {
+        // Don't throw an error, just silently fail
+        return { limited: true };
+      }
+      
+      // Increment counter
+      rateLimit.typingCount++;
+      
+      // Broadcast typing status
+      c.broadcast("userTyping", {
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        isTyping
+      });
+      
+      return { success: true };
+    },
+    
+    // Get connection-specific rate limit status
+    getRateLimitStatus: (c) => {
+      const rateLimit = c.conn.state.rateLimit;
+      const now = Date.now();
+      
+      const messageResetTime = Math.max(0, 
+        rateLimit.messageWindowStart + 10000 - now
+      );
+      
+      const typingResetTime = Math.max(0,
+        rateLimit.typingWindowStart + 5000 - now
+      );
+      
+      return {
+        messages: {
+          used: rateLimit.messageCount,
+          limit: 5,
+          remaining: Math.max(0, 5 - rateLimit.messageCount),
+          resetIn: Math.ceil(messageResetTime / 1000),
+          warned: rateLimit.warned
+        },
+        typing: {
+          used: rateLimit.typingCount,
+          limit: 10,
+          remaining: Math.max(0, 10 - rateLimit.typingCount),
+          resetIn: Math.ceil(typingResetTime / 1000)
+        }
+      };
+    }
+  }
+});
+```
+
+## Global Rate Limiting with Redis (Pseudocode)
+
+This example shows a conceptual implementation of global rate limiting using Redis (with pseudocode for the Redis commands). In a real application, you would use the Redis driver and implement the actual Redis commands.
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Pseudocode - in a real app you would use the Redis driver
+interface RedisClient {
+  incr(key: string): Promise<number>;
+  expire(key: string, seconds: number): Promise<void>;
+  ttl(key: string): Promise<number>;
+  get(key: string): Promise<string | null>;
+}
+
+const globalApiGateway = actor({
+  state: {
+    config: {
+      globalRateLimit: 1000, // requests per minute
+      ipRateLimit: 100,      // requests per minute per IP
+      userRateLimit: 200,    // requests per minute per user
+      keyRateLimit: {        // rate limits by API key type
+        free: 50,
+        premium: 500,
+        enterprise: 5000
+      }
+    },
+    keyMapping: {} as Record<string, {
+      userId: string,
+      type: "free" | "premium" | "enterprise"
+    }>
+  },
+  
+  createVars: () => ({
+    // In a real app, this would be properly initialized using the Redis driver
+    redisClient: null as unknown as RedisClient,
+    
+    // Local cache for quick checks
+    rateLimitCache: new Map<string, {
+      count: number,
+      expires: number
+    }>()
+  }),
+  
+  onStart: (c) => {
+    // In a real app, this would initialize the Redis client
+    // c.vars.redisClient = createRedisClient();
+    
+    // Set up sample API keys
+    if (Object.keys(c.state.keyMapping).length === 0) {
+      const types = ["free", "premium", "enterprise"] as const;
+      
+      for (const type of types) {
+        const apiKey = crypto.randomUUID();
+        c.state.keyMapping[apiKey] = {
+          userId: `user-${type}`,
+          type
+        };
+      }
+    }
+  },
+  
+  actions: {
+    // Process API request with global Redis-based rate limiting
+    processRequest: async (c, apiKey: string, clientIp: string, endpoint: string) => {
+      // Validate API key
+      if (!c.state.keyMapping[apiKey]) {
+        throw new UserError("Invalid API key");
+      }
+      
+      const keyInfo = c.state.keyMapping[apiKey];
+      const userId = keyInfo.userId;
+      const keyType = keyInfo.type;
+      
+      // Check rate limits in order
+      
+      // 1. Global rate limit
+      try {
+        const globalLimited = await checkGlobalRateLimit(c);
+        if (globalLimited) {
+          throw new UserError("Global rate limit exceeded. Please try again later.", {
+            retryAfter: await getRetryTime(c, "global")
+          });
+        }
+        
+        // 2. IP-based rate limit
+        const ipLimited = await checkIpRateLimit(c, clientIp);
+        if (ipLimited) {
+          throw new UserError("IP rate limit exceeded. Please try again later.", {
+            retryAfter: await getRetryTime(c, `ip:${clientIp}`)
+          });
+        }
+        
+        // 3. User-based rate limit
+        const userLimited = await checkUserRateLimit(c, userId);
+        if (userLimited) {
+          throw new UserError("User rate limit exceeded. Please try again later.", {
+            retryAfter: await getRetryTime(c, `user:${userId}`)
+          });
+        }
+        
+        // 4. API key-based rate limit
+        const keyLimited = await checkKeyRateLimit(c, apiKey, keyType);
+        if (keyLimited) {
+          throw new UserError("API key rate limit exceeded. Please try again later.", {
+            retryAfter: await getRetryTime(c, `key:${apiKey}`)
+          });
+        }
+        
+        // Process the request
+        // In a real app, would call the actual API endpoint
+        const response = {
+          endpoint,
+          success: true,
+          timestamp: Date.now()
+        };
+        
+        // Add rate limit headers
+        const limits = {
+          global: {
+            limit: c.state.config.globalRateLimit,
+            remaining: c.state.config.globalRateLimit - await getCount(c, "global"),
+            reset: await getRetryTime(c, "global")
+          },
+          ip: {
+            limit: c.state.config.ipRateLimit,
+            remaining: c.state.config.ipRateLimit - await getCount(c, `ip:${clientIp}`),
+            reset: await getRetryTime(c, `ip:${clientIp}`)
+          },
+          user: {
+            limit: c.state.config.userRateLimit,
+            remaining: c.state.config.userRateLimit - await getCount(c, `user:${userId}`),
+            reset: await getRetryTime(c, `user:${userId}`)
+          },
+          key: {
+            limit: c.state.config.keyRateLimit[keyType],
+            remaining: c.state.config.keyRateLimit[keyType] - await getCount(c, `key:${apiKey}`),
+            reset: await getRetryTime(c, `key:${apiKey}`)
+          }
+        };
+        
+        return {
+          response,
+          limits
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        // Log the error
+        c.log.error("Rate limit check failed", { error });
+        throw new UserError("Rate limit check failed");
+      }
+    }
+  }
+});
+
+// Pseudocode for Redis-based rate limiting
+async function checkGlobalRateLimit(c: any): Promise<boolean> {
+  const key = "rate_limit:global";
+  const limit = c.state.config.globalRateLimit;
+  
+  try {
+    // Check local cache first
+    if (c.vars.rateLimitCache.has(key)) {
+      const cached = c.vars.rateLimitCache.get(key)!;
+      if (Date.now() < cached.expires) {
+        return cached.count >= limit;
+      }
+    }
+    
+    // In a real app: increment counter in Redis
+    // const count = await c.vars.redisClient.incr(key);
+    // For pseudocode, simulate the Redis call
+    const count = Math.floor(Math.random() * limit * 0.8) + 1;
+    
+    // Set expiration if first request
+    // if (count === 1) {
+    //   await c.vars.redisClient.expire(key, 60); // 1 minute
+    // }
+    
+    // Update local cache
+    c.vars.rateLimitCache.set(key, {
+      count,
+      expires: Date.now() + 5000 // Cache for 5 seconds
+    });
+    
+    return count > limit;
+  } catch (error) {
+    c.log.error("Redis global rate limit check failed", { error });
+    return false; // Default to allowing requests if check fails
+  }
+}
+
+// Similar pseudocode functions for the other rate limit checks
+async function checkIpRateLimit(c: any, ip: string): Promise<boolean> {
+  const key = `rate_limit:ip:${ip}`;
+  const limit = c.state.config.ipRateLimit;
+  
+  // Similar implementation to global rate limit
+  // Simulated for pseudocode
+  const count = Math.floor(Math.random() * limit * 0.7) + 1;
+  
+  c.vars.rateLimitCache.set(key, {
+    count,
+    expires: Date.now() + 5000
+  });
+  
+  return count > limit;
+}
+
+async function checkUserRateLimit(c: any, userId: string): Promise<boolean> {
+  const key = `rate_limit:user:${userId}`;
+  const limit = c.state.config.userRateLimit;
+  
+  // Similar implementation to global rate limit
+  // Simulated for pseudocode
+  const count = Math.floor(Math.random() * limit * 0.6) + 1;
+  
+  c.vars.rateLimitCache.set(key, {
+    count,
+    expires: Date.now() + 5000
+  });
+  
+  return count > limit;
+}
+
+async function checkKeyRateLimit(c: any, apiKey: string, keyType: string): Promise<boolean> {
+  const key = `rate_limit:key:${apiKey}`;
+  const limit = c.state.config.keyRateLimit[keyType];
+  
+  // Similar implementation to global rate limit
+  // Simulated for pseudocode
+  const count = Math.floor(Math.random() * limit * 0.5) + 1;
+  
+  c.vars.rateLimitCache.set(key, {
+    count,
+    expires: Date.now() + 5000
+  });
+  
+  return count > limit;
+}
+
+async function getRetryTime(c: any, key: string): Promise<number> {
+  key = `rate_limit:${key}`;
+  
+  // In a real app: get TTL from Redis
+  // const ttl = await c.vars.redisClient.ttl(key);
+  // Simulated for pseudocode
+  const ttl = 60 - Math.floor(Math.random() * 30);
+  
+  return Math.max(1, ttl);
+}
+
+async function getCount(c: any, key: string): Promise<number> {
+  key = `rate_limit:${key}`;
+  
+  // In a real app: get count from Redis
+  // const count = await c.vars.redisClient.get(key);
+  // Simulated for pseudocode
+  if (c.vars.rateLimitCache.has(key)) {
+    return c.vars.rateLimitCache.get(key)!.count;
+  }
+  
+  return 0;
+}
+```
+
+## Best Practices
+
+1. **Identify Critical Resources**: Identify the resources that need protection and set appropriate limits based on usage patterns.
+
+2. **Implement Multiple Tiers**: Use different rate limits for different user tiers or API keys to provide fair service to all users.
+
+3. **Communicate Limits Clearly**: Provide clear feedback to users about rate limits through error messages and headers.
+
+4. **Include Retry Information**: Always include information about when to retry in rate limit responses.
+
+5. **Use Non-Persisted State**: Store rate limit data in `vars` rather than persisted state to avoid unnecessary state updates.
+
+6. **Implement Sliding Windows**: Use sliding windows for more accurate and fair rate limiting than fixed windows.
+
+7. **Set Sensible Defaults**: Configure rate limits that protect your systems while allowing legitimate usage.
+
+8. **Consider Global Limits**: For distributed systems, use a shared data store like Redis to implement global rate limits.
+
+9. **Graceful Degradation**: When nearing capacity, degrade service gracefully rather than completely rejecting requests.
+
+10. **Monitor and Adjust**: Monitor rate limit hits and adjust limits based on actual usage patterns and system capacity.
+
+By implementing appropriate rate limiting, you can protect your ActorCore applications from abuse, ensure fair resource allocation, and maintain performance and availability for all users.

@@ -1,0 +1,857 @@
+---
+title: Actor-to-Actor Communication
+description: Learn how to enable communication between different actors in ActorCore
+---
+
+# Actor-to-Actor Communication
+
+In complex applications, actors often need to communicate with each other to coordinate work, share data, or delegate tasks. ActorCore provides a simple and type-safe way for actors to communicate through the client context. This guide demonstrates patterns for effective actor-to-actor communication.
+
+## Basic Actor-to-Actor Communication
+
+```typescript
+import { actor, setup } from "actor-core";
+
+// First actor type - User
+const user = actor({
+  state: {
+    id: "",
+    name: "",
+    notifications: []
+  },
+  
+  onCreate: (c, name: string) => {
+    c.state.id = crypto.randomUUID();
+    c.state.name = name;
+  },
+  
+  actions: {
+    addNotification: (c, message: string, type = "info") => {
+      const notification = {
+        id: crypto.randomUUID(),
+        message,
+        type,
+        createdAt: Date.now(),
+        read: false
+      };
+      
+      c.state.notifications.push(notification);
+      c.broadcast("notification", notification);
+      
+      return notification;
+    },
+    
+    getProfile: (c) => {
+      return {
+        id: c.state.id,
+        name: c.state.name,
+        notificationCount: c.state.notifications.filter(n => !n.read).length
+      };
+    }
+  }
+});
+
+// Second actor type - Task
+const task = actor({
+  state: {
+    id: "",
+    title: "",
+    description: "",
+    assignedTo: null as string | null,
+    status: "open",
+    createdAt: 0,
+    updatedAt: 0
+  },
+  
+  // Actor variables for storing client
+  createVars: () => ({
+    userRefs: new Map<string, string>() // Maps user ID to user actor ID
+  }),
+  
+  onCreate: (c, title: string, description: string) => {
+    c.state.id = crypto.randomUUID();
+    c.state.title = title;
+    c.state.description = description;
+    c.state.createdAt = Date.now();
+    c.state.updatedAt = Date.now();
+  },
+  
+  actions: {
+    // Assign task to a user and notify them
+    assignTo: async (c, userId: string) => {
+      // First, update task state
+      c.state.assignedTo = userId;
+      c.state.updatedAt = Date.now();
+      c.state.status = "assigned";
+      
+      // Get or track user actor reference
+      const userActorId = c.vars.userRefs.get(userId) || userId;
+      c.vars.userRefs.set(userId, userActorId);
+      
+      try {
+        // Get the user actor instance
+        const userActor = await c.client.user.getWithId(userActorId);
+        
+        // Send notification to the user
+        await userActor.addNotification(
+          `Task "${c.state.title}" has been assigned to you`,
+          "task-assignment"
+        );
+        
+        c.broadcast("taskAssigned", {
+          taskId: c.state.id,
+          userId,
+          assignedAt: c.state.updatedAt
+        });
+        
+        return { success: true };
+      } catch (error) {
+        c.log.error("Failed to notify user", { userId, error });
+        
+        // We still return success since the task was updated
+        return { 
+          success: true, 
+          warning: "Task assigned but user notification failed"
+        };
+      }
+    },
+    
+    // Mark task as complete and notify assigned user
+    complete: async (c) => {
+      // Update task state
+      c.state.status = "completed";
+      c.state.updatedAt = Date.now();
+      
+      // If assigned to someone, notify them
+      if (c.state.assignedTo) {
+        const userId = c.state.assignedTo;
+        const userActorId = c.vars.userRefs.get(userId) || userId;
+        
+        try {
+          // Get the user actor
+          const userActor = await c.client.user.getWithId(userActorId);
+          
+          // Notify user
+          await userActor.addNotification(
+            `Task "${c.state.title}" has been marked as complete`,
+            "task-completed"
+          );
+        } catch (error) {
+          c.log.error("Failed to notify user of completion", { userId, error });
+        }
+      }
+      
+      c.broadcast("taskCompleted", {
+        taskId: c.state.id,
+        completedAt: c.state.updatedAt
+      });
+      
+      return { success: true };
+    }
+  }
+});
+
+// Third actor type - Project (coordinates tasks and users)
+const project = actor({
+  state: {
+    id: "",
+    name: "",
+    description: "",
+    users: [] as string[],
+    tasks: [] as string[]
+  },
+  
+  onCreate: (c, name: string, description: string) => {
+    c.state.id = crypto.randomUUID();
+    c.state.name = name;
+    c.state.description = description;
+  },
+  
+  actions: {
+    // Add a user to the project
+    addUser: async (c, name: string) => {
+      try {
+        // Create a new user actor
+        const userActor = await c.client.user.create({
+          params: [name]
+        });
+        
+        // Get the user profile
+        const profile = await userActor.getProfile();
+        
+        // Add to project
+        c.state.users.push(profile.id);
+        
+        // Notify the user
+        await userActor.addNotification(
+          `You have been added to the project "${c.state.name}"`,
+          "project-added"
+        );
+        
+        return { success: true, userId: profile.id };
+      } catch (error) {
+        c.log.error("Failed to add user to project", { error });
+        throw new Error(`Failed to add user: ${error.message}`);
+      }
+    },
+    
+    // Create a new task in the project
+    createTask: async (c, title: string, description: string, assignToUserId?: string) => {
+      try {
+        // Create task actor
+        const taskActor = await c.client.task.create({
+          params: [title, description]
+        });
+        
+        // Get the task ID from state
+        const taskState = await taskActor.getState();
+        const taskId = taskState.id;
+        
+        // Add to project
+        c.state.tasks.push(taskId);
+        
+        // If assignToUserId is provided, assign the task
+        if (assignToUserId) {
+          // Check if user is in the project
+          if (!c.state.users.includes(assignToUserId)) {
+            throw new Error("Cannot assign task to user not in project");
+          }
+          
+          await taskActor.assignTo(assignToUserId);
+        }
+        
+        return { success: true, taskId };
+      } catch (error) {
+        c.log.error("Failed to create task", { error });
+        throw new Error(`Failed to create task: ${error.message}`);
+      }
+    },
+    
+    // Get project dashboard with users and tasks
+    getDashboard: async (c) => {
+      const userProfiles = [];
+      const tasks = [];
+      
+      // Fetch all user profiles
+      for (const userId of c.state.users) {
+        try {
+          const userActor = await c.client.user.getWithId(userId);
+          const profile = await userActor.getProfile();
+          userProfiles.push(profile);
+        } catch (error) {
+          c.log.error("Failed to fetch user profile", { userId, error });
+          // Continue with other users even if one fails
+        }
+      }
+      
+      // Fetch all tasks
+      for (const taskId of c.state.tasks) {
+        try {
+          const taskActor = await c.client.task.getWithId(taskId);
+          const taskState = await taskActor.getState();
+          tasks.push(taskState);
+        } catch (error) {
+          c.log.error("Failed to fetch task", { taskId, error });
+          // Continue with other tasks even if one fails
+        }
+      }
+      
+      return {
+        id: c.state.id,
+        name: c.state.name,
+        description: c.state.description,
+        users: userProfiles,
+        tasks
+      };
+    }
+  }
+});
+
+// Set up the app with all actor types
+export const app = setup({
+  actors: { user, task, project }
+});
+
+export type App = typeof app;
+```
+
+## Getting Actor Handles
+
+There are several ways to get a handle to another actor:
+
+```typescript
+import { actor } from "actor-core";
+
+const coordinator = actor({
+  state: {
+    registeredActors: {} as Record<string, string>
+  },
+  
+  actions: {
+    // Method 1: Get with a known ID
+    getActorById: async (c, actorType: string, actorId: string) => {
+      try {
+        let actorHandle;
+        
+        if (actorType === "user") {
+          actorHandle = await c.client.user.getWithId(actorId);
+        } else if (actorType === "task") {
+          actorHandle = await c.client.task.getWithId(actorId);
+        } else {
+          throw new Error(`Unknown actor type: ${actorType}`);
+        }
+        
+        // Use the actor handle
+        const state = await actorHandle.getState();
+        return { success: true, state };
+      } catch (error) {
+        c.log.error("Failed to get actor", { actorType, actorId, error });
+        return { success: false, error: error.message };
+      }
+    },
+    
+    // Method 2: Create a new actor instance
+    createNewActor: async (c, actorType: string, ...params: any[]) => {
+      try {
+        let actorHandle;
+        let actorId;
+        
+        if (actorType === "user") {
+          actorHandle = await c.client.user.create({ params });
+          const state = await actorHandle.getState();
+          actorId = state.id;
+        } else if (actorType === "task") {
+          // Custom ID for the task
+          actorId = crypto.randomUUID();
+          actorHandle = await c.client.task.create({
+            id: actorId,
+            params
+          });
+        } else {
+          throw new Error(`Unknown actor type: ${actorType}`);
+        }
+        
+        // Register the actor
+        c.state.registeredActors[actorId] = actorType;
+        
+        return { success: true, actorId };
+      } catch (error) {
+        c.log.error("Failed to create actor", { actorType, error });
+        return { success: false, error: error.message };
+      }
+    },
+    
+    // Method 3: Get a singleton actor
+    getSingletonActor: async (c, actorType: string) => {
+      try {
+        let actorHandle;
+        
+        if (actorType === "globalConfig") {
+          // Get the singleton global config actor
+          actorHandle = await c.client.globalConfig.get();
+        } else if (actorType === "statistics") {
+          // Get the singleton statistics actor
+          actorHandle = await c.client.statistics.get();
+        } else {
+          throw new Error(`Unknown singleton actor type: ${actorType}`);
+        }
+        
+        return { success: true };
+      } catch (error) {
+        c.log.error("Failed to get singleton actor", { actorType, error });
+        return { success: false, error: error.message };
+      }
+    }
+  }
+});
+```
+
+## Batch Operations with Multiple Actors
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const notificationService = actor({
+  state: {
+    batchId: 0,
+    sentNotifications: {} as Record<number, {
+      successful: number,
+      failed: number,
+      userIds: string[]
+    }>
+  },
+  
+  actions: {
+    // Send a notification to multiple users in a batch
+    sendBatchNotification: async (c, userIds: string[], message: string, type = "info") => {
+      if (!userIds.length) {
+        throw new UserError("No users specified");
+      }
+      
+      // Create a batch ID for tracking
+      const batchId = ++c.state.batchId;
+      
+      // Initialize batch tracking
+      c.state.sentNotifications[batchId] = {
+        successful: 0,
+        failed: 0,
+        userIds: [...userIds]
+      };
+      
+      // Send to each user in parallel
+      const results = await Promise.allSettled(
+        userIds.map(async (userId) => {
+          try {
+            // Get user actor
+            const userActor = await c.client.user.getWithId(userId);
+            
+            // Send notification
+            await userActor.addNotification(message, type);
+            
+            return { userId, success: true };
+          } catch (error) {
+            c.log.error("Failed to send notification to user", { 
+              userId, batchId, error 
+            });
+            
+            return { 
+              userId, 
+              success: false, 
+              error: error.message 
+            };
+          }
+        })
+      );
+      
+      // Update batch results
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value.success) {
+          c.state.sentNotifications[batchId].successful++;
+        } else {
+          c.state.sentNotifications[batchId].failed++;
+        }
+      }
+      
+      // Broadcast batch completion
+      c.broadcast("batchCompleted", {
+        batchId,
+        total: userIds.length,
+        successful: c.state.sentNotifications[batchId].successful,
+        failed: c.state.sentNotifications[batchId].failed
+      });
+      
+      return {
+        batchId,
+        successful: c.state.sentNotifications[batchId].successful,
+        failed: c.state.sentNotifications[batchId].failed,
+        total: userIds.length
+      };
+    },
+    
+    // Get batch status
+    getBatchStatus: (c, batchId: number) => {
+      const batch = c.state.sentNotifications[batchId];
+      
+      if (!batch) {
+        throw new UserError(`Batch ${batchId} not found`);
+      }
+      
+      return {
+        batchId,
+        successful: batch.successful,
+        failed: batch.failed,
+        total: batch.userIds.length,
+        completionRate: (batch.successful / batch.userIds.length) * 100
+      };
+    }
+  }
+});
+```
+
+## Implementing Actor Services
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// A service actor that provides functionality to other actors
+const authService = actor({
+  state: {
+    users: {} as Record<string, {
+      id: string,
+      username: string,
+      passwordHash: string,
+      roles: string[],
+      lastLogin: number | null
+    }>,
+    tokens: {} as Record<string, {
+      userId: string,
+      expiresAt: number
+    }>
+  },
+  
+  actions: {
+    // Register a new user
+    registerUser: (c, username: string, password: string) => {
+      // Check if username exists
+      if (Object.values(c.state.users).some(u => u.username === username)) {
+        throw new UserError("Username already exists");
+      }
+      
+      // Create new user
+      const userId = crypto.randomUUID();
+      const passwordHash = hashPassword(password); // Simplified; use proper hashing!
+      
+      c.state.users[userId] = {
+        id: userId,
+        username,
+        passwordHash,
+        roles: ["user"],
+        lastLogin: null
+      };
+      
+      return { success: true, userId };
+    },
+    
+    // Login and get token
+    login: (c, username: string, password: string) => {
+      // Find user
+      const user = Object.values(c.state.users).find(u => u.username === username);
+      
+      if (!user || user.passwordHash !== hashPassword(password)) {
+        throw new UserError("Invalid username or password");
+      }
+      
+      // Create token
+      const token = crypto.randomUUID();
+      const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+      
+      c.state.tokens[token] = {
+        userId: user.id,
+        expiresAt
+      };
+      
+      // Update last login
+      user.lastLogin = Date.now();
+      
+      return {
+        token,
+        expiresAt,
+        userId: user.id
+      };
+    },
+    
+    // Validate token - other actors can call this
+    validateToken: (c, token: string) => {
+      const tokenData = c.state.tokens[token];
+      
+      if (!tokenData) {
+        return { valid: false, reason: "Token not found" };
+      }
+      
+      if (tokenData.expiresAt < Date.now()) {
+        return { valid: false, reason: "Token expired" };
+      }
+      
+      const user = c.state.users[tokenData.userId];
+      
+      if (!user) {
+        return { valid: false, reason: "User not found" };
+      }
+      
+      return {
+        valid: true,
+        userId: user.id,
+        username: user.username,
+        roles: user.roles
+      };
+    },
+    
+    // Revoke a token
+    revokeToken: (c, token: string) => {
+      if (!c.state.tokens[token]) {
+        return { success: false, reason: "Token not found" };
+      }
+      
+      delete c.state.tokens[token];
+      return { success: true };
+    },
+    
+    // Check if user has a specific role - service method
+    hasRole: (c, userId: string, role: string) => {
+      const user = c.state.users[userId];
+      
+      if (!user) {
+        return { hasRole: false, reason: "User not found" };
+      }
+      
+      return {
+        hasRole: user.roles.includes(role),
+        roles: user.roles
+      };
+    }
+  }
+});
+
+// Consumer actor that uses the auth service
+const protectedResource = actor({
+  state: {
+    resources: {} as Record<string, {
+      id: string,
+      name: string,
+      ownerId: string,
+      data: string,
+      createdAt: number
+    }>
+  },
+  
+  actions: {
+    // Create a new protected resource
+    createResource: async (c, token: string, name: string, data: string) => {
+      // Validate the token by calling auth service
+      const authActor = await c.client.authService.get();
+      const validation = await authActor.validateToken(token);
+      
+      if (!validation.valid) {
+        throw new UserError(`Authentication failed: ${validation.reason}`);
+      }
+      
+      // Create resource
+      const resourceId = crypto.randomUUID();
+      c.state.resources[resourceId] = {
+        id: resourceId,
+        name,
+        ownerId: validation.userId,
+        data,
+        createdAt: Date.now()
+      };
+      
+      return { success: true, resourceId };
+    },
+    
+    // Get a resource if authorized
+    getResource: async (c, token: string, resourceId: string) => {
+      // First validate token
+      const authActor = await c.client.authService.get();
+      const validation = await authActor.validateToken(token);
+      
+      if (!validation.valid) {
+        throw new UserError(`Authentication failed: ${validation.reason}`);
+      }
+      
+      // Check if resource exists
+      const resource = c.state.resources[resourceId];
+      if (!resource) {
+        throw new UserError("Resource not found");
+      }
+      
+      // Check if user is owner or admin
+      if (
+        resource.ownerId !== validation.userId && 
+        !validation.roles.includes("admin")
+      ) {
+        throw new UserError("Not authorized to access this resource");
+      }
+      
+      return {
+        id: resource.id,
+        name: resource.name,
+        data: resource.data,
+        createdAt: resource.createdAt,
+        owner: resource.ownerId === validation.userId
+      };
+    }
+  }
+});
+
+// Utility functions
+function hashPassword(password: string): string {
+  // This is a simplification. In a real app, use a proper hashing library!
+  return `hashed:${password}`;
+}
+
+// Set up the app
+export const app = setup({
+  actors: { authService, protectedResource }
+});
+
+export type App = typeof app;
+```
+
+## Error Handling and Retries
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const messageQueue = actor({
+  state: {
+    queue: [] as Array<{
+      id: string,
+      recipientId: string,
+      message: string,
+      attempts: number,
+      nextAttempt: number | null,
+      status: "pending" | "processing" | "failed" | "delivered"
+    }>
+  },
+  
+  createVars: () => ({
+    processingQueue: false
+  }),
+  
+  onStart: (c) => {
+    // Schedule queue processing
+    c.schedule.after(5000, "processQueue");
+  },
+  
+  actions: {
+    // Add a message to the queue
+    enqueue: (c, recipientId: string, message: string) => {
+      const messageId = crypto.randomUUID();
+      
+      c.state.queue.push({
+        id: messageId,
+        recipientId,
+        message,
+        attempts: 0,
+        nextAttempt: Date.now(),
+        status: "pending"
+      });
+      
+      // If queue is not being processed, start processing
+      if (!c.vars.processingQueue) {
+        c.schedule.after(0, "processQueue");
+      }
+      
+      return { messageId };
+    },
+    
+    // Process the message queue
+    processQueue: async (c) => {
+      // Set processing flag
+      c.vars.processingQueue = true;
+      
+      const now = Date.now();
+      let processedMessages = 0;
+      let errorCount = 0;
+      
+      // Find messages that need processing
+      const messagesToProcess = c.state.queue
+        .filter(msg => 
+          (msg.status === "pending" || msg.status === "failed") && 
+          msg.nextAttempt !== null && 
+          msg.nextAttempt <= now
+        )
+        .slice(0, 10); // Process in batches of 10
+      
+      // Process each message
+      for (const message of messagesToProcess) {
+        message.status = "processing";
+        message.attempts++;
+        
+        try {
+          // Get recipient actor
+          const recipientActor = await c.client.user.getWithId(message.recipientId);
+          
+          // Send message
+          await recipientActor.addNotification(message.message, "queue-message");
+          
+          // Mark as delivered
+          message.status = "delivered";
+          processedMessages++;
+        } catch (error) {
+          errorCount++;
+          message.status = "failed";
+          
+          // Exponential backoff
+          const backoff = Math.min(60000 * (2 ** (message.attempts - 1)), 24 * 60 * 60 * 1000);
+          message.nextAttempt = now + backoff;
+          
+          c.log.error("Failed to deliver message", {
+            messageId: message.id,
+            recipientId: message.recipientId,
+            attempt: message.attempts,
+            nextAttempt: new Date(message.nextAttempt).toISOString(),
+            error: error.message
+          });
+          
+          // If too many attempts, mark as permanently failed
+          if (message.attempts >= 5) {
+            message.nextAttempt = null;
+            c.log.error("Message delivery permanently failed", {
+              messageId: message.id,
+              recipientId: message.recipientId
+            });
+          }
+        }
+      }
+      
+      // Clean up delivered messages older than 1 hour
+      const oneHourAgo = now - (60 * 60 * 1000);
+      c.state.queue = c.state.queue.filter(msg => 
+        msg.status !== "delivered" || 
+        msg.nextAttempt === null || 
+        msg.nextAttempt > oneHourAgo
+      );
+      
+      // Schedule next processing
+      const hasMoreToProcess = c.state.queue.some(msg => 
+        (msg.status === "pending" || msg.status === "failed") &&
+        msg.nextAttempt !== null
+      );
+      
+      if (hasMoreToProcess) {
+        // Find the next message to process
+        const nextMessage = c.state.queue
+          .filter(msg => 
+            (msg.status === "pending" || msg.status === "failed") && 
+            msg.nextAttempt !== null
+          )
+          .sort((a, b) => (a.nextAttempt || Infinity) - (b.nextAttempt || Infinity))[0];
+        
+        if (nextMessage && nextMessage.nextAttempt) {
+          const delay = Math.max(0, nextMessage.nextAttempt - now);
+          c.schedule.after(delay, "processQueue");
+        } else {
+          c.schedule.after(5000, "processQueue");
+        }
+      } else {
+        // No more messages to process
+        c.vars.processingQueue = false;
+      }
+      
+      return {
+        processed: processedMessages,
+        errors: errorCount,
+        remaining: c.state.queue.length,
+        pendingOrFailed: c.state.queue.filter(m => 
+          m.status === "pending" || m.status === "failed"
+        ).length
+      };
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Error Handling**: Always handle errors when communicating between actors. Use try/catch blocks and log errors.
+
+2. **Idempotency**: Design actions to be idempotent when possible, so they can be safely retried.
+
+3. **Avoid Deep Actor Chains**: Limit the depth of actor-to-actor communication to avoid creating complex dependency chains.
+
+4. **Use Batch Operations**: When operating on multiple actors, consider using Promise.all or batching to improve performance.
+
+5. **Handle Temporary Failures**: Implement retry mechanisms with exponential backoff for temporary failures.
+
+6. **Actor Discovery**: Use reliable methods to discover and reference other actors.
+
+7. **Avoid Circular Dependencies**: Be careful to avoid creating circular dependencies between actors.
+
+8. **Consider Services**: For commonly reused functionality, create service actors that provide functionality to others.
+
+9. **Message Queue Pattern**: For reliable asynchronous communication, implement a message queue pattern.
+
+10. **Maintain State Consistency**: Ensure operations across multiple actors maintain consistent state, possibly using transactions.
+
+By following these patterns and best practices, you can build complex, distributed applications with ActorCore that effectively coordinate work across many actor instances.

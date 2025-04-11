@@ -1,0 +1,443 @@
+---
+title: Basic Actor Test
+description: Test an actor's functionality with a minimal setup
+---
+
+# Basic Actor Test
+
+Testing is a crucial part of building reliable actor systems. ActorCore provides testing utilities that make it easy to verify that your actors behave correctly. This guide shows how to write basic tests for your actors.
+
+## Setting Up a Test Environment
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Basic test for a counter actor
+test("counter should increment correctly", async (t) => {
+  // Setup test environment with your app
+  const { client } = await setupTest(t, app);
+  
+  // Connect to counter actor
+  const counter = await client.counter.get();
+  
+  // Test initial state
+  expect(await counter.getCount()).toBe(0);
+  
+  // Test increment action
+  await counter.increment(5);
+  expect(await counter.getCount()).toBe(5);
+  
+  // Test another increment
+  await counter.increment(3);
+  expect(await counter.getCount()).toBe(8);
+  
+  // Test reset action
+  await counter.reset();
+  expect(await counter.getCount()).toBe(0);
+});
+```
+
+## Testing Multiple Actions
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test for a todo list actor
+test("todo list should manage items correctly", async (t) => {
+  // Setup test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to todo list actor
+  const todoList = await client.todoList.get();
+  
+  // Test initial state
+  const initialItems = await todoList.getItems();
+  expect(initialItems).toEqual([]);
+  
+  // Test adding an item
+  const itemId1 = await todoList.addItem("Buy groceries");
+  expect(itemId1).toBeTruthy();
+  
+  // Add another item
+  const itemId2 = await todoList.addItem("Clean house");
+  expect(itemId2).toBeTruthy();
+  
+  // Check items were added
+  const items = await todoList.getItems();
+  expect(items).toHaveLength(2);
+  expect(items[0].text).toBe("Buy groceries");
+  expect(items[1].text).toBe("Clean house");
+  
+  // Test completing an item
+  await todoList.toggleComplete(itemId1);
+  
+  // Check item was completed
+  const updatedItems = await todoList.getItems();
+  const item1 = updatedItems.find(item => item.id === itemId1);
+  expect(item1.completed).toBe(true);
+  
+  // Test deleting an item
+  await todoList.deleteItem(itemId2);
+  
+  // Check item was deleted
+  const finalItems = await todoList.getItems();
+  expect(finalItems).toHaveLength(1);
+  expect(finalItems[0].id).toBe(itemId1);
+});
+```
+
+## Testing Error Handling
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test error handling in user registration
+test("user registration should validate inputs", async (t) => {
+  // Setup test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to user registration actor
+  const registration = await client.userRegistration.get();
+  
+  // Test valid registration
+  const result = await registration.registerUser({
+    username: "validuser",
+    email: "valid@example.com",
+    password: "securepassword123"
+  });
+  
+  expect(result.success).toBe(true);
+  expect(result.userId).toBeTruthy();
+  
+  // Test username validation
+  await expect(registration.registerUser({
+    username: "ab", // Too short
+    email: "valid@example.com",
+    password: "securepassword123"
+  })).rejects.toThrow(/username.*at least 3 characters/i);
+  
+  // Test email validation
+  await expect(registration.registerUser({
+    username: "validuser2",
+    email: "invalid-email", // Invalid format
+    password: "securepassword123"
+  })).rejects.toThrow(/invalid email/i);
+  
+  // Test duplicate username
+  await expect(registration.registerUser({
+    username: "validuser", // Already used
+    email: "another@example.com",
+    password: "securepassword123"
+  })).rejects.toThrow(/username already taken/i);
+  
+  // Test password strength
+  await expect(registration.registerUser({
+    username: "validuser3",
+    email: "valid3@example.com",
+    password: "weak" // Too weak
+  })).rejects.toThrow(/password.*too weak/i);
+});
+```
+
+## Testing with Connection Parameters
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test a chat room that requires connection parameters
+test("chat room should handle connections properly", async (t) => {
+  // Setup test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect with valid parameters
+  const aliceChat = await client.chatRoom.get({
+    params: {
+      userId: "alice123",
+      username: "Alice"
+    }
+  });
+  
+  // Should be able to send messages
+  const messageId = await aliceChat.sendMessage("Hello, everyone!");
+  expect(messageId).toBeTruthy();
+  
+  // Test message history
+  const messages = await aliceChat.getHistory();
+  expect(messages).toHaveLength(1);
+  expect(messages[0].sender).toBe("Alice");
+  expect(messages[0].text).toBe("Hello, everyone!");
+  
+  // Connect a second user
+  const bobChat = await client.chatRoom.get({
+    params: {
+      userId: "bob456",
+      username: "Bob"
+    }
+  });
+  
+  // Bob sends a message
+  await bobChat.sendMessage("Hi Alice!");
+  
+  // Check both users see the messages
+  const aliceMessages = await aliceChat.getHistory();
+  const bobMessages = await bobChat.getHistory();
+  
+  expect(aliceMessages).toHaveLength(2);
+  expect(bobMessages).toHaveLength(2);
+  
+  // Test connection with missing parameters
+  await expect(client.chatRoom.get({
+    params: {
+      // Missing username
+      userId: "charlie789"
+    }
+  })).rejects.toThrow(/username is required/i);
+});
+```
+
+## Testing an Actor's Internal State
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test the internal state of a game actor
+test("game state should update correctly", async (t) => {
+  // Setup test environment
+  const { client, getInternalState } = await setupTest(t, app);
+  
+  // Connect to game actor
+  const game = await client.gameRoom.get({
+    id: "test-game",
+    params: { playerName: "TestPlayer" }
+  });
+  
+  // Check initial internal state
+  let internalState = await getInternalState(game);
+  expect(internalState.status).toBe("waiting");
+  expect(internalState.players).toHaveProperty("TestPlayer");
+  expect(internalState.started).toBe(false);
+  
+  // Add another player
+  await game.addBot("BotPlayer");
+  
+  // Verify bot was added
+  internalState = await getInternalState(game);
+  expect(internalState.players).toHaveProperty("BotPlayer");
+  
+  // Start the game
+  await game.startGame();
+  
+  // Verify game started
+  internalState = await getInternalState(game);
+  expect(internalState.status).toBe("playing");
+  expect(internalState.started).toBe(true);
+  expect(internalState.startTime).toBeGreaterThan(0);
+  
+  // Make a move
+  await game.makeMove("TestPlayer", { x: 1, y: 2 });
+  
+  // Verify move was recorded
+  internalState = await getInternalState(game);
+  expect(internalState.moves).toHaveLength(1);
+  expect(internalState.moves[0]).toEqual({
+    player: "TestPlayer",
+    position: { x: 1, y: 2 },
+    timestamp: expect.any(Number)
+  });
+});
+```
+
+## Testing with Custom Setup
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test an actor with custom initial state
+test("leaderboard should sort scores correctly", async (t) => {
+  // Setup test with custom initial state
+  const { client } = await setupTest(t, app, {
+    // Provide custom initial state for specific actors
+    initialState: {
+      leaderboard: {
+        scores: [
+          { player: "Player1", score: 100 },
+          { player: "Player2", score: 200 },
+          { player: "Player3", score: 150 }
+        ]
+      }
+    }
+  });
+  
+  // Connect to leaderboard
+  const leaderboard = await client.leaderboard.get();
+  
+  // Test getting top scores
+  const topScores = await leaderboard.getTopScores(2);
+  expect(topScores).toHaveLength(2);
+  expect(topScores[0].player).toBe("Player2"); // Highest score first
+  expect(topScores[1].player).toBe("Player3"); // Second highest
+  
+  // Add a new high score
+  await leaderboard.addScore("Player4", 300);
+  
+  // Check updated rankings
+  const newTopScores = await leaderboard.getTopScores(3);
+  expect(newTopScores).toHaveLength(3);
+  expect(newTopScores[0].player).toBe("Player4"); // New highest score
+  expect(newTopScores[1].player).toBe("Player2");
+  expect(newTopScores[2].player).toBe("Player3");
+  
+  // Test player ranking
+  const player1Rank = await leaderboard.getPlayerRank("Player1");
+  expect(player1Rank).toBe(4); // Lowest score, rank 4
+  
+  const player4Rank = await leaderboard.getPlayerRank("Player4");
+  expect(player4Rank).toBe(1); // Highest score, rank 1
+});
+```
+
+## Testing Multiple Actors Together
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test interaction between multiple actors
+test("inventory and shop should interact correctly", async (t) => {
+  // Setup test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to user inventory and shop actors
+  const shop = await client.shopActor.get();
+  const inventory = await client.inventoryActor.get({
+    params: { userId: "test-user" }
+  });
+  
+  // Initial balance and inventory
+  let userBalance = await inventory.getBalance();
+  expect(userBalance).toBe(1000); // Starting balance
+  
+  let items = await inventory.getItems();
+  expect(items).toHaveLength(0); // Empty inventory
+  
+  // Get shop items
+  const shopItems = await shop.getAvailableItems();
+  
+  // Buy an item
+  const itemId = shopItems[0].id;
+  const itemPrice = shopItems[0].price;
+  
+  await shop.buyItem("test-user", itemId);
+  
+  // Check balance decreased
+  userBalance = await inventory.getBalance();
+  expect(userBalance).toBe(1000 - itemPrice);
+  
+  // Check item was added to inventory
+  items = await inventory.getItems();
+  expect(items).toHaveLength(1);
+  expect(items[0].id).toBe(itemId);
+  
+  // Try buying an expensive item that we can't afford
+  const expensiveItem = shopItems.find(item => item.price > userBalance);
+  
+  // Should throw an error
+  await expect(shop.buyItem("test-user", expensiveItem.id))
+    .rejects.toThrow(/insufficient funds/i);
+  
+  // Sell an item back to the shop
+  await shop.sellItem("test-user", itemId);
+  
+  // Check balance increased
+  userBalance = await inventory.getBalance();
+  const sellPrice = Math.floor(itemPrice * 0.8); // 80% of buy price
+  expect(userBalance).toBe(1000 - itemPrice + sellPrice);
+  
+  // Check item was removed from inventory
+  items = await inventory.getItems();
+  expect(items).toHaveLength(0);
+});
+```
+
+## Testing Transaction Boundaries
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test transaction boundaries in a banking actor
+test("bank transfers should maintain consistency", async (t) => {
+  // Setup test environment
+  const { client, getInternalState } = await setupTest(t, app);
+  
+  // Connect to bank actor
+  const bank = await client.bankActor.get();
+  
+  // Create two accounts
+  const account1 = "acc-123";
+  const account2 = "acc-456";
+  
+  await bank.createAccount(account1, 1000);
+  await bank.createAccount(account2, 500);
+  
+  // Check initial balances
+  let state = await getInternalState(bank);
+  expect(state.accounts[account1].balance).toBe(1000);
+  expect(state.accounts[account2].balance).toBe(500);
+  
+  // Test successful transfer
+  await bank.transfer(account1, account2, 300);
+  
+  // Check balances after transfer
+  state = await getInternalState(bank);
+  expect(state.accounts[account1].balance).toBe(700);
+  expect(state.accounts[account2].balance).toBe(800);
+  
+  // Test transfer with insufficient funds
+  await expect(bank.transfer(account1, account2, 1000))
+    .rejects.toThrow(/insufficient funds/i);
+  
+  // Balances should remain unchanged after failed transfer
+  state = await getInternalState(bank);
+  expect(state.accounts[account1].balance).toBe(700);
+  expect(state.accounts[account2].balance).toBe(800);
+  
+  // Test transfer that throws mid-transaction
+  await expect(bank.buggyTransfer(account1, account2, 200))
+    .rejects.toThrow(/transaction error/i);
+  
+  // Balances should remain unchanged after failed transaction
+  state = await getInternalState(bank);
+  expect(state.accounts[account1].balance).toBe(700);
+  expect(state.accounts[account2].balance).toBe(800);
+});
+```
+
+## Best Practices
+
+1. **Test in isolation**: Test one actor or behavior at a time
+2. **Cover edge cases**: Test error handling and boundary conditions
+3. **Clean setup**: Start with a known state for repeatable tests
+4. **Clean teardown**: The `setupTest` function handles cleanup automatically
+5. **Test actions**: Verify that actions produce the expected results
+6. **Test state changes**: Verify that state is updated correctly
+7. **Test error handling**: Verify that errors are thrown when expected
+8. **Test connections**: Verify that connection parameters are validated correctly
+9. **Use descriptive test names**: Make it clear what each test is checking
+10. **Keep tests simple**: Each test should focus on a specific behavior
+
+Testing is essential for building reliable actor systems. By using ActorCore's testing utilities, you can verify that your actors behave correctly in a controlled environment, leading to more robust and maintainable applications.

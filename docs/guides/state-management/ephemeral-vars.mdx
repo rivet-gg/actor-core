@@ -1,0 +1,311 @@
+---
+title: Using Ephemeral Variables
+description: Store non-persisted runtime data with vars and createVars
+---
+
+# Using Ephemeral Variables
+
+While actor state is persisted between restarts, some data should be ephemeral and only exist during runtime. ActorCore provides "vars" for storing non-persisted data like connections to external services, event emitters, or other non-serializable objects.
+
+## Basic Vars Definition
+
+```typescript
+import { actor } from "actor-core";
+
+const analyticsActor = actor({
+  // Persisted state - saved between restarts
+  state: {
+    eventCount: 0,
+    lastEvent: null
+  },
+  
+  // Ephemeral vars - not persisted, reset on restart
+  vars: {
+    activeConnections: 0,
+    requestCache: {},
+    startTime: Date.now()
+  },
+  
+  actions: {
+    trackEvent: (c, eventName) => {
+      // Update persisted state
+      c.state.eventCount++;
+      c.state.lastEvent = {
+        name: eventName,
+        timestamp: Date.now()
+      };
+      
+      // Update ephemeral vars
+      c.vars.requestCache[eventName] = c.vars.requestCache[eventName] || 0;
+      c.vars.requestCache[eventName]++;
+      
+      return c.state.eventCount;
+    }
+  },
+  
+  onConnect: (c) => {
+    // Track connection in ephemeral vars
+    c.vars.activeConnections++;
+  },
+  
+  onDisconnect: (c) => {
+    // Update ephemeral vars
+    c.vars.activeConnections--;
+  }
+});
+```
+
+## Using createVars for Dynamic Initialization
+
+For more complex initialization, use `createVars`:
+
+```typescript
+import { actor } from "actor-core";
+import { createNanoEvents } from "nanoevents";
+import { createLRUCache } from "lru-cache";
+import { initializeDatabase } from "./db";
+
+const serviceActor = actor({
+  state: {
+    // Persisted state here
+  },
+  
+  // Dynamic initialization of non-serializable objects
+  createVars: () => {
+    return {
+      // Event emitter - not serializable
+      emitter: createNanoEvents(),
+      
+      // LRU cache - not serializable
+      cache: createLRUCache({ max: 1000 }),
+      
+      // Database connection - not serializable
+      db: initializeDatabase(),
+      
+      // Simple values are fine too
+      startTime: Date.now(),
+      metrics: {
+        requestCount: 0,
+        errorCount: 0,
+        avgResponseTime: 0
+      }
+    };
+  },
+  
+  // Initialize on actor start (happens on each restart)
+  onStart: (c) => {
+    // Set up event listeners on the emitter
+    c.vars.emitter.on('request', (data) => {
+      c.vars.metrics.requestCount++;
+      // Process request data...
+    });
+    
+    c.vars.emitter.on('error', (err) => {
+      c.vars.metrics.errorCount++;
+      // Log error...
+    });
+  },
+  
+  actions: {
+    getData: async (c, key) => {
+      // Check cache first
+      if (c.vars.cache.has(key)) {
+        return c.vars.cache.get(key);
+      }
+      
+      // Measure response time
+      const startTime = performance.now();
+      
+      try {
+        // Get data from database
+        const data = await c.vars.db.query(`SELECT * FROM items WHERE key = $1`, [key]);
+        
+        // Update cache
+        c.vars.cache.set(key, data);
+        
+        // Track metrics
+        const duration = performance.now() - startTime;
+        c.vars.metrics.avgResponseTime = 
+          (c.vars.metrics.avgResponseTime * (c.vars.metrics.requestCount - 1) + duration) / 
+          c.vars.metrics.requestCount;
+        
+        // Emit event
+        c.vars.emitter.emit('request', { key, duration, success: true });
+        
+        return data;
+      } catch (error) {
+        // Track error
+        c.vars.emitter.emit('error', error);
+        throw error;
+      }
+    },
+    
+    getMetrics: (c) => {
+      return {
+        uptime: Date.now() - c.vars.startTime,
+        ...c.vars.metrics
+      };
+    }
+  }
+});
+```
+
+## Using External Services
+
+Vars are ideal for integrating with external services:
+
+```typescript
+import { actor } from "actor-core";
+import { Resend } from "resend";
+import { S3Client } from "@aws-sdk/client-s3";
+
+const userActor = actor({
+  state: {
+    userId: "",
+    email: "",
+    files: []
+  },
+  
+  // Initialize external service clients
+  createVars: () => {
+    return {
+      // Email service client
+      emailClient: new Resend(process.env.RESEND_API_KEY),
+      
+      // Storage service client
+      storageClient: new S3Client({
+        region: process.env.AWS_REGION,
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+        }
+      })
+    };
+  },
+  
+  actions: {
+    sendWelcomeEmail: async (c) => {
+      try {
+        const response = await c.vars.emailClient.emails.send({
+          from: "welcome@example.com",
+          to: c.state.email,
+          subject: "Welcome to our service!",
+          html: `<p>Hello! Thanks for signing up.</p>`
+        });
+        
+        return { success: true, id: response.id };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+    
+    uploadProfilePicture: async (c, data, filename) => {
+      // Upload to S3 using the client in vars
+      // Implementation depends on S3 client specifics
+      // ...
+      
+      // Update state with file reference
+      c.state.files.push({
+        name: filename,
+        uploadedAt: Date.now()
+      });
+      
+      return { success: true };
+    }
+  }
+});
+```
+
+## Web API Integrations
+
+Use vars to store API clients and tokens:
+
+```typescript
+import { actor } from "actor-core";
+import { OpenAI } from "openai";
+
+const aiAssistantActor = actor({
+  state: {
+    conversations: []
+  },
+  
+  createVars: () => ({
+    openai: new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    }),
+    
+    // Store rate limiting info
+    rateLimit: {
+      remaining: 100,
+      resetAt: Date.now() + 3600000
+    }
+  }),
+  
+  actions: {
+    generateResponse: async (c, prompt) => {
+      // Check rate limit
+      if (c.vars.rateLimit.remaining <= 0) {
+        const waitTime = c.vars.rateLimit.resetAt - Date.now();
+        if (waitTime > 0) {
+          return {
+            error: "Rate limit exceeded",
+            retryAfter: Math.ceil(waitTime / 1000)
+          };
+        }
+      }
+      
+      try {
+        // Call OpenAI API
+        const response = await c.vars.openai.chat.completions.create({
+          model: "gpt-4-turbo",
+          messages: [{ role: "user", content: prompt }]
+        });
+        
+        // Update rate limit info from headers (simplified example)
+        c.vars.rateLimit.remaining--;
+        
+        // Save to conversation history (in persisted state)
+        c.state.conversations.push({
+          prompt,
+          response: response.choices[0].message.content,
+          timestamp: Date.now()
+        });
+        
+        return {
+          text: response.choices[0].message.content
+        };
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. Use `vars` for:
+   - External API clients
+   - Database connections
+   - Event emitters
+   - Non-serializable objects
+   - Temporary runtime data
+   - Metrics and monitoring
+
+2. Use `state` for:
+   - User data
+   - Application state
+   - Data that must survive restarts
+   - Configuration that should persist
+   
+3. Initialize vars properly:
+   - Clean up resources in handlers if needed
+   - Re-establish connections on actor restart
+   - Handle potential failures in external services
+
+4. Keep in mind:
+   - Vars are NOT persisted and will be reset on actor restart
+   - Don't store crucial data only in vars if it needs to survive restarts
+   - Large vars objects don't impact persistence performance
+
+By properly using ephemeral vars, you can build actors that integrate with external services while maintaining clean separation between persistent and runtime-only data.

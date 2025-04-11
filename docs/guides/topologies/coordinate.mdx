@@ -1,0 +1,1146 @@
+---
+title: Coordinate Topology
+description: Learn how to create distributed actors that share state across multiple nodes
+---
+
+# Coordinate Topology
+
+The Coordinate topology in ActorCore enables advanced distributed applications by allowing multiple instances of the same actor to coordinate and share state across different nodes. This topology is ideal for building highly available systems, real-time collaborative applications, and globally distributed services.
+
+## Understanding Coordinate Topology
+
+In Coordinate topology:
+
+- Multiple instances of the same actor can exist simultaneously across different nodes
+- Actor instances work together as peers in a peer-to-peer network
+- State is synchronized between actor instances
+- Updates from any instance propagate to all instances
+- Clients can connect to any instance and receive consistent behavior
+
+Key use cases for Coordinate topology include:
+
+- Real-time collaborative editors
+- Distributed gaming
+- Multi-region applications requiring low latency
+- High-availability services
+- Geo-distributed applications
+
+## Basic Coordinate Topology Setup
+
+```typescript
+import { setup, coordinateTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+// Define actors
+import { documentEditor } from "./actors/document-editor";
+import { gameState } from "./actors/game-state";
+
+// Set up the application with coordinate topology
+export const app = setup({
+  actors: {
+    documentEditor,
+    gameState
+  },
+  topology: coordinateTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      prefix: "my-app"
+    }),
+    regionId: process.env.REGION_ID || "default"
+  })
+});
+
+export type App = typeof app;
+```
+
+## Designing Coordinated Actors
+
+When designing actors for coordinate topology, consider how state will be synchronized and conflicts resolved:
+
+```typescript
+import { actor } from "actor-core";
+
+export const documentEditor = actor({
+  state: {
+    documentId: "",
+    title: "",
+    content: "",
+    version: 0,
+    lastModified: 0,
+    authors: {} as Record<string, {
+      id: string,
+      name: string,
+      cursor: { line: number, column: number } | null,
+      lastActive: number
+    }>
+  },
+  
+  // Initialize the document
+  onCreate: (c, documentId: string, initialTitle: string = "Untitled") => {
+    c.state.documentId = documentId;
+    c.state.title = initialTitle;
+    c.state.content = "";
+    c.state.version = 1;
+    c.state.lastModified = Date.now();
+  },
+  
+  // Connection state
+  createConnState: (c, { params }) => {
+    // Require user info
+    if (!params.userId || !params.userName) {
+      throw new Error("User ID and name required");
+    }
+    
+    // Add author to the document
+    c.state.authors[params.userId] = {
+      id: params.userId,
+      name: params.userName,
+      cursor: null,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast new author joined
+    c.broadcast("authorJoined", {
+      userId: params.userId,
+      name: params.userName,
+      timestamp: Date.now()
+    });
+    
+    return {
+      userId: params.userId,
+      userName: params.userName,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // Apply an edit to the document
+    applyEdit: (c, edit: {
+      position: number,
+      deleteCount: number,
+      insertText: string
+    }) => {
+      // Validate edit
+      if (edit.position < 0 || edit.position > c.state.content.length) {
+        throw new Error("Invalid edit position");
+      }
+      
+      if (edit.deleteCount < 0 || edit.position + edit.deleteCount > c.state.content.length) {
+        throw new Error("Invalid delete count");
+      }
+      
+      // Apply the edit to the content
+      c.state.content = 
+        c.state.content.substring(0, edit.position) +
+        edit.insertText +
+        c.state.content.substring(edit.position + edit.deleteCount);
+      
+      // Update metadata
+      c.state.version++;
+      c.state.lastModified = Date.now();
+      
+      // Update author activity
+      c.state.authors[c.conn.state.userId].lastActive = Date.now();
+      
+      // Broadcast the edit to all connections on all nodes
+      c.broadcast("documentEdited", {
+        edit,
+        author: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        version: c.state.version,
+        timestamp: c.state.lastModified
+      });
+      
+      return { 
+        success: true, 
+        version: c.state.version 
+      };
+    },
+    
+    // Update document title
+    updateTitle: (c, newTitle: string) => {
+      if (!newTitle.trim()) {
+        throw new Error("Title cannot be empty");
+      }
+      
+      c.state.title = newTitle;
+      c.state.version++;
+      c.state.lastModified = Date.now();
+      
+      // Broadcast title update
+      c.broadcast("titleUpdated", {
+        title: newTitle,
+        author: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        version: c.state.version,
+        timestamp: c.state.lastModified
+      });
+      
+      return { success: true };
+    },
+    
+    // Update cursor position
+    updateCursor: (c, position: { line: number, column: number } | null) => {
+      // Update cursor position
+      c.state.authors[c.conn.state.userId].cursor = position;
+      c.state.authors[c.conn.state.userId].lastActive = Date.now();
+      
+      // Broadcast cursor update
+      c.broadcast("cursorUpdated", {
+        userId: c.conn.state.userId,
+        name: c.conn.state.userName,
+        cursor: position,
+        timestamp: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Get document state
+    getDocument: (c) => {
+      return {
+        id: c.state.documentId,
+        title: c.state.title,
+        content: c.state.content,
+        version: c.state.version,
+        lastModified: c.state.lastModified,
+        authors: Object.values(c.state.authors).map(author => ({
+          id: author.id,
+          name: author.name,
+          cursor: author.cursor,
+          lastActive: author.lastActive
+        }))
+      };
+    }
+  }
+});
+```
+
+## Working with Coordinated Actors
+
+Working with coordinated actors is similar to other topologies, but with awareness that state is synchronized across instances:
+
+```typescript
+import { app } from "./app";
+
+async function connectToDocument(documentId: string, userId: string, userName: string) {
+  // Create a client
+  const client = app.createClient();
+  
+  // Connect to the document (will connect to nearest instance)
+  const document = await client.documentEditor.getWithId(documentId, {
+    params: {
+      userId,
+      userName
+    }
+  });
+  
+  // Subscribe to document events
+  document.on("documentEdited", (data) => {
+    console.log(`Edit by ${data.author.name}: ${JSON.stringify(data.edit)}`);
+    // Update local UI with the edit
+  });
+  
+  document.on("titleUpdated", (data) => {
+    console.log(`Title updated to "${data.title}" by ${data.author.name}`);
+    // Update UI title
+  });
+  
+  document.on("cursorUpdated", (data) => {
+    console.log(`${data.name}'s cursor moved to ${JSON.stringify(data.cursor)}`);
+    // Update UI to show other user's cursor
+  });
+  
+  document.on("authorJoined", (data) => {
+    console.log(`${data.name} joined the document`);
+    // Update UI to show new collaborator
+  });
+  
+  // Get current document state
+  const docState = await document.getDocument();
+  console.log(`Connected to document: ${docState.title} (version ${docState.version})`);
+  console.log(`${docState.authors.length} authors currently collaborating`);
+  
+  return document;
+}
+
+// Usage example
+async function main() {
+  try {
+    // Connect as Alice
+    const aliceDoc = await connectToDocument("doc-123", "user-alice", "Alice");
+    
+    // Make some edits
+    await aliceDoc.applyEdit({
+      position: 0,
+      deleteCount: 0,
+      insertText: "Hello, world!"
+    });
+    
+    await aliceDoc.updateTitle("My Collaborative Document");
+    
+    // In a real app, Bob would be connecting from a different client
+    const bobDoc = await connectToDocument("doc-123", "user-bob", "Bob");
+    
+    // Bob makes an edit - Alice will receive this via the event subscription
+    await bobDoc.applyEdit({
+      position: 13,
+      deleteCount: 0,
+      insertText: " This is collaborative editing in action!"
+    });
+    
+    // Update cursor positions
+    await aliceDoc.updateCursor({ line: 0, column: 5 });
+    await bobDoc.updateCursor({ line: 0, column: 25 });
+    
+    // Get final document state
+    const finalState = await aliceDoc.getDocument();
+    console.log(`Final document content: "${finalState.content}"`);
+  } catch (error) {
+    console.error("Error:", error);
+  }
+}
+
+main();
+```
+
+## Redis Configuration for Coordinate Topology
+
+Coordinate topology relies heavily on Redis for peer discovery, state synchronization, and message passing:
+
+```typescript
+import { setup, coordinateTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+export const app = setup({
+  actors: { /* your actors */ },
+  topology: coordinateTopology({
+    driver: redisDriver({
+      // Redis connection
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      
+      // Key prefix for namespacing
+      prefix: "myapp",
+      
+      // Connection options
+      connectTimeout: 5000,
+      
+      // Optional: Redis Cluster for high availability
+      cluster: process.env.REDIS_CLUSTER === "true" ? {
+        nodes: [
+          { host: "redis-node1", port: 6379 },
+          { host: "redis-node2", port: 6379 },
+          { host: "redis-node3", port: 6379 }
+        ]
+      } : undefined
+    }),
+    
+    // Region ID for this node (used for network topology)
+    regionId: process.env.REGION_ID || "us-east",
+    
+    // Node configuration
+    node: {
+      // Unique ID for this node
+      id: process.env.NODE_ID || `node-${Math.random().toString(36).substring(2, 9)}`,
+      
+      // Optional: node metadata
+      metadata: {
+        datacenter: process.env.DATACENTER || "dc1",
+        zone: process.env.ZONE || "us-east-1a"
+      }
+    },
+    
+    // Peer discovery configuration
+    discovery: {
+      // How often to check for new peers (ms)
+      checkInterval: 10000,
+      
+      // Maximum peers to connect to
+      maxPeers: 10,
+      
+      // Prefer peers in the same region
+      preferSameRegion: true
+    },
+    
+    // State synchronization
+    synchronization: {
+      // Conflict resolution strategy
+      conflictStrategy: "last-write-wins", // or "custom"
+      
+      // Custom conflict resolution (if strategy is "custom")
+      resolveConflict: (local, remote) => {
+        // Example: use the higher version number
+        if (remote.version > local.version) {
+          return remote;
+        }
+        return local;
+      }
+    }
+  })
+});
+```
+
+## Multi-Region Deployment
+
+One of the most powerful features of the coordinate topology is multi-region deployment:
+
+```typescript
+// us-east.js
+import { app } from "./app";
+
+const usEastNode = app.createNode({
+  nodeId: "us-east-1",
+  regionId: "us-east",
+  metadata: {
+    datacenter: "aws-us-east-1",
+    zone: "us-east-1a"
+  },
+  listenPort: 3001
+});
+
+usEastNode.start().then(() => {
+  console.log("US East node started on port 3001");
+});
+
+// eu-west.js
+import { app } from "./app";
+
+const euWestNode = app.createNode({
+  nodeId: "eu-west-1",
+  regionId: "eu-west",
+  metadata: {
+    datacenter: "aws-eu-west-1",
+    zone: "eu-west-1b"
+  },
+  listenPort: 3002
+});
+
+euWestNode.start().then(() => {
+  console.log("EU West node started on port 3002");
+});
+
+// asia-east.js
+import { app } from "./app";
+
+const asiaEastNode = app.createNode({
+  nodeId: "asia-east-1",
+  regionId: "asia-east",
+  metadata: {
+    datacenter: "gcp-asia-east1",
+    zone: "asia-east1-a"
+  },
+  listenPort: 3003
+});
+
+asiaEastNode.start().then(() => {
+  console.log("Asia East node started on port 3003");
+});
+```
+
+With this setup:
+
+1. Users connect to their nearest node (via load balancing)
+2. Actor instances on each node automatically discover and connect to peers
+3. State changes are synchronized across all regions
+4. Users get low-latency interactions with the nearest node
+5. The system continues to function even if one region goes offline
+
+## Advanced Coordinate Patterns
+
+### Custom State Merging
+
+For more complex state merging requirements, you can implement custom state merge strategies:
+
+```typescript
+import { setup, coordinateTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+// Custom state merge function for a text editor
+function mergeDocumentState(local, remote) {
+  // If remote version is higher, take remote changes
+  if (remote.version > local.version) {
+    // But merge the authors lists from both
+    const mergedAuthors = { ...local.authors };
+    for (const [id, author] of Object.entries(remote.authors)) {
+      if (!mergedAuthors[id] || author.lastActive > mergedAuthors[id].lastActive) {
+        mergedAuthors[id] = author;
+      }
+    }
+    
+    return {
+      ...remote,
+      authors: mergedAuthors
+    };
+  }
+  
+  // If local version is higher or same, keep local state
+  // but still merge authors
+  const mergedAuthors = { ...local.authors };
+  for (const [id, author] of Object.entries(remote.authors)) {
+    if (!mergedAuthors[id] || author.lastActive > mergedAuthors[id].lastActive) {
+      mergedAuthors[id] = author;
+    }
+  }
+  
+  return {
+    ...local,
+    authors: mergedAuthors
+  };
+}
+
+export const app = setup({
+  actors: { /* your actors */ },
+  topology: coordinateTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379"
+    }),
+    regionId: process.env.REGION_ID || "default",
+    
+    // Configure custom state merging
+    synchronization: {
+      conflictStrategy: "custom",
+      resolveConflict: (local, remote, actorType) => {
+        // Use different merge strategies for different actor types
+        if (actorType === "documentEditor") {
+          return mergeDocumentState(local, remote);
+        }
+        
+        // Default to last-write-wins for other actor types
+        if (remote.lastModified > local.lastModified) {
+          return remote;
+        }
+        return local;
+      }
+    }
+  })
+});
+```
+
+### Distributed Consensus with Conflict-Free Replicated Data Types (CRDTs)
+
+For collaborative editing, CRDTs can provide reliable convergence:
+
+```typescript
+import { actor } from "actor-core";
+import * as Y from 'yjs';
+import { encodeStateAsUpdate, applyUpdate } from 'yjs';
+
+export const collaborativeEditor = actor({
+  state: {
+    documentId: "",
+    metadata: {
+      title: "",
+      lastModified: 0,
+      creator: "",
+      permissions: {}
+    },
+    // We'll store the CRDT updates in an array
+    // In a real implementation, we'd use a more efficient format
+    updates: [] as Uint8Array[]
+  },
+  
+  // Store the Yjs document in vars (not part of persistent state)
+  createVars: () => ({
+    // Yjs document used for CRDT operations
+    ydoc: new Y.Doc(),
+    // Flag to prevent applying updates in a loop
+    applyingUpdate: false
+  }),
+  
+  onCreate: (c, documentId: string, initialTitle: string) => {
+    c.state.documentId = documentId;
+    c.state.metadata.title = initialTitle;
+    c.state.metadata.creator = c.conn ? c.conn.state.userId : "system";
+    c.state.metadata.lastModified = Date.now();
+    
+    // Initialize the CRDT text
+    const ytext = c.vars.ydoc.getText('content');
+    
+    // Store initial empty update
+    const update = encodeStateAsUpdate(c.vars.ydoc);
+    c.state.updates = [update];
+  },
+  
+  onStart: (c) => {
+    // Set up Yjs document on start/restart
+    if (c.state.updates.length > 0) {
+      // Apply all stored updates to reconstruct the document
+      for (const update of c.state.updates) {
+        applyUpdate(c.vars.ydoc, update);
+      }
+    }
+    
+    // Listen for Yjs updates
+    c.vars.ydoc.on('update', (update, origin) => {
+      // Skip updates that we're applying from state
+      if (c.vars.applyingUpdate) return;
+      
+      // Add to our updates list
+      c.state.updates.push(update);
+      c.state.metadata.lastModified = Date.now();
+      
+      // Broadcast the update
+      c.broadcast('documentUpdated', {
+        update: Array.from(update), // Convert to regular array for serialization
+        origin: origin || c.conn?.state.userId || 'system',
+        timestamp: Date.now()
+      });
+    });
+  },
+  
+  actions: {
+    // Apply an update from a client
+    applyUpdate: (c, updateArray: number[]) => {
+      // Convert to Uint8Array
+      const update = new Uint8Array(updateArray);
+      
+      // Apply the update to our YDoc
+      c.vars.applyingUpdate = true;
+      applyUpdate(c.vars.ydoc, update);
+      c.vars.applyingUpdate = false;
+      
+      // Store the update
+      c.state.updates.push(update);
+      c.state.metadata.lastModified = Date.now();
+      
+      // Other peers will receive this via state synchronization
+      // or through the documentUpdated event
+      
+      return { 
+        success: true, 
+        updateCount: c.state.updates.length 
+      };
+    },
+    
+    // Get document content
+    getContent: (c) => {
+      // Get text content from YDoc
+      const ytext = c.vars.ydoc.getText('content');
+      const content = ytext.toString();
+      
+      return {
+        documentId: c.state.documentId,
+        content,
+        metadata: c.state.metadata,
+        updateCount: c.state.updates.length
+      };
+    },
+    
+    // Update document metadata
+    updateMetadata: (c, metadata: Partial<typeof c.state.metadata>) => {
+      // Update metadata fields
+      Object.assign(c.state.metadata, metadata);
+      c.state.metadata.lastModified = Date.now();
+      
+      // Broadcast metadata update
+      c.broadcast('metadataUpdated', {
+        metadata: c.state.metadata,
+        updatedBy: c.conn?.state.userId || 'system',
+        timestamp: c.state.metadata.lastModified
+      });
+      
+      return { success: true };
+    }
+  }
+});
+```
+
+## Testing Coordinated Actors
+
+Testing coordinated actors requires simulating multiple instances:
+
+```typescript
+import { test } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+test("document synchronization", async (t) => {
+  // Set up test environment with the app
+  const { client: client1, coordinator } = await setupTest(t, app);
+  
+  // Create a second client (simulates a different node)
+  const client2 = app.createClient();
+  
+  // Create document with first client
+  const docId = `test-doc-${Date.now()}`;
+  
+  const doc1 = await client1.documentEditor.create({
+    id: docId,
+    params: [docId, "Test Document"]
+  });
+  
+  // Connect to same document with second client
+  const doc2 = await client2.documentEditor.getWithId(docId);
+  
+  // Make edit from first client
+  await doc1.applyEdit({
+    position: 0,
+    deleteCount: 0,
+    insertText: "Hello from client 1"
+  });
+  
+  // Give time for synchronization
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Make edit from second client
+  await doc2.applyEdit({
+    position: 18,
+    deleteCount: 0,
+    insertText: " and client 2"
+  });
+  
+  // Wait for synchronization
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Get document state from both clients
+  const state1 = await doc1.getDocument();
+  const state2 = await doc2.getDocument();
+  
+  // Verify both clients have the same synchronized state
+  t.equal(state1.content, "Hello from client 1 and client 2");
+  t.equal(state2.content, "Hello from client 1 and client 2");
+  t.equal(state1.version, state2.version);
+});
+```
+
+## Complete Coordinate Topology Example
+
+Here's a complete example of a real-time collaborative kanban board:
+
+```typescript
+// src/actors/kanban-board.ts
+import { actor, UserError } from "actor-core";
+
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  column: string;
+  assignee: string | null;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+export const kanbanBoard = actor({
+  state: {
+    boardId: "",
+    name: "",
+    columns: [] as string[],
+    tasks: {} as Record<string, Task>,
+    users: {} as Record<string, {
+      id: string,
+      name: string,
+      color: string,
+      lastActive: number
+    }>,
+    lastModified: 0,
+    version: 0
+  },
+  
+  onCreate: (c, boardId: string, name: string, initialColumns: string[] = ["To Do", "In Progress", "Done"]) => {
+    c.state.boardId = boardId;
+    c.state.name = name;
+    c.state.columns = initialColumns;
+    c.state.lastModified = Date.now();
+    c.state.version = 1;
+  },
+  
+  createConnState: (c, { params }) => {
+    // Validate connection params
+    if (!params.userId || !params.userName) {
+      throw new UserError("User ID and name are required");
+    }
+    
+    // Add user to board
+    c.state.users[params.userId] = {
+      id: params.userId,
+      name: params.userName,
+      color: params.color || generateRandomColor(),
+      lastActive: Date.now()
+    };
+    
+    // Broadcast user joined
+    c.broadcast("userJoined", {
+      userId: params.userId,
+      name: params.userName,
+      color: c.state.users[params.userId].color,
+      timestamp: Date.now()
+    });
+    
+    return {
+      userId: params.userId,
+      userName: params.userName,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // Create a new task
+    createTask: (c, task: {
+      title: string,
+      description?: string,
+      column?: string
+    }) => {
+      if (!task.title.trim()) {
+        throw new UserError("Task title is required");
+      }
+      
+      const taskId = crypto.randomUUID();
+      const now = Date.now();
+      
+      // Default to first column if not specified
+      const column = task.column || c.state.columns[0];
+      
+      // Validate column
+      if (!c.state.columns.includes(column)) {
+        throw new UserError(`Invalid column: ${column}`);
+      }
+      
+      // Create task
+      c.state.tasks[taskId] = {
+        id: taskId,
+        title: task.title,
+        description: task.description || "",
+        column,
+        assignee: null,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: c.conn.state.userId
+      };
+      
+      // Update board metadata
+      c.state.lastModified = now;
+      c.state.version++;
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = now;
+      
+      // Broadcast task creation
+      c.broadcast("taskCreated", {
+        task: c.state.tasks[taskId],
+        createdBy: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        timestamp: now
+      });
+      
+      return { taskId };
+    },
+    
+    // Move a task to another column
+    moveTask: (c, taskId: string, toColumn: string) => {
+      // Validate task exists
+      if (!c.state.tasks[taskId]) {
+        throw new UserError("Task not found");
+      }
+      
+      // Validate column
+      if (!c.state.columns.includes(toColumn)) {
+        throw new UserError(`Invalid column: ${toColumn}`);
+      }
+      
+      const task = c.state.tasks[taskId];
+      const fromColumn = task.column;
+      
+      // Update task
+      task.column = toColumn;
+      task.updatedAt = Date.now();
+      task.updatedBy = c.conn.state.userId;
+      
+      // Update board metadata
+      c.state.lastModified = task.updatedAt;
+      c.state.version++;
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = task.updatedAt;
+      
+      // Broadcast task moved
+      c.broadcast("taskMoved", {
+        taskId,
+        fromColumn,
+        toColumn,
+        movedBy: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        timestamp: task.updatedAt
+      });
+      
+      return { success: true };
+    },
+    
+    // Update task details
+    updateTask: (c, taskId: string, updates: Partial<{
+      title: string,
+      description: string,
+      assignee: string | null
+    }>) => {
+      // Validate task exists
+      if (!c.state.tasks[taskId]) {
+        throw new UserError("Task not found");
+      }
+      
+      const task = c.state.tasks[taskId];
+      const now = Date.now();
+      
+      // Track what changed
+      const changedFields: string[] = [];
+      
+      // Apply updates
+      if (updates.title !== undefined) {
+        if (!updates.title.trim()) {
+          throw new UserError("Task title cannot be empty");
+        }
+        task.title = updates.title;
+        changedFields.push("title");
+      }
+      
+      if (updates.description !== undefined) {
+        task.description = updates.description;
+        changedFields.push("description");
+      }
+      
+      if (updates.assignee !== undefined) {
+        // Validate assignee if not null
+        if (updates.assignee !== null && !c.state.users[updates.assignee]) {
+          throw new UserError("Invalid assignee");
+        }
+        task.assignee = updates.assignee;
+        changedFields.push("assignee");
+      }
+      
+      if (changedFields.length === 0) {
+        return { success: false, reason: "No changes" };
+      }
+      
+      // Update timestamps
+      task.updatedAt = now;
+      task.updatedBy = c.conn.state.userId;
+      
+      // Update board metadata
+      c.state.lastModified = now;
+      c.state.version++;
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = now;
+      
+      // Broadcast task update
+      c.broadcast("taskUpdated", {
+        taskId,
+        task,
+        changedFields,
+        updatedBy: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        timestamp: now
+      });
+      
+      return { success: true, changedFields };
+    },
+    
+    // Delete a task
+    deleteTask: (c, taskId: string) => {
+      // Validate task exists
+      if (!c.state.tasks[taskId]) {
+        throw new UserError("Task not found");
+      }
+      
+      const task = c.state.tasks[taskId];
+      const now = Date.now();
+      
+      // Delete the task
+      delete c.state.tasks[taskId];
+      
+      // Update board metadata
+      c.state.lastModified = now;
+      c.state.version++;
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = now;
+      
+      // Broadcast task deletion
+      c.broadcast("taskDeleted", {
+        taskId,
+        column: task.column,
+        deletedBy: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        timestamp: now
+      });
+      
+      return { success: true };
+    },
+    
+    // Add a new column
+    addColumn: (c, columnName: string) => {
+      if (!columnName.trim()) {
+        throw new UserError("Column name cannot be empty");
+      }
+      
+      if (c.state.columns.includes(columnName)) {
+        throw new UserError("Column already exists");
+      }
+      
+      const now = Date.now();
+      
+      // Add column
+      c.state.columns.push(columnName);
+      
+      // Update board metadata
+      c.state.lastModified = now;
+      c.state.version++;
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = now;
+      
+      // Broadcast column addition
+      c.broadcast("columnAdded", {
+        columnName,
+        columns: c.state.columns,
+        addedBy: {
+          id: c.conn.state.userId,
+          name: c.conn.state.userName
+        },
+        timestamp: now
+      });
+      
+      return { success: true };
+    },
+    
+    // Get board state
+    getBoardState: (c) => {
+      // Return the full board state
+      return {
+        id: c.state.boardId,
+        name: c.state.name,
+        columns: c.state.columns,
+        tasks: Object.values(c.state.tasks),
+        users: Object.values(c.state.users),
+        version: c.state.version,
+        lastModified: c.state.lastModified
+      };
+    }
+  }
+});
+
+// Helper function to generate a random color
+function generateRandomColor() {
+  const colors = [
+    "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5",
+    "#2196F3", "#03A9F4", "#00BCD4", "#009688", "#4CAF50",
+    "#8BC34A", "#CDDC39", "#FFC107", "#FF9800", "#FF5722"
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+// src/app.ts
+import { setup, coordinateTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+import { kanbanBoard } from "./actors/kanban-board";
+
+// Set up the application with coordinate topology
+export const app = setup({
+  actors: { kanbanBoard },
+  topology: coordinateTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      prefix: "kanban-app"
+    }),
+    regionId: process.env.REGION_ID || "default"
+  })
+});
+
+export type App = typeof app;
+
+// src/index.ts
+import { app } from "./app";
+
+async function main() {
+  // Create a client
+  const client = app.createClient();
+  
+  // Connect to a kanban board (or create if doesn't exist)
+  const boardId = "team-project";
+  let board;
+  
+  try {
+    // Try to get existing board
+    board = await client.kanbanBoard.getWithId(boardId, {
+      params: {
+        userId: "user-demo",
+        userName: "Demo User"
+      }
+    });
+    console.log("Connected to existing board");
+  } catch (error) {
+    // Board doesn't exist, create it
+    board = await client.kanbanBoard.create({
+      id: boardId,
+      params: [boardId, "Team Project Board"]
+    });
+    console.log("Created new board");
+  }
+  
+  // Set up event listeners
+  board.on("taskCreated", (data) => {
+    console.log(`New task created by ${data.createdBy.name}: ${data.task.title}`);
+  });
+  
+  board.on("taskMoved", (data) => {
+    console.log(`Task moved by ${data.movedBy.name} from ${data.fromColumn} to ${data.toColumn}`);
+  });
+  
+  board.on("userJoined", (data) => {
+    console.log(`${data.name} joined the board`);
+  });
+  
+  // Get initial board state
+  const state = await board.getBoardState();
+  console.log(`Board: ${state.name}`);
+  console.log(`Columns: ${state.columns.join(", ")}`);
+  console.log(`Tasks: ${state.tasks.length}`);
+  console.log(`Active users: ${state.users.length}`);
+  
+  // Create a sample task
+  await board.createTask({
+    title: "Implement coordinate topology",
+    description: "Create documentation and examples for the coordinate topology",
+    column: "To Do"
+  });
+  
+  // In a real app, we would continue to interact with the board
+  // and handle events to update the UI
+}
+
+main().catch(console.error);
+```
+
+## Coordinate Topology Considerations
+
+When using Coordinate topology, keep these considerations in mind:
+
+1. **State Design**: Design your state with synchronization in mind, making it easy to merge and resolve conflicts
+2. **Network Overhead**: Coordinate topology has higher network overhead due to peer-to-peer communication
+3. **Redis Requirements**: Requires a reliable Redis deployment for peer discovery and message passing
+4. **Eventual Consistency**: The system provides eventual consistency rather than strong consistency
+5. **Event Handling**: Clients should handle events properly to ensure a smooth user experience
+
+## When to Use Coordinate Topology
+
+Coordinate topology is ideal for:
+
+- Real-time collaborative applications
+- Multi-region deployments requiring low latency
+- Applications where state needs to be synchronized across instances
+- Systems requiring high availability through redundancy
+- Use cases where eventual consistency is acceptable
+
+By understanding and properly configuring coordinate topology, you can build sophisticated distributed applications that provide real-time collaboration, high availability, and low latency for users around the globe.

@@ -1,0 +1,632 @@
+---
+title: Delayed Action Execution
+description: Schedule actions to run after a delay
+---
+
+# Delayed Action Execution
+
+ActorCore provides a powerful scheduling system that lets you execute actions at a later time. These scheduled actions persist even if the actor crashes or restarts, making them ideal for implementing timers, reminders, and delayed processes.
+
+## Basic Delayed Actions
+
+```typescript
+import { actor } from "actor-core";
+
+const reminderService = actor({
+  state: {
+    reminders: {} // Store all scheduled reminders
+  },
+  
+  actions: {
+    // Create a reminder that will trigger after a delay
+    createReminder: (c, message, delayMs) => {
+      // Generate a unique ID for this reminder
+      const id = crypto.randomUUID();
+      
+      // Store reminder information
+      c.state.reminders[id] = {
+        message,
+        createdAt: Date.now(),
+        scheduledFor: Date.now() + delayMs
+      };
+      
+      // Schedule the sendReminder action to run after the delay
+      c.schedule.after(delayMs, "sendReminder", id);
+      
+      // Return the reminder ID for reference
+      return id;
+    },
+    
+    // Action that will be called when the delay expires
+    sendReminder: (c, reminderId) => {
+      // Get the reminder details
+      const reminder = c.state.reminders[reminderId];
+      
+      if (!reminder) {
+        console.log(`Reminder ${reminderId} not found`);
+        return;
+      }
+      
+      // Broadcast the reminder to all connected clients
+      c.broadcast("reminderTriggered", {
+        id: reminderId,
+        message: reminder.message,
+        triggeredAt: Date.now(),
+        scheduledFor: reminder.scheduledFor
+      });
+      
+      // Remove from state (it's been triggered)
+      delete c.state.reminders[reminderId];
+      
+      // Log for debugging
+      console.log(`Reminder sent: ${reminder.message}`);
+    },
+    
+    // Get all pending reminders
+    getReminders: (c) => {
+      return c.state.reminders;
+    },
+    
+    // Cancel a specific reminder
+    cancelReminder: (c, reminderId) => {
+      if (c.state.reminders[reminderId]) {
+        delete c.state.reminders[reminderId];
+        return true;
+      }
+      return false;
+    }
+  }
+});
+```
+
+## Scheduling with Different Time Units
+
+```typescript
+import { actor } from "actor-core";
+
+const scheduler = actor({
+  state: {
+    tasks: {}
+  },
+  
+  actions: {
+    // Schedule in seconds
+    scheduleInSeconds: (c, taskName, seconds) => {
+      const id = crypto.randomUUID();
+      const delayMs = seconds * 1000;
+      
+      c.state.tasks[id] = {
+        name: taskName,
+        unit: "seconds",
+        amount: seconds,
+        createdAt: Date.now(),
+        scheduledFor: Date.now() + delayMs
+      };
+      
+      c.schedule.after(delayMs, "runTask", id);
+      return id;
+    },
+    
+    // Schedule in minutes
+    scheduleInMinutes: (c, taskName, minutes) => {
+      const id = crypto.randomUUID();
+      const delayMs = minutes * 60 * 1000;
+      
+      c.state.tasks[id] = {
+        name: taskName,
+        unit: "minutes",
+        amount: minutes,
+        createdAt: Date.now(),
+        scheduledFor: Date.now() + delayMs
+      };
+      
+      c.schedule.after(delayMs, "runTask", id);
+      return id;
+    },
+    
+    // Schedule in hours
+    scheduleInHours: (c, taskName, hours) => {
+      const id = crypto.randomUUID();
+      const delayMs = hours * 60 * 60 * 1000;
+      
+      c.state.tasks[id] = {
+        name: taskName,
+        unit: "hours",
+        amount: hours,
+        createdAt: Date.now(),
+        scheduledFor: Date.now() + delayMs
+      };
+      
+      c.schedule.after(delayMs, "runTask", id);
+      return id;
+    },
+    
+    // Execute the scheduled task
+    runTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        console.log(`Task ${taskId} not found`);
+        return;
+      }
+      
+      // Execute task (in a real app, this might do something more meaningful)
+      c.broadcast("taskExecuted", {
+        id: taskId,
+        name: task.name,
+        scheduledFor: task.scheduledFor,
+        executedAt: Date.now()
+      });
+      
+      // Remove completed task
+      delete c.state.tasks[taskId];
+      
+      return { completed: true, task };
+    }
+  }
+});
+```
+
+## Implementing a Countdown Timer
+
+```typescript
+import { actor } from "actor-core";
+
+const countdownTimer = actor({
+  state: {
+    timers: {}
+  },
+  
+  actions: {
+    // Start a countdown timer with regular updates
+    startTimer: (c, durationSeconds, name = "Timer") => {
+      // Generate ID
+      const id = crypto.randomUUID();
+      
+      // Calculate end time
+      const endTime = Date.now() + (durationSeconds * 1000);
+      
+      // Store timer info
+      c.state.timers[id] = {
+        name,
+        durationSeconds,
+        startedAt: Date.now(),
+        endTime,
+        status: "running"
+      };
+      
+      // Schedule first update
+      c.schedule.after(1000, "updateTimer", id);
+      
+      // Schedule final completion
+      c.schedule.after(durationSeconds * 1000, "completeTimer", id);
+      
+      // Broadcast timer started
+      c.broadcast("timerStarted", {
+        id,
+        name,
+        duration: durationSeconds,
+        endTime
+      });
+      
+      return id;
+    },
+    
+    // Update timer and schedule next update
+    updateTimer: (c, timerId) => {
+      const timer = c.state.timers[timerId];
+      
+      // If timer was canceled or doesn't exist, stop updates
+      if (!timer || timer.status !== "running") {
+        return;
+      }
+      
+      // Calculate remaining time
+      const now = Date.now();
+      const remainingMs = Math.max(0, timer.endTime - now);
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+      
+      // Broadcast update
+      c.broadcast("timerUpdated", {
+        id: timerId,
+        name: timer.name,
+        remainingSeconds
+      });
+      
+      // If not yet complete, schedule next update
+      if (remainingMs > 1000) {
+        c.schedule.after(1000, "updateTimer", timerId);
+      }
+    },
+    
+    // Mark timer as complete
+    completeTimer: (c, timerId) => {
+      const timer = c.state.timers[timerId];
+      
+      // If timer doesn't exist or was already completed/canceled
+      if (!timer || timer.status !== "running") {
+        return;
+      }
+      
+      // Update status
+      timer.status = "completed";
+      
+      // Broadcast completion
+      c.broadcast("timerCompleted", {
+        id: timerId,
+        name: timer.name,
+        startedAt: timer.startedAt,
+        completedAt: Date.now()
+      });
+    },
+    
+    // Cancel a running timer
+    cancelTimer: (c, timerId) => {
+      const timer = c.state.timers[timerId];
+      
+      if (!timer || timer.status !== "running") {
+        return false;
+      }
+      
+      // Update status
+      timer.status = "canceled";
+      
+      // Broadcast cancellation
+      c.broadcast("timerCanceled", {
+        id: timerId,
+        name: timer.name,
+        canceledAt: Date.now()
+      });
+      
+      return true;
+    },
+    
+    // Get all active timers
+    getActiveTimers: (c) => {
+      return Object.entries(c.state.timers)
+        .filter(([_, timer]) => timer.status === "running")
+        .reduce((acc, [id, timer]) => {
+          acc[id] = timer;
+          return acc;
+        }, {});
+    }
+  }
+});
+```
+
+## Implementing Rate Limiting
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const rateLimitedAPI = actor({
+  state: {
+    // Store rate limit records per user
+    rateLimits: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      apiKey: params.apiKey
+    };
+  },
+  
+  actions: {
+    // Rate-limited API call
+    fetchData: async (c, query) => {
+      const userId = c.conn.state.userId;
+      
+      // Check rate limit
+      if (!checkRateLimit(c, userId, 10)) { // 10 requests max
+        throw new UserError("Rate limit exceeded", {
+          code: "rate_limited",
+          meta: {
+            retryAfter: c.state.rateLimits[userId].resetAt - Date.now()
+          }
+        });
+      }
+      
+      // Process the API request
+      try {
+        // Your actual API logic here
+        const result = await processQuery(query);
+        
+        // Record successful request
+        recordRequest(c, userId);
+        
+        return result;
+      } catch (error) {
+        // Still count failed requests against rate limit
+        recordRequest(c, userId);
+        throw error;
+      }
+    },
+    
+    // Reset rate limits after window expires
+    resetRateLimit: (c, userId) => {
+      if (c.state.rateLimits[userId]) {
+        // Reset counter but keep track of reset time
+        c.state.rateLimits[userId] = {
+          count: 0,
+          resetAt: Date.now() + 60000, // 1 minute from now
+          lastReset: Date.now()
+        };
+        
+        // Schedule next reset
+        c.schedule.after(60000, "resetRateLimit", userId);
+      }
+    }
+  }
+});
+
+// Helper functions
+function checkRateLimit(c, userId, maxRequests) {
+  // Initialize rate limit tracking if not exists
+  if (!c.state.rateLimits[userId]) {
+    c.state.rateLimits[userId] = {
+      count: 0,
+      resetAt: Date.now() + 60000, // 1 minute from now
+      lastReset: Date.now()
+    };
+    
+    // Schedule reset
+    c.schedule.after(60000, "resetRateLimit", userId);
+  }
+  
+  // If window expired, reset now
+  if (Date.now() > c.state.rateLimits[userId].resetAt) {
+    c.state.rateLimits[userId] = {
+      count: 0,
+      resetAt: Date.now() + 60000,
+      lastReset: Date.now()
+    };
+  }
+  
+  // Check if under limit
+  return c.state.rateLimits[userId].count < maxRequests;
+}
+
+function recordRequest(c, userId) {
+  // Increment request count
+  c.state.rateLimits[userId].count += 1;
+}
+
+// Simulated API processing
+async function processQuery(query) {
+  // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return { result: `Processed: ${query}`, timestamp: Date.now() };
+}
+```
+
+## Self-Healing Actor with Watchdog
+
+```typescript
+import { actor } from "actor-core";
+
+const healthMonitor = actor({
+  state: {
+    lastHealthCheck: null,
+    status: "starting",
+    errorCount: 0,
+    restartCount: 0
+  },
+  
+  // Initialize the health check system
+  onStart: (c) => {
+    // Start the health check cycle
+    c.state.status = "running";
+    c.state.lastHealthCheck = Date.now();
+    
+    // Schedule first health check
+    c.schedule.after(30000, "performHealthCheck");
+    
+    console.log("Health monitor started");
+  },
+  
+  actions: {
+    // Periodic health check
+    performHealthCheck: async (c) => {
+      console.log("Performing health check");
+      
+      try {
+        // Record that we started a check
+        c.state.lastHealthCheck = Date.now();
+        
+        // Perform various health checks
+        const dbStatus = await checkDatabase();
+        const apiStatus = await checkExternalAPIs();
+        const memoryUsage = getMemoryUsage();
+        
+        // Check results
+        const allHealthy = dbStatus.healthy && apiStatus.healthy && memoryUsage < 80;
+        
+        if (allHealthy) {
+          // System is healthy
+          c.state.status = "healthy";
+          c.state.errorCount = 0;
+          
+          // Notify clients
+          c.broadcast("healthStatus", {
+            status: "healthy",
+            checks: { dbStatus, apiStatus, memoryUsage },
+            timestamp: Date.now()
+          });
+        } else {
+          // System has issues
+          c.state.status = "degraded";
+          c.state.errorCount++;
+          
+          // Notify clients
+          c.broadcast("healthStatus", {
+            status: "degraded",
+            checks: { dbStatus, apiStatus, memoryUsage },
+            timestamp: Date.now()
+          });
+          
+          // Try recovery if multiple failures
+          if (c.state.errorCount >= 3) {
+            await c.attemptRecovery();
+          }
+        }
+      } catch (error) {
+        // Health check itself failed
+        c.state.status = "error";
+        c.state.errorCount++;
+        
+        console.error("Health check failed:", error);
+        
+        // Broadcast error
+        c.broadcast("healthStatus", {
+          status: "error",
+          error: error.message,
+          timestamp: Date.now()
+        });
+        
+        // Try recovery if multiple failures
+        if (c.state.errorCount >= 3) {
+          await c.attemptRecovery();
+        }
+      }
+      
+      // Schedule next health check
+      c.schedule.after(30000, "performHealthCheck");
+    },
+    
+    // Attempt to recover the system
+    attemptRecovery: async (c) => {
+      console.log("Attempting system recovery");
+      
+      c.state.status = "recovering";
+      c.state.restartCount++;
+      
+      // Broadcast recovery attempt
+      c.broadcast("healthStatus", {
+        status: "recovering",
+        restartCount: c.state.restartCount,
+        timestamp: Date.now()
+      });
+      
+      try {
+        // Perform recovery actions
+        await restartDatabaseConnection();
+        await refreshExternalAPITokens();
+        await clearCaches();
+        
+        // Reset error count after recovery
+        c.state.errorCount = 0;
+        c.state.status = "healthy";
+        
+        // Broadcast recovery success
+        c.broadcast("healthStatus", {
+          status: "healthy",
+          message: "Recovery successful",
+          timestamp: Date.now()
+        });
+        
+        return true;
+      } catch (error) {
+        c.state.status = "critical";
+        
+        // Broadcast critical status
+        c.broadcast("healthStatus", {
+          status: "critical",
+          error: error.message,
+          timestamp: Date.now()
+        });
+        
+        // If too many restarts, trigger alarm
+        if (c.state.restartCount >= 5) {
+          c.triggerAlarm();
+        }
+        
+        return false;
+      }
+    },
+    
+    // Trigger emergency alarm
+    triggerAlarm: (c) => {
+      console.log("CRITICAL: System requires manual intervention");
+      
+      // Notify all admins
+      c.broadcast("systemAlarm", {
+        status: "critical",
+        message: "System requires manual intervention",
+        errorCount: c.state.errorCount,
+        restartCount: c.state.restartCount,
+        timestamp: Date.now()
+      });
+      
+      // In a real system, this might send emails, SMS, etc.
+    },
+    
+    // Manual reset by admin
+    resetMonitor: (c) => {
+      // Verify admin rights (simplified)
+      if (!c.conn.state.isAdmin) {
+        throw new Error("Unauthorized");
+      }
+      
+      c.state.status = "restarting";
+      c.state.errorCount = 0;
+      c.state.restartCount = 0;
+      c.state.lastHealthCheck = Date.now();
+      
+      // Broadcast reset
+      c.broadcast("healthStatus", {
+        status: "restarting",
+        message: "Manual reset by admin",
+        timestamp: Date.now()
+      });
+      
+      // Restart health check cycle
+      c.schedule.after(5000, "performHealthCheck");
+      
+      return { success: true };
+    }
+  }
+});
+
+// Mock health check functions
+async function checkDatabase() {
+  await new Promise(resolve => setTimeout(resolve, 50));
+  return { healthy: Math.random() > 0.1, latency: Math.random() * 100 };
+}
+
+async function checkExternalAPIs() {
+  await new Promise(resolve => setTimeout(resolve, 50));
+  return { healthy: Math.random() > 0.1, latency: Math.random() * 200 };
+}
+
+function getMemoryUsage() {
+  return Math.random() * 100;
+}
+
+async function restartDatabaseConnection() {
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return true;
+}
+
+async function refreshExternalAPITokens() {
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return true;
+}
+
+async function clearCaches() {
+  await new Promise(resolve => setTimeout(resolve, 100));
+  return true;
+}
+```
+
+## Best Practices
+
+1. **Store context**: Save enough information with the schedule to handle the action properly
+2. **Handle failures**: Plan for what happens if the scheduled action fails
+3. **Idempotency**: Make scheduled actions idempotent so they can be safely retried
+4. **Clean up**: Remove completed tasks from state to keep memory usage in check
+5. **Use appropriate delays**: Choose delays based on actual requirements, not arbitrary values
+6. **Add logging**: Log scheduled actions for debugging and monitoring
+7. **Consider batching**: Batch similar scheduled actions to reduce processing overhead
+
+Using ActorCore's scheduling capabilities, you can implement sophisticated time-based functionality while maintaining reliability even through crashes and restarts.

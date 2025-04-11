@@ -1,0 +1,301 @@
+---
+title: Working with Complex State
+description: Manage nested objects and arrays in actor state effectively
+---
+
+# Working with Complex State
+
+Most real-world applications require complex state with nested objects, arrays, and collections. This guide shows how to effectively work with complex state structures in ActorCore.
+
+## Nested Objects
+
+```typescript
+import { actor } from "actor-core";
+
+const userProfile = actor({
+  state: {
+    userId: "",
+    profile: {
+      displayName: "New User",
+      avatar: null,
+      bio: ""
+    },
+    preferences: {
+      theme: "system",
+      notifications: {
+        email: true,
+        push: true,
+        digest: "weekly"
+      },
+      privacy: {
+        showOnline: true,
+        showActivity: false
+      }
+    }
+  },
+  
+  actions: {
+    // Update a nested property
+    updateNotificationSettings: (c, settings) => {
+      // Merge with existing settings
+      c.state.preferences.notifications = {
+        ...c.state.preferences.notifications,
+        ...settings
+      };
+      
+      return c.state.preferences.notifications;
+    }
+  }
+});
+```
+
+## Working with Arrays
+
+```typescript
+import { actor } from "actor-core";
+
+const todoList = actor({
+  state: {
+    items: [
+      { id: "1", text: "Example task", completed: false, createdAt: 1649289600000 }
+    ]
+  },
+  
+  actions: {
+    // Add to array
+    addItem: (c, text) => {
+      const newItem = {
+        id: crypto.randomUUID(),
+        text,
+        completed: false,
+        createdAt: Date.now()
+      };
+      
+      c.state.items.push(newItem);
+      return newItem;
+    },
+    
+    // Remove from array
+    removeItem: (c, id) => {
+      c.state.items = c.state.items.filter(item => item.id !== id);
+    },
+    
+    // Update item in array
+    toggleComplete: (c, id) => {
+      const item = c.state.items.find(item => item.id === id);
+      if (item) {
+        item.completed = !item.completed;
+        return item.completed;
+      }
+      return null;
+    },
+    
+    // Sort array
+    sortItems: (c, sortBy = "createdAt") => {
+      c.state.items.sort((a, b) => {
+        if (sortBy === "text") return a.text.localeCompare(b.text);
+        if (sortBy === "completed") return (a.completed === b.completed) ? 0 : a.completed ? 1 : -1;
+        return a.createdAt - b.createdAt; // Default sort by creation time
+      });
+      
+      return c.state.items;
+    }
+  }
+});
+```
+
+## Record/Map Collections
+
+Using object records for indexed collections:
+
+```typescript
+import { actor } from "actor-core";
+
+// Using a record for efficient lookups
+const inventory = actor({
+  state: {
+    // Items indexed by ID for efficient access
+    items: {} as Record<string, {
+      name: string;
+      quantity: number;
+      category: string;
+      lastUpdated: number;
+    }>
+  },
+  
+  actions: {
+    // Add or update item
+    updateItem: (c, id, itemData) => {
+      // Check if item exists
+      const existing = c.state.items[id];
+      
+      // Create or update
+      c.state.items[id] = {
+        name: itemData.name,
+        quantity: itemData.quantity,
+        category: itemData.category,
+        lastUpdated: Date.now(),
+        ...(existing || {}) // Keep existing fields if any
+      };
+      
+      return c.state.items[id];
+    },
+    
+    // Remove item
+    removeItem: (c, id) => {
+      if (c.state.items[id]) {
+        delete c.state.items[id];
+        return true;
+      }
+      return false;
+    },
+    
+    // Get items by category
+    getItemsByCategory: (c, category) => {
+      return Object.values(c.state.items)
+        .filter(item => item.category === category);
+    }
+  }
+});
+```
+
+## State with Relationships
+
+Managing related entities:
+
+```typescript
+import { actor } from "actor-core";
+
+const socialNetwork = actor({
+  state: {
+    users: {} as Record<string, {
+      username: string;
+      displayName: string;
+      joinedAt: number;
+    }>,
+    posts: {} as Record<string, {
+      authorId: string;
+      content: string;
+      createdAt: number;
+      likes: string[]; // Array of user IDs
+    }>,
+    following: {} as Record<string, string[]> // userId -> array of followed userIds
+  },
+  
+  actions: {
+    createPost: (c, userId, content) => {
+      // Validate user exists
+      if (!c.state.users[userId]) return null;
+      
+      // Create post
+      const postId = crypto.randomUUID();
+      c.state.posts[postId] = {
+        authorId: userId,
+        content,
+        createdAt: Date.now(),
+        likes: []
+      };
+      
+      return postId;
+    },
+    
+    followUser: (c, followerId, targetId) => {
+      // Validate both users exist
+      if (!c.state.users[followerId] || !c.state.users[targetId]) {
+        return false;
+      }
+      
+      // Initialize following array if needed
+      if (!c.state.following[followerId]) {
+        c.state.following[followerId] = [];
+      }
+      
+      // Add to following if not already following
+      if (!c.state.following[followerId].includes(targetId)) {
+        c.state.following[followerId].push(targetId);
+      }
+      
+      return true;
+    },
+    
+    getFeed: (c, userId) => {
+      // Get list of followed users
+      const following = c.state.following[userId] || [];
+      
+      // Get posts from followed users
+      const feedPosts = Object.entries(c.state.posts)
+        .filter(([_, post]) => following.includes(post.authorId))
+        .map(([id, post]) => ({
+          id,
+          author: c.state.users[post.authorId],
+          content: post.content,
+          createdAt: post.createdAt,
+          likeCount: post.likes.length
+        }))
+        .sort((a, b) => b.createdAt - a.createdAt); // Newest first
+      
+      return feedPosts;
+    }
+  }
+});
+```
+
+## Performance Considerations
+
+For large collections, consider these performance optimizations:
+
+```typescript
+import { actor } from "actor-core";
+
+const optimizedActor = actor({
+  state: {
+    items: {},
+    // Keep indexes for efficient querying
+    indexes: {
+      byCategory: {} as Record<string, string[]>, // category -> item IDs
+      byStatus: {} as Record<string, string[]>,   // status -> item IDs
+    }
+  },
+  
+  actions: {
+    addItem: (c, item) => {
+      const id = crypto.randomUUID();
+      
+      // Store the item
+      c.state.items[id] = { ...item, id };
+      
+      // Update indexes
+      const category = item.category;
+      if (!c.state.indexes.byCategory[category]) {
+        c.state.indexes.byCategory[category] = [];
+      }
+      c.state.indexes.byCategory[category].push(id);
+      
+      const status = item.status;
+      if (!c.state.indexes.byStatus[status]) {
+        c.state.indexes.byStatus[status] = [];
+      }
+      c.state.indexes.byStatus[status].push(id);
+      
+      return id;
+    },
+    
+    // Query using indexes for better performance
+    getItemsByStatus: (c, status) => {
+      const ids = c.state.indexes.byStatus[status] || [];
+      return ids.map(id => c.state.items[id]);
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. Use objects with IDs as keys for fast lookups
+2. Break large state into logical entities
+3. Maintain indexes for efficient querying
+4. Use immutable patterns to update nested properties
+5. Keep related data together to minimize complexity
+6. Use TypeScript interfaces to enforce state structure
+
+By following these patterns, you can build complex applications while maintaining good performance and code clarity.

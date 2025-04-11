@@ -1,0 +1,90 @@
+---
+title: Creating a Simple Actor
+description: Learn how to create a basic actor with state and actions
+---
+
+# Creating a Simple Actor
+
+An actor is the fundamental building block in ActorCore. It encapsulates state and behavior, providing a clean abstraction for building real-time applications.
+
+This guide shows how to create a minimal actor that manages a counter.
+
+## Basic Actor Definition
+
+```typescript
+import { actor, setup } from "actor-core";
+
+// Define a simple counter actor
+const counter = actor({
+  // Initial state
+  state: { count: 0 },
+  
+  // Define actions that can be called by clients
+  actions: {
+    // Increment the counter by a given amount
+    increment: (c, amount: number) => {
+      c.state.count += amount;
+      
+      // Broadcast the update to all connected clients
+      c.broadcast("countUpdated", c.state.count);
+      
+      // Return the new count
+      return c.state.count;
+    },
+    
+    // Get the current count
+    getCount: (c) => {
+      return c.state.count;
+    },
+    
+    // Reset the counter
+    reset: (c) => {
+      c.state.count = 0;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    }
+  }
+});
+
+// Create an app with our actor
+export const app = setup({
+  actors: { counter }
+});
+
+// Export type for client type-safety
+export type App = typeof app;
+```
+
+## Using the Actor
+
+Once you've defined your actor, you can use it in a client application:
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./app";
+
+// Create a client connected to your actor server
+const client = createClient<App>("http://localhost:6420");
+
+// Connect to the counter actor
+const counter = await client.counter.get();
+
+// Call actions on the actor
+const newCount = await counter.increment(5); // Returns 5
+console.log(newCount); // 5
+
+// Subscribe to events
+counter.on("countUpdated", (count) => {
+  console.log("Counter updated:", count);
+});
+```
+
+## What's Happening
+
+1. We define a `counter` actor with initial state and three actions
+2. The `c` parameter gives actions access to state, connections, and more
+3. Actions can update state, broadcast events, and return values
+4. State changes are automatically persisted
+5. Events notify clients of important changes
+
+This pattern forms the foundation of ActorCore applications, allowing you to build complex, stateful, real-time systems with simple, declarative code.

@@ -1,0 +1,170 @@
+---
+title: Initializing State
+description: Learn different ways to initialize and structure actor state
+---
+
+# Initializing State
+
+Actor state is the persistent data that survives crashes, restarts, and upgrades. ActorCore provides multiple ways to initialize this state based on your needs.
+
+## Using a State Constant
+
+The simplest approach is to define state as a constant object:
+
+```typescript
+import { actor } from "actor-core";
+
+const counter = actor({
+  // Initial state as a constant object
+  state: {
+    count: 0,
+    lastUpdated: null,
+    history: []
+  },
+  
+  actions: {
+    increment: (c, amount = 1) => {
+      c.state.count += amount;
+      c.state.lastUpdated = Date.now();
+      c.state.history.push({ amount, timestamp: Date.now() });
+      return c.state.count;
+    }
+  }
+});
+```
+
+## Using a Creation Function
+
+For more complex state initialization, use the `createState` function:
+
+```typescript
+import { actor } from "actor-core";
+import { v4 as uuid } from "uuid";
+
+const gameRoom = actor({
+  // Dynamic state initialization with a function
+  createState: () => {
+    return {
+      gameId: uuid(),
+      status: "waiting",
+      players: {},
+      settings: loadDefaultSettings(),
+      createdAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // ...actions using the state
+  }
+});
+
+// Helper function for default settings
+function loadDefaultSettings() {
+  return {
+    maxPlayers: 4,
+    timeLimit: 300, // 5 minutes
+    difficulty: "normal"
+  };
+}
+```
+
+## Type-Safe State Initialization
+
+For better type safety, define an interface for your state:
+
+```typescript
+import { actor } from "actor-core";
+
+// Define the state interface
+interface UserProfileState {
+  userId: string;
+  displayName: string;
+  email?: string;
+  preferences: {
+    theme: "light" | "dark" | "system";
+    notifications: boolean;
+    language: string;
+  };
+  lastActivity: number | null;
+}
+
+const userProfile = actor({
+  // Use interface for type checking
+  createState: (): UserProfileState => {
+    return {
+      userId: "",
+      displayName: "New User",
+      preferences: {
+        theme: "system",
+        notifications: true,
+        language: "en"
+      },
+      lastActivity: null
+    };
+  },
+  
+  // State is now fully typed in actions
+  actions: {
+    updatePreferences: (c, newPrefs: Partial<UserProfileState["preferences"]>) => {
+      c.state.preferences = {
+        ...c.state.preferences,
+        ...newPrefs
+      };
+      c.state.lastActivity = Date.now();
+      return c.state.preferences;
+    }
+  }
+});
+```
+
+## Async State Initialization
+
+You can also initialize state asynchronously, which is useful when fetching data:
+
+```typescript
+import { actor } from "actor-core";
+import { fetchUserDefaults } from "./api";
+
+const userProfile = actor({
+  // Synchronous initial state (required)
+  state: {
+    userId: "",
+    isInitialized: false,
+    profile: null,
+    preferences: {}
+  },
+  
+  // Async initialization in onCreate
+  onCreate: async (c, userId) => {
+    // Fetch initial data
+    const userData = await fetchUserDefaults(userId);
+    
+    // Update state with fetched data
+    c.state.userId = userId;
+    c.state.profile = userData.profile;
+    c.state.preferences = userData.preferences;
+    c.state.isInitialized = true;
+  },
+  
+  actions: {
+    // Actions can check initialization state
+    updateProfile: (c, updates) => {
+      if (!c.state.isInitialized) {
+        throw new Error("Profile not initialized");
+      }
+      
+      // Apply updates...
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Keep it serializable**: State must be JSON-serializable (no functions, classes, or circular references)
+2. **Use createState for complex initialization**: When you need computed values or external dependencies
+3. **Define types**: Always define TypeScript interfaces for complex state 
+4. **Initialize properties**: Provide default values for all state properties
+5. **Consider performance**: Large state objects can impact performance; keep state focused on essential data
+
+By carefully designing your actor's state, you can create more maintainable and performant applications.

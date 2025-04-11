@@ -1,0 +1,496 @@
+---
+title: Broadcasting to All Connections
+description: Send events to all connected clients efficiently
+---
+
+# Broadcasting to All Connections
+
+Broadcasting allows you to send events to all clients connected to an actor. This is a powerful feature for building real-time applications like chat rooms, collaborative editors, and multiplayer games.
+
+## Basic Broadcasting
+
+```typescript
+import { actor } from "actor-core";
+
+const chatRoom = actor({
+  state: {
+    messages: []
+  },
+  
+  actions: {
+    // Send a message to all connected clients
+    sendMessage: (c, content: string) => {
+      // Create the message object
+      const message = {
+        id: crypto.randomUUID(),
+        content,
+        sender: c.conn.state.username,
+        timestamp: Date.now()
+      };
+      
+      // Store in state
+      c.state.messages.push(message);
+      
+      // Broadcast to all connected clients
+      c.broadcast("newMessage", message);
+      
+      return message.id;
+    }
+  }
+});
+```
+
+## Broadcasting with Type Safety
+
+Use TypeScript to make your broadcasts type-safe:
+
+```typescript
+import { actor } from "actor-core";
+
+// Define event types
+type GameEvents = {
+  "playerJoined": [playerId: string, username: string];
+  "playerLeft": [playerId: string];
+  "gameStarted": [gameState: object];
+  "gameEnded": [winnerId: string | null, finalScore: Record<string, number>];
+  "roundUpdate": [roundNumber: number, timeRemaining: number];
+};
+
+const gameRoom = actor({
+  state: {
+    players: {},
+    gameState: "waiting",
+    currentRound: 0
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      id: crypto.randomUUID(),
+      username: params.username || "Anonymous"
+    };
+  },
+  
+  onConnect: (c) => {
+    // Add player to state
+    c.state.players[c.conn.state.id] = {
+      username: c.conn.state.username,
+      score: 0,
+      joinedAt: Date.now()
+    };
+    
+    // Broadcast player joined event with type safety
+    c.broadcast<GameEvents["playerJoined"]>(
+      "playerJoined", 
+      c.conn.state.id, 
+      c.conn.state.username
+    );
+  },
+  
+  onDisconnect: (c) => {
+    // Remove player from state
+    delete c.state.players[c.conn.state.id];
+    
+    // Broadcast player left event
+    c.broadcast<GameEvents["playerLeft"]>("playerLeft", c.conn.state.id);
+  },
+  
+  actions: {
+    startGame: (c) => {
+      if (c.state.gameState !== "waiting") {
+        throw new Error("Game already started");
+      }
+      
+      if (Object.keys(c.state.players).length < 2) {
+        throw new Error("Not enough players");
+      }
+      
+      c.state.gameState = "playing";
+      c.state.currentRound = 1;
+      
+      // Broadcast game started event
+      c.broadcast<GameEvents["gameStarted"]>("gameStarted", {
+        players: c.state.players,
+        round: c.state.currentRound
+      });
+      
+      // Schedule round updates
+      c.schedule.after(30000, "nextRound");
+      
+      return true;
+    },
+    
+    nextRound: (c) => {
+      if (c.state.gameState !== "playing") return;
+      
+      c.state.currentRound++;
+      
+      // Check if game should end
+      if (c.state.currentRound > 5) {
+        c.state.gameState = "ended";
+        const scores = Object.entries(c.state.players).reduce((acc, [id, player]) => {
+          acc[id] = player.score;
+          return acc;
+        }, {});
+        
+        const winner = getWinner(c.state.players);
+        
+        // Broadcast game ended
+        c.broadcast<GameEvents["gameEnded"]>("gameEnded", winner, scores);
+      } else {
+        // Broadcast round update
+        c.broadcast<GameEvents["roundUpdate"]>("roundUpdate", c.state.currentRound, 30);
+        
+        // Schedule next round
+        c.schedule.after(30000, "nextRound");
+      }
+    }
+  }
+});
+
+// Helper function to determine winner
+function getWinner(players) {
+  let highestScore = -1;
+  let winnerId = null;
+  
+  for (const [id, player] of Object.entries(players)) {
+    if (player.score > highestScore) {
+      highestScore = player.score;
+      winnerId = id;
+    }
+  }
+  
+  return winnerId;
+}
+```
+
+## Broadcasting State Updates
+
+A common pattern is to broadcast state updates:
+
+```typescript
+import { actor } from "actor-core";
+
+const documentEditor = actor({
+  state: {
+    document: {
+      title: "Untitled Document",
+      content: "",
+      lastModified: null
+    },
+    collaborators: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      cursorPosition: null
+    };
+  },
+  
+  onConnect: (c) => {
+    // Add collaborator
+    c.state.collaborators[c.conn.state.userId] = {
+      username: c.conn.state.username,
+      active: true,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast updated collaborator list
+    broadcastCollaborators(c);
+  },
+  
+  onDisconnect: (c) => {
+    if (c.state.collaborators[c.conn.state.userId]) {
+      c.state.collaborators[c.conn.state.userId].active = false;
+      broadcastCollaborators(c);
+    }
+  },
+  
+  actions: {
+    updateDocument: (c, changes) => {
+      // Apply changes to document
+      if (changes.title) {
+        c.state.document.title = changes.title;
+      }
+      
+      if (changes.content) {
+        c.state.document.content = changes.content;
+      }
+      
+      // Update timestamp
+      c.state.document.lastModified = Date.now();
+      
+      // Update collaborator activity
+      c.state.collaborators[c.conn.state.userId].lastActive = Date.now();
+      
+      // Broadcast document updates to all clients
+      c.broadcast("documentUpdated", {
+        document: c.state.document,
+        updatedBy: c.conn.state.userId
+      });
+      
+      return true;
+    },
+    
+    updateCursor: (c, position) => {
+      // Update cursor position in connection state
+      c.conn.state.cursorPosition = position;
+      
+      // Broadcast cursor position to other collaborators
+      c.broadcast("cursorMoved", {
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        position
+      });
+    }
+  }
+});
+
+// Helper function to broadcast collaborator list
+function broadcastCollaborators(c) {
+  c.broadcast("collaboratorsUpdated", c.state.collaborators);
+}
+```
+
+## Selective Broadcasting
+
+Sometimes you want to broadcast to all connections except the sender:
+
+```typescript
+import { actor } from "actor-core";
+
+const multiplayerGame = actor({
+  state: { /* game state */ },
+  
+  actions: {
+    makeMove: (c, move) => {
+      // Process the move...
+      
+      // Broadcast to all OTHER clients (excluding sender)
+      for (const conn of c.conns) {
+        if (conn !== c.conn) {
+          conn.send("opponentMove", {
+            playerId: c.conn.state.playerId,
+            move
+          });
+        }
+      }
+      
+      return { success: true };
+    },
+    
+    sendChatMessage: (c, message) => {
+      // Add message to history
+      const chatMessage = {
+        sender: c.conn.state.username,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Option 1: Broadcast to all, including sender
+      c.broadcast("chatMessage", chatMessage);
+      
+      // Option 2: Broadcast to all except sender
+      for (const conn of c.conns) {
+        if (conn !== c.conn) {
+          conn.send("chatMessage", chatMessage);
+        }
+      }
+      
+      // Return message ID
+      return { id: crypto.randomUUID() };
+    }
+  }
+});
+```
+
+## Broadcasting to Groups
+
+You can implement group-based broadcasting:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const teamChat = actor({
+  state: {
+    teams: {
+      "team-1": { name: "Engineering", channels: ["general", "alerts"] },
+      "team-2": { name: "Marketing", channels: ["general", "campaigns"] }
+    },
+    messages: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    // Validate user belongs to a team
+    if (!params.teamId || !c.state.teams[params.teamId]) {
+      throw new UserError("Invalid team");
+    }
+    
+    return {
+      userId: params.userId,
+      username: params.username,
+      teamId: params.teamId
+    };
+  },
+  
+  actions: {
+    // Send message to a team channel
+    sendToChannel: (c, channel, message) => {
+      const teamId = c.conn.state.teamId;
+      const team = c.state.teams[teamId];
+      
+      // Validate channel exists for this team
+      if (!team.channels.includes(channel)) {
+        throw new UserError("Channel not found");
+      }
+      
+      // Create message object
+      const messageObj = {
+        id: crypto.randomUUID(),
+        teamId,
+        channel,
+        sender: c.conn.state.username,
+        content: message,
+        timestamp: Date.now()
+      };
+      
+      // Store message
+      if (!c.state.messages[teamId]) {
+        c.state.messages[teamId] = {};
+      }
+      if (!c.state.messages[teamId][channel]) {
+        c.state.messages[teamId][channel] = [];
+      }
+      c.state.messages[teamId][channel].push(messageObj);
+      
+      // Broadcast only to connections from the same team
+      for (const conn of c.conns) {
+        if (conn.state.teamId === teamId) {
+          conn.send("channelMessage", messageObj);
+        }
+      }
+      
+      return messageObj.id;
+    },
+    
+    // Send announcement to everyone across all teams
+    sendAnnouncement: (c, message) => {
+      // Verify user has admin privileges (simplified)
+      if (!c.conn.state.isAdmin) {
+        throw new UserError("Permission denied");
+      }
+      
+      const announcement = {
+        type: "ANNOUNCEMENT",
+        sender: c.conn.state.username,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Broadcast to all connections
+      c.broadcast("announcement", announcement);
+      
+      return true;
+    }
+  }
+});
+```
+
+## Optimizing Broadcasts
+
+For large-scale applications, optimize broadcasts:
+
+```typescript
+import { actor } from "actor-core";
+
+const stockTicker = actor({
+  state: {
+    stocks: {},
+    lastUpdate: null,
+    subscriptions: {} // userId -> array of stock symbols
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      subscribedStocks: []
+    };
+  },
+  
+  actions: {
+    // Subscribe to specific stocks
+    subscribe: (c, symbols) => {
+      // Update connection state
+      c.conn.state.subscribedStocks = 
+        [...new Set([...c.conn.state.subscribedStocks, ...symbols])];
+      
+      // Update global subscriptions
+      c.state.subscriptions[c.conn.state.userId] = c.conn.state.subscribedStocks;
+      
+      return c.conn.state.subscribedStocks;
+    },
+    
+    // Unsubscribe from stocks
+    unsubscribe: (c, symbols) => {
+      c.conn.state.subscribedStocks = 
+        c.conn.state.subscribedStocks.filter(s => !symbols.includes(s));
+      
+      c.state.subscriptions[c.conn.state.userId] = c.conn.state.subscribedStocks;
+      
+      return c.conn.state.subscribedStocks;
+    },
+    
+    // Update stock prices (called by admin or scheduled job)
+    updateStocks: (c, updates) => {
+      // Update stock data
+      for (const [symbol, data] of Object.entries(updates)) {
+        c.state.stocks[symbol] = {
+          ...c.state.stocks[symbol],
+          ...data,
+          lastUpdated: Date.now()
+        };
+      }
+      
+      c.state.lastUpdate = Date.now();
+      
+      // Find which users are subscribed to which updated stocks
+      const affectedSymbols = Object.keys(updates);
+      
+      // Optimized broadcasting - only send updates to interested clients
+      for (const conn of c.conns) {
+        // Filter symbols this connection cares about
+        const relevantSymbols = affectedSymbols.filter(
+          symbol => conn.state.subscribedStocks.includes(symbol)
+        );
+        
+        // Only send if there are relevant updates
+        if (relevantSymbols.length > 0) {
+          // Create filtered update package
+          const relevantUpdates = {};
+          for (const symbol of relevantSymbols) {
+            relevantUpdates[symbol] = c.state.stocks[symbol];
+          }
+          
+          // Send only relevant updates to this connection
+          conn.send("stockUpdates", relevantUpdates);
+        }
+      }
+      
+      return Object.keys(updates).length;
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Be selective**: Only broadcast necessary information
+2. **Consider volume**: High-frequency broadcasts can overwhelm clients
+3. **Group intelligently**: Broadcast only to relevant clients
+4. **Use throttling**: For rapidly changing data, throttle broadcast frequency
+5. **Keep payload size in mind**: Large broadcasts consume bandwidth
+6. **Type your events**: Use TypeScript for type-safe event broadcasting
+7. **Consider state management**: Use broadcasts to keep client state in sync
+
+Broadcasting is a powerful tool for building real-time applications with ActorCore. By using it effectively, you can create responsive, collaborative experiences for your users.

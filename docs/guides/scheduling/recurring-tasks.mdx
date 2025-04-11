@@ -1,0 +1,1343 @@
+---
+title: Recurring Tasks
+description: Implement recurring tasks for periodic operations
+---
+
+# Recurring Tasks
+
+Many applications need to perform operations on a regular schedule, such as daily reports, periodic data cleanup, or regular notifications. ActorCore's scheduling capabilities can be extended to implement recurring tasks that run at regular intervals, even across actor restarts.
+
+## Basic Recurring Task Pattern
+
+```typescript
+import { actor } from "actor-core";
+
+const periodicTaskManager = actor({
+  state: {
+    tasks: {}
+  },
+  
+  onStart: (c) => {
+    // Restart all active recurring tasks when actor starts/restarts
+    for (const [taskId, task] of Object.entries(c.state.tasks)) {
+      if (task.status === "active") {
+        // Calculate next execution time
+        const nextRun = calculateNextRun(task);
+        
+        // Schedule next execution
+        if (nextRun > Date.now()) {
+          c.schedule.at(nextRun, "executeTask", taskId);
+        } else {
+          // Task is overdue, run immediately
+          c.schedule.after(1000, "executeTask", taskId);
+        }
+      }
+    }
+  },
+  
+  actions: {
+    // Create a recurring task
+    createRecurringTask: (c, taskName, interval, config = {}) => {
+      // Validate interval (in milliseconds)
+      if (interval < 60000) { // Minimum 1 minute
+        throw new Error("Interval must be at least 60000ms (1 minute)");
+      }
+      
+      // Generate task ID
+      const taskId = crypto.randomUUID();
+      
+      // Create task
+      c.state.tasks[taskId] = {
+        id: taskId,
+        name: taskName,
+        interval,
+        config,
+        createdAt: Date.now(),
+        lastRun: null,
+        nextRun: Date.now() + interval,
+        runCount: 0,
+        status: "active"
+      };
+      
+      // Schedule first execution
+      c.schedule.at(c.state.tasks[taskId].nextRun, "executeTask", taskId);
+      
+      return {
+        taskId,
+        name: taskName,
+        nextRun: c.state.tasks[taskId].nextRun
+      };
+    },
+    
+    // Execute a task and schedule the next run
+    executeTask: async (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task || task.status !== "active") {
+        return; // Task doesn't exist or is not active
+      }
+      
+      // Update task stats
+      task.lastRun = Date.now();
+      task.runCount++;
+      
+      // Log task execution
+      console.log(`Executing task ${task.name} (${taskId}), run #${task.runCount}`);
+      
+      try {
+        // Execute the task based on its name
+        let result;
+        
+        switch (task.name) {
+          case "cleanupData":
+            result = await performCleanup(c, task.config);
+            break;
+          case "generateReport":
+            result = await generateReport(c, task.config);
+            break;
+          case "sendNotifications":
+            result = await sendNotifications(c, task.config);
+            break;
+          case "healthCheck":
+            result = await performHealthCheck(c, task.config);
+            break;
+          default:
+            console.warn(`Unknown task type: ${task.name}`);
+            result = { success: false, error: "Unknown task type" };
+        }
+        
+        // Store last result
+        task.lastResult = {
+          success: result.success !== false,
+          data: result,
+          timestamp: Date.now()
+        };
+        
+        // Broadcast task completion
+        c.broadcast("taskCompleted", {
+          taskId,
+          name: task.name,
+          result: task.lastResult
+        });
+      } catch (error) {
+        // Handle execution error
+        console.error(`Task execution failed: ${error.message}`);
+        
+        task.lastResult = {
+          success: false,
+          error: error.message,
+          timestamp: Date.now()
+        };
+        
+        // Broadcast task failure
+        c.broadcast("taskFailed", {
+          taskId,
+          name: task.name,
+          error: error.message
+        });
+      }
+      
+      // Calculate next execution time and schedule
+      task.nextRun = task.lastRun + task.interval;
+      
+      // Schedule next run
+      c.schedule.at(task.nextRun, "executeTask", taskId);
+      
+      // Return task status
+      return {
+        taskId,
+        name: task.name,
+        lastRun: task.lastRun,
+        nextRun: task.nextRun,
+        runCount: task.runCount,
+        result: task.lastResult
+      };
+    },
+    
+    // Pause a task
+    pauseTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      task.status = "paused";
+      
+      // Broadcast task paused
+      c.broadcast("taskPaused", {
+        taskId,
+        name: task.name,
+        pausedAt: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Resume a paused task
+    resumeTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      if (task.status !== "paused") {
+        return { success: false, reason: "Task is not paused" };
+      }
+      
+      // Update status
+      task.status = "active";
+      
+      // Calculate next run time (either use existing or schedule from now)
+      if (!task.nextRun || task.nextRun < Date.now()) {
+        task.nextRun = Date.now() + task.interval;
+      }
+      
+      // Schedule next execution
+      c.schedule.at(task.nextRun, "executeTask", taskId);
+      
+      // Broadcast task resumed
+      c.broadcast("taskResumed", {
+        taskId,
+        name: task.name,
+        resumedAt: Date.now(),
+        nextRun: task.nextRun
+      });
+      
+      return { success: true, nextRun: task.nextRun };
+    },
+    
+    // Delete a task
+    deleteTask: (c, taskId) => {
+      if (!c.state.tasks[taskId]) {
+        return { success: false, reason: "Task not found" };
+      }
+      
+      // Delete the task
+      delete c.state.tasks[taskId];
+      
+      // Broadcast task deleted
+      c.broadcast("taskDeleted", {
+        taskId,
+        deletedAt: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Get all tasks
+    getTasks: (c, includeHistory = false) => {
+      // Return tasks with or without detailed history
+      return Object.entries(c.state.tasks).map(([id, task]) => {
+        if (includeHistory) {
+          return task;
+        } else {
+          const { lastResult, ...basicTask } = task;
+          return basicTask;
+        }
+      });
+    }
+  }
+});
+
+// Task implementation functions
+async function performCleanup(c, config) {
+  console.log("Performing data cleanup");
+  
+  // Implementation depends on application requirements
+  // For example, you might delete old data, compact storage, etc.
+  
+  return { 
+    success: true, 
+    itemsCleaned: Math.floor(Math.random() * 100) 
+  };
+}
+
+async function generateReport(c, config) {
+  console.log("Generating report");
+  
+  // Implementation depends on application requirements
+  // For example, you might aggregate data, generate charts, etc.
+  
+  const reportId = crypto.randomUUID();
+  
+  return { 
+    success: true, 
+    reportId,
+    generatedAt: Date.now()
+  };
+}
+
+async function sendNotifications(c, config) {
+  console.log("Sending notifications");
+  
+  // Implementation depends on application requirements
+  // For example, you might send emails, push notifications, etc.
+  
+  const count = Math.floor(Math.random() * 50);
+  
+  return { 
+    success: true, 
+    notificationsSent: count
+  };
+}
+
+async function performHealthCheck(c, config) {
+  console.log("Performing health check");
+  
+  // Implementation depends on application requirements
+  // For example, you might check external services, database connections, etc.
+  
+  return { 
+    success: true, 
+    services: {
+      database: "healthy",
+      api: "healthy",
+      cache: "healthy"
+    }
+  };
+}
+
+// Helper function to calculate next run time
+function calculateNextRun(task) {
+  if (!task.lastRun) {
+    // First run, use the configured nextRun or now + interval
+    return task.nextRun || (Date.now() + task.interval);
+  }
+  
+  // Calculate next run based on last run + interval
+  return task.lastRun + task.interval;
+}
+```
+
+## Cron-Style Scheduled Tasks
+
+```typescript
+import { actor } from "actor-core";
+import { parseExpression } from "cron-parser";
+
+const cronScheduler = actor({
+  state: {
+    schedules: {},
+    executionHistory: {}
+  },
+  
+  onStart: (c) => {
+    console.log("Cron scheduler starting");
+    
+    // Schedule all active schedules
+    for (const [scheduleId, schedule] of Object.entries(c.state.schedules)) {
+      if (schedule.status === "active") {
+        scheduleNextExecution(c, scheduleId);
+      }
+    }
+  },
+  
+  actions: {
+    // Create a new cron schedule
+    createSchedule: (c, name, cronExpression, taskType, config = {}) => {
+      try {
+        // Validate cron expression by parsing it
+        const interval = parseExpression(cronExpression);
+        const nextRun = interval.next().getTime();
+        
+        // Create schedule ID
+        const scheduleId = crypto.randomUUID();
+        
+        // Store schedule
+        c.state.schedules[scheduleId] = {
+          id: scheduleId,
+          name,
+          cronExpression,
+          taskType,
+          config,
+          createdAt: Date.now(),
+          nextRun,
+          lastRun: null,
+          status: "active"
+        };
+        
+        // Initialize execution history
+        c.state.executionHistory[scheduleId] = [];
+        
+        // Schedule first execution
+        scheduleNextExecution(c, scheduleId);
+        
+        return {
+          scheduleId,
+          name,
+          cronExpression,
+          nextRun
+        };
+      } catch (error) {
+        throw new Error(`Invalid cron expression: ${error.message}`);
+      }
+    },
+    
+    // Execute a scheduled task
+    executeSchedule: (c, scheduleId) => {
+      const schedule = c.state.schedules[scheduleId];
+      
+      if (!schedule || schedule.status !== "active") {
+        return;
+      }
+      
+      // Update schedule status
+      schedule.lastRun = Date.now();
+      
+      // Create execution record
+      const executionId = crypto.randomUUID();
+      const execution = {
+        id: executionId,
+        scheduleId,
+        taskType: schedule.taskType,
+        startTime: Date.now(),
+        endTime: null,
+        status: "running",
+        result: null
+      };
+      
+      // Add to execution history
+      c.state.executionHistory[scheduleId] = 
+        c.state.executionHistory[scheduleId] || [];
+      
+      c.state.executionHistory[scheduleId].unshift(execution);
+      
+      // Limit history size
+      if (c.state.executionHistory[scheduleId].length > 10) {
+        c.state.executionHistory[scheduleId] = 
+          c.state.executionHistory[scheduleId].slice(0, 10);
+      }
+      
+      // Log execution
+      console.log(`Executing scheduled task '${schedule.name}' (${scheduleId})`);
+      
+      // Execute the task
+      executeTask(c, scheduleId, executionId, schedule.taskType, schedule.config)
+        .then(result => {
+          // Update execution record with success
+          const execution = findExecution(c, scheduleId, executionId);
+          if (execution) {
+            execution.status = "completed";
+            execution.endTime = Date.now();
+            execution.result = result;
+          }
+          
+          // Broadcast completion
+          c.broadcast("taskCompleted", {
+            scheduleId,
+            executionId,
+            taskType: schedule.taskType,
+            result
+          });
+        })
+        .catch(error => {
+          // Update execution record with failure
+          const execution = findExecution(c, scheduleId, executionId);
+          if (execution) {
+            execution.status = "failed";
+            execution.endTime = Date.now();
+            execution.error = error.message;
+          }
+          
+          // Broadcast failure
+          c.broadcast("taskFailed", {
+            scheduleId,
+            executionId,
+            taskType: schedule.taskType,
+            error: error.message
+          });
+          
+          console.error(`Task execution failed: ${error.message}`);
+        })
+        .finally(() => {
+          // Schedule next execution regardless of success/failure
+          scheduleNextExecution(c, scheduleId);
+        });
+      
+      return { executionId };
+    },
+    
+    // Get schedule details
+    getSchedule: (c, scheduleId, includeHistory = false) => {
+      const schedule = c.state.schedules[scheduleId];
+      
+      if (!schedule) {
+        throw new Error("Schedule not found");
+      }
+      
+      if (includeHistory) {
+        return {
+          ...schedule,
+          executionHistory: c.state.executionHistory[scheduleId] || []
+        };
+      }
+      
+      return schedule;
+    },
+    
+    // List all schedules
+    listSchedules: (c) => {
+      return Object.values(c.state.schedules).map(schedule => ({
+        id: schedule.id,
+        name: schedule.name,
+        cronExpression: schedule.cronExpression,
+        taskType: schedule.taskType,
+        status: schedule.status,
+        nextRun: schedule.nextRun,
+        lastRun: schedule.lastRun
+      }));
+    },
+    
+    // Pause a schedule
+    pauseSchedule: (c, scheduleId) => {
+      const schedule = c.state.schedules[scheduleId];
+      
+      if (!schedule) {
+        throw new Error("Schedule not found");
+      }
+      
+      schedule.status = "paused";
+      
+      // Broadcast pause
+      c.broadcast("schedulePaused", {
+        scheduleId,
+        name: schedule.name,
+        pausedAt: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Resume a paused schedule
+    resumeSchedule: (c, scheduleId) => {
+      const schedule = c.state.schedules[scheduleId];
+      
+      if (!schedule) {
+        throw new Error("Schedule not found");
+      }
+      
+      if (schedule.status !== "paused") {
+        return { success: false, reason: "Schedule is not paused" };
+      }
+      
+      schedule.status = "active";
+      
+      // Schedule next execution
+      scheduleNextExecution(c, scheduleId);
+      
+      // Broadcast resume
+      c.broadcast("scheduleResumed", {
+        scheduleId,
+        name: schedule.name,
+        resumedAt: Date.now(),
+        nextRun: schedule.nextRun
+      });
+      
+      return { success: true, nextRun: schedule.nextRun };
+    },
+    
+    // Delete a schedule
+    deleteSchedule: (c, scheduleId) => {
+      if (!c.state.schedules[scheduleId]) {
+        return { success: false, reason: "Schedule not found" };
+      }
+      
+      // Delete the schedule and its history
+      delete c.state.schedules[scheduleId];
+      delete c.state.executionHistory[scheduleId];
+      
+      // Broadcast deletion
+      c.broadcast("scheduleDeleted", {
+        scheduleId,
+        deletedAt: Date.now()
+      });
+      
+      return { success: true };
+    }
+  }
+});
+
+// Helper function to schedule next execution
+function scheduleNextExecution(c, scheduleId) {
+  const schedule = c.state.schedules[scheduleId];
+  
+  if (!schedule || schedule.status !== "active") {
+    return;
+  }
+  
+  try {
+    // Parse cron expression
+    const interval = parseExpression(schedule.cronExpression);
+    
+    // Get next execution time
+    const nextRun = interval.next().getTime();
+    
+    // Update schedule
+    schedule.nextRun = nextRun;
+    
+    // Schedule execution
+    c.schedule.at(nextRun, "executeSchedule", scheduleId);
+    
+    console.log(`Scheduled next execution of '${schedule.name}' at ${new Date(nextRun).toISOString()}`);
+  } catch (error) {
+    console.error(`Failed to schedule execution: ${error.message}`);
+    
+    // Set status to error
+    schedule.status = "error";
+    schedule.error = error.message;
+    
+    // Broadcast error
+    c.broadcast("scheduleError", {
+      scheduleId,
+      error: error.message,
+      timestamp: Date.now()
+    });
+  }
+}
+
+// Execute a task based on its type
+async function executeTask(c, scheduleId, executionId, taskType, config) {
+  switch (taskType) {
+    case "dailyReport":
+      return await generateDailyReport(config);
+    case "dataBackup":
+      return await performDataBackup(config);
+    case "userNotification":
+      return await sendUserNotifications(config);
+    case "systemMaintenance":
+      return await performSystemMaintenance(config);
+    default:
+      throw new Error(`Unknown task type: ${taskType}`);
+  }
+}
+
+// Find an execution record
+function findExecution(c, scheduleId, executionId) {
+  const history = c.state.executionHistory[scheduleId] || [];
+  return history.find(execution => execution.id === executionId);
+}
+
+// Task implementation functions
+async function generateDailyReport(config) {
+  // Simulate report generation
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  return {
+    report: "Daily report content",
+    generatedAt: new Date().toISOString()
+  };
+}
+
+async function performDataBackup(config) {
+  // Simulate backup
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  return {
+    backupId: crypto.randomUUID(),
+    size: "1.2GB",
+    completedAt: new Date().toISOString()
+  };
+}
+
+async function sendUserNotifications(config) {
+  // Simulate sending notifications
+  await new Promise(resolve => setTimeout(resolve, 800));
+  
+  return {
+    sentCount: 15,
+    failedCount: 2,
+    completedAt: new Date().toISOString()
+  };
+}
+
+async function performSystemMaintenance(config) {
+  // Simulate system maintenance
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  return {
+    tasks: ["cache cleared", "logs rotated", "indexes optimized"],
+    completedAt: new Date().toISOString()
+  };
+}
+```
+
+## Daily Recurring Task at Specific Time
+
+```typescript
+import { actor } from "actor-core";
+
+const dailyTaskActor = actor({
+  state: {
+    dailyTasks: {},
+    executionLog: []
+  },
+  
+  onStart: (c) => {
+    console.log("Daily task actor started");
+    
+    // Schedule all active daily tasks
+    for (const [taskId, task] of Object.entries(c.state.dailyTasks)) {
+      if (task.active) {
+        scheduleNextDailyRun(c, taskId);
+      }
+    }
+  },
+  
+  actions: {
+    // Schedule a task to run daily at a specific time
+    scheduleDailyTask: (c, name, timeString, config = {}) => {
+      // Validate time string (HH:MM format)
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(timeString)) {
+        throw new Error("Time must be in 24-hour format (HH:MM)");
+      }
+      
+      const taskId = crypto.randomUUID();
+      
+      // Calculate first run time
+      const nextRun = calculateNextRunTime(timeString);
+      
+      // Store task
+      c.state.dailyTasks[taskId] = {
+        id: taskId,
+        name,
+        timeString,
+        config,
+        createdAt: Date.now(),
+        nextRun,
+        lastRun: null,
+        active: true
+      };
+      
+      // Schedule first execution
+      scheduleNextDailyRun(c, taskId);
+      
+      return {
+        taskId,
+        name,
+        timeString,
+        nextRun: new Date(nextRun).toISOString()
+      };
+    },
+    
+    // Execute daily task
+    executeDailyTask: (c, taskId) => {
+      const task = c.state.dailyTasks[taskId];
+      
+      if (!task || !task.active) {
+        return;
+      }
+      
+      // Update task status
+      task.lastRun = Date.now();
+      
+      // Create execution log entry
+      const logEntry = {
+        taskId,
+        taskName: task.name,
+        executedAt: Date.now(),
+        result: null
+      };
+      
+      // Add to log
+      c.state.executionLog.unshift(logEntry);
+      
+      // Limit log size
+      if (c.state.executionLog.length > 100) {
+        c.state.executionLog = c.state.executionLog.slice(0, 100);
+      }
+      
+      // Execute the task
+      console.log(`Executing daily task: ${task.name}`);
+      
+      // Execute based on the task name (customize for your application)
+      let result;
+      
+      try {
+        switch (task.name) {
+          case "dailyReport":
+            result = generateDailyReport(task.config);
+            break;
+          case "userSummary":
+            result = generateUserSummary(task.config);
+            break;
+          case "dataCleanup":
+            result = performDataCleanup(task.config);
+            break;
+          default:
+            result = { message: "Task executed" };
+        }
+        
+        // Update log entry with result
+        logEntry.result = result;
+        logEntry.success = true;
+        
+        // Broadcast success
+        c.broadcast("taskExecuted", {
+          taskId,
+          name: task.name,
+          result,
+          executedAt: logEntry.executedAt
+        });
+      } catch (error) {
+        // Update log entry with error
+        logEntry.error = error.message;
+        logEntry.success = false;
+        
+        // Broadcast failure
+        c.broadcast("taskFailed", {
+          taskId,
+          name: task.name,
+          error: error.message,
+          executedAt: logEntry.executedAt
+        });
+        
+        console.error(`Task execution failed: ${error.message}`);
+      }
+      
+      // Schedule next execution
+      scheduleNextDailyRun(c, taskId);
+      
+      return { executed: true, taskId };
+    },
+    
+    // Get task details
+    getTask: (c, taskId) => {
+      const task = c.state.dailyTasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      // Get recent execution history for this task
+      const history = c.state.executionLog
+        .filter(entry => entry.taskId === taskId)
+        .slice(0, 10);
+      
+      return {
+        ...task,
+        executionHistory: history
+      };
+    },
+    
+    // List all tasks
+    listTasks: (c) => {
+      return Object.values(c.state.dailyTasks).map(task => ({
+        id: task.id,
+        name: task.name,
+        timeString: task.timeString,
+        active: task.active,
+        nextRun: task.nextRun,
+        lastRun: task.lastRun
+      }));
+    },
+    
+    // Pause a task
+    pauseTask: (c, taskId) => {
+      const task = c.state.dailyTasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      task.active = false;
+      
+      // Broadcast pause
+      c.broadcast("taskPaused", {
+        taskId,
+        name: task.name,
+        pausedAt: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Resume a task
+    resumeTask: (c, taskId) => {
+      const task = c.state.dailyTasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      if (task.active) {
+        return { success: false, reason: "Task is already active" };
+      }
+      
+      task.active = true;
+      
+      // Calculate next run time
+      task.nextRun = calculateNextRunTime(task.timeString);
+      
+      // Schedule next execution
+      scheduleNextDailyRun(c, taskId);
+      
+      // Broadcast resume
+      c.broadcast("taskResumed", {
+        taskId,
+        name: task.name,
+        resumedAt: Date.now(),
+        nextRun: new Date(task.nextRun).toISOString()
+      });
+      
+      return { success: true, nextRun: new Date(task.nextRun).toISOString() };
+    }
+  }
+});
+
+// Helper function to calculate next run time based on HH:MM
+function calculateNextRunTime(timeString) {
+  const [hours, minutes] = timeString.split(":").map(Number);
+  
+  // Create a date object for today at the specified time
+  const now = new Date();
+  const runTime = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    hours,
+    minutes,
+    0,
+    0
+  );
+  
+  // If the time has already passed today, schedule for tomorrow
+  if (runTime.getTime() <= now.getTime()) {
+    runTime.setDate(runTime.getDate() + 1);
+  }
+  
+  return runTime.getTime();
+}
+
+// Helper function to schedule next daily run
+function scheduleNextDailyRun(c, taskId) {
+  const task = c.state.dailyTasks[taskId];
+  
+  if (!task || !task.active) {
+    return;
+  }
+  
+  // Schedule execution
+  c.schedule.at(task.nextRun, "executeDailyTask", taskId);
+  
+  console.log(`Scheduled next execution of ${task.name} at ${new Date(task.nextRun).toISOString()}`);
+}
+
+// Task implementation functions
+function generateDailyReport(config) {
+  // Implementation depends on your application
+  return {
+    report: "Daily report content",
+    generatedAt: new Date().toISOString()
+  };
+}
+
+function generateUserSummary(config) {
+  // Implementation depends on your application
+  return {
+    activeUsers: 1250,
+    newUsers: 75,
+    churnRate: "2.3%",
+    generatedAt: new Date().toISOString()
+  };
+}
+
+function performDataCleanup(config) {
+  // Implementation depends on your application
+  return {
+    recordsCleaned: 532,
+    spaceFreed: "25MB",
+    completedAt: new Date().toISOString()
+  };
+}
+```
+
+## Timezone-Aware Recurring Tasks
+
+```typescript
+import { actor } from "actor-core";
+
+const timezoneTaskScheduler = actor({
+  state: {
+    tasks: {},
+    executions: {}
+  },
+  
+  onStart: (c) => {
+    console.log("Timezone-aware scheduler started");
+    
+    // Reschedule all active tasks
+    for (const [taskId, task] of Object.entries(c.state.tasks)) {
+      if (task.active) {
+        scheduleNextExecution(c, taskId);
+      }
+    }
+  },
+  
+  actions: {
+    // Schedule a task to run at a specific time in a specific timezone
+    scheduleTask: (c, name, timeString, timezone, frequency = "daily", config = {}) => {
+      // Validate time string (HH:MM format)
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(timeString)) {
+        throw new Error("Time must be in 24-hour format (HH:MM)");
+      }
+      
+      // Validate frequency
+      const validFrequencies = ["daily", "weekly", "monthly"];
+      if (!validFrequencies.includes(frequency)) {
+        throw new Error(`Invalid frequency. Must be one of: ${validFrequencies.join(", ")}`);
+      }
+      
+      // Validate timezone (simplified check)
+      if (!timezone || typeof timezone !== "string") {
+        throw new Error("Valid timezone required (e.g., 'America/New_York')");
+      }
+      
+      const taskId = crypto.randomUUID();
+      
+      // Calculate first run time
+      const nextRun = calculateNextRunInTimezone(timeString, timezone, frequency, config);
+      
+      // Store task
+      c.state.tasks[taskId] = {
+        id: taskId,
+        name,
+        timeString,
+        timezone,
+        frequency,
+        config,
+        createdAt: Date.now(),
+        nextRun,
+        lastRun: null,
+        active: true
+      };
+      
+      // Initialize execution history
+      c.state.executions[taskId] = [];
+      
+      // Schedule first execution
+      scheduleNextExecution(c, taskId);
+      
+      return {
+        taskId,
+        name,
+        timeString,
+        timezone,
+        frequency,
+        nextRun: new Date(nextRun).toISOString()
+      };
+    },
+    
+    // Execute a scheduled task
+    executeTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task || !task.active) {
+        return;
+      }
+      
+      // Update task status
+      task.lastRun = Date.now();
+      
+      // Create execution record
+      const executionId = crypto.randomUUID();
+      const execution = {
+        id: executionId,
+        taskId,
+        taskName: task.name,
+        executedAt: Date.now(),
+        timezone: task.timezone,
+        localTime: formatInTimezone(new Date(), task.timezone),
+        status: "running",
+        result: null
+      };
+      
+      // Add to execution history
+      c.state.executions[taskId].unshift(execution);
+      
+      // Limit history size
+      if (c.state.executions[taskId].length > 10) {
+        c.state.executions[taskId] = c.state.executions[taskId].slice(0, 10);
+      }
+      
+      console.log(`Executing task ${task.name} (${taskId}) in timezone ${task.timezone}`);
+      
+      // Execute the task (implementation depends on task type)
+      try {
+        const result = executeTaskByType(task);
+        
+        // Update execution record
+        execution.status = "completed";
+        execution.result = result;
+        execution.completedAt = Date.now();
+        
+        // Broadcast completion
+        c.broadcast("taskExecuted", {
+          taskId,
+          executionId,
+          name: task.name,
+          result,
+          timezone: task.timezone,
+          localTime: execution.localTime
+        });
+      } catch (error) {
+        // Update execution record with failure
+        execution.status = "failed";
+        execution.error = error.message;
+        execution.completedAt = Date.now();
+        
+        // Broadcast failure
+        c.broadcast("taskFailed", {
+          taskId,
+          executionId,
+          name: task.name,
+          error: error.message
+        });
+        
+        console.error(`Task execution failed: ${error.message}`);
+      }
+      
+      // Schedule next execution
+      scheduleNextExecution(c, taskId);
+      
+      return { executionId };
+    },
+    
+    // Get task details with recent executions
+    getTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      return {
+        ...task,
+        executions: c.state.executions[taskId] || []
+      };
+    },
+    
+    // List all tasks
+    listTasks: (c) => {
+      return Object.values(c.state.tasks).map(task => ({
+        id: task.id,
+        name: task.name,
+        timeString: task.timeString,
+        timezone: task.timezone,
+        frequency: task.frequency,
+        active: task.active,
+        nextRun: new Date(task.nextRun).toISOString()
+      }));
+    },
+    
+    // Pause a task
+    pauseTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      task.active = false;
+      
+      // Broadcast pause
+      c.broadcast("taskPaused", {
+        taskId,
+        name: task.name,
+        pausedAt: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Resume a paused task
+    resumeTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new Error("Task not found");
+      }
+      
+      if (task.active) {
+        return { success: false, reason: "Task is already active" };
+      }
+      
+      task.active = true;
+      
+      // Calculate next run time
+      task.nextRun = calculateNextRunInTimezone(
+        task.timeString, 
+        task.timezone,
+        task.frequency,
+        task.config
+      );
+      
+      // Schedule next execution
+      scheduleNextExecution(c, taskId);
+      
+      // Broadcast resume
+      c.broadcast("taskResumed", {
+        taskId,
+        name: task.name,
+        resumedAt: Date.now(),
+        nextRun: new Date(task.nextRun).toISOString()
+      });
+      
+      return { 
+        success: true, 
+        nextRun: new Date(task.nextRun).toISOString() 
+      };
+    }
+  }
+});
+
+// Helper function to calculate next run time based on timezone
+function calculateNextRunInTimezone(timeString, timezone, frequency, config = {}) {
+  // In a real application, you would use a proper timezone library like date-fns-tz
+  // This is a simplified implementation
+  
+  try {
+    // Parse time
+    const [hours, minutes] = timeString.split(":").map(Number);
+    
+    // Get current date in the target timezone
+    const now = new Date();
+    
+    // Create a date object for today at the specified time in that timezone
+    // NOTE: In a real app, use date-fns-tz or similar library for accurate timezone handling
+    const targetDate = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      hours,
+      minutes,
+      0,
+      0
+    );
+    
+    // Adjust for timezone difference (simplified)
+    const targetOffset = getTimezoneOffset(timezone);
+    const localOffset = now.getTimezoneOffset() * -60000; // Local offset in milliseconds
+    const offsetDiff = targetOffset - localOffset;
+    
+    // Apply offset difference
+    targetDate.setTime(targetDate.getTime() - offsetDiff);
+    
+    // Handle frequency-specific adjustments
+    if (frequency === "weekly" && config.dayOfWeek !== undefined) {
+      // Adjust to the next occurrence of the specified day
+      const targetDay = config.dayOfWeek; // 0 = Sunday, 6 = Saturday
+      const currentDay = targetDate.getDay();
+      
+      if (currentDay !== targetDay) {
+        const daysToAdd = (targetDay - currentDay + 7) % 7;
+        targetDate.setDate(targetDate.getDate() + daysToAdd);
+      }
+    } else if (frequency === "monthly" && config.dayOfMonth !== undefined) {
+      // Adjust to the specified day of month
+      const targetDay = Math.min(config.dayOfMonth, getDaysInMonth(targetDate));
+      targetDate.setDate(targetDay);
+      
+      // If the day has already passed this month, move to next month
+      if (targetDate.getTime() <= now.getTime()) {
+        targetDate.setMonth(targetDate.getMonth() + 1);
+        targetDate.setDate(Math.min(config.dayOfMonth, getDaysInMonth(targetDate)));
+      }
+    }
+    
+    // If the time has already passed, adjust based on frequency
+    if (targetDate.getTime() <= now.getTime()) {
+      if (frequency === "daily") {
+        targetDate.setDate(targetDate.getDate() + 1);
+      } else if (frequency === "weekly") {
+        targetDate.setDate(targetDate.getDate() + 7);
+      } else if (frequency === "monthly") {
+        targetDate.setMonth(targetDate.getMonth() + 1);
+        targetDate.setDate(Math.min(targetDate.getDate(), getDaysInMonth(targetDate)));
+      }
+    }
+    
+    return targetDate.getTime();
+  } catch (error) {
+    console.error(`Error calculating next run time: ${error.message}`);
+    // Fallback: schedule for tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0);
+    return tomorrow.getTime();
+  }
+}
+
+// Helper function to schedule next execution
+function scheduleNextExecution(c, taskId) {
+  const task = c.state.tasks[taskId];
+  
+  if (!task || !task.active) {
+    return;
+  }
+  
+  // Schedule execution
+  c.schedule.at(task.nextRun, "executeTask", taskId);
+  
+  console.log(`Scheduled task ${task.name} for ${new Date(task.nextRun).toISOString()} (${task.timezone} time: ${formatInTimezone(new Date(task.nextRun), task.timezone)})`);
+}
+
+// Simplified task execution based on task type
+function executeTaskByType(task) {
+  // Implementation depends on your application needs
+  // This is a simplified example
+  
+  switch (task.name) {
+    case "generateReport":
+      return { reportGenerated: true, timestamp: Date.now() };
+    case "sendNotifications":
+      return { notificationsSent: 5, timestamp: Date.now() };
+    case "dataCleanup":
+      return { recordsCleaned: 10, timestamp: Date.now() };
+    default:
+      return { executed: true, timestamp: Date.now() };
+  }
+}
+
+// Simplified timezone offset function (in a real app, use a proper timezone library)
+function getTimezoneOffset(timezone) {
+  // Map of timezone to offset in milliseconds
+  // This is a very simplified implementation - use a proper library in real apps
+  const timezoneMap = {
+    "America/New_York": -5 * 60 * 60 * 1000,
+    "America/Los_Angeles": -8 * 60 * 60 * 1000,
+    "Europe/London": 0,
+    "Europe/Paris": 1 * 60 * 60 * 1000,
+    "Asia/Tokyo": 9 * 60 * 60 * 1000
+  };
+  
+  return timezoneMap[timezone] || 0;
+}
+
+// Format a date in a specific timezone (simplified)
+function formatInTimezone(date, timezone) {
+  // In a real app, use date-fns-tz or similar
+  return date.toISOString();
+}
+
+// Get days in month helper
+function getDaysInMonth(date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+```
+
+## Best Practices
+
+1. **Persist task definitions**: Store task definitions in actor state for recovery
+2. **Handle time zones**: Be aware of time zone differences for scheduling
+3. **Efficient scheduling**: Calculate next run times accurately
+4. **Error handling**: Properly handle and log execution errors
+5. **Execution history**: Keep a history of task executions for debugging
+6. **Pause/resume**: Allow tasks to be paused and resumed
+7. **Dynamic configuration**: Allow task parameters to be updated
+8. **Recovery**: Properly reschedule tasks when the actor restarts
+9. **Task isolation**: Keep task execution isolated to prevent cascading failures
+10. **Monitoring**: Broadcast events for monitoring task execution
+
+Implementing recurring tasks in ActorCore allows you to build reliable, maintainable scheduled operations that persist through actor restarts and failures. By following these patterns, you can implement everything from simple periodic maintenance to complex timezone-aware scheduling systems.

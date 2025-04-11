@@ -1,0 +1,584 @@
+---
+title: User Error with Metadata
+description: Return structured errors to clients with codes and metadata
+---
+
+# User Error with Metadata
+
+Error handling is a critical part of any robust application. ActorCore provides a structured way to handle errors that occur during action execution and communicate them clearly to clients.
+
+## Basic User Error Example
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const userAccount = actor({
+  state: {
+    users: {}
+  },
+  
+  actions: {
+    createUser: (c, username, email) => {
+      // Validate username
+      if (!username || username.length < 3) {
+        throw new UserError("Username must be at least 3 characters long");
+      }
+      
+      // Check for existing user
+      if (c.state.users[username]) {
+        throw new UserError("Username already taken");
+      }
+      
+      // Validate email format
+      if (!email || !email.includes('@')) {
+        throw new UserError("Invalid email address");
+      }
+      
+      // Create the user
+      c.state.users[username] = {
+        email,
+        createdAt: Date.now()
+      };
+      
+      return { username, success: true };
+    }
+  }
+});
+```
+
+## User Error with Error Codes
+
+Using error codes makes it easier for clients to handle specific error cases:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const paymentProcessor = actor({
+  state: {
+    accounts: {},
+    transactions: []
+  },
+  
+  actions: {
+    // Process a payment
+    processPayment: (c, amount, sourceAccount, destinationAccount) => {
+      // Validate amount
+      if (!amount || amount <= 0) {
+        throw new UserError("Invalid payment amount", {
+          code: "invalid_amount"
+        });
+      }
+      
+      // Check source account exists
+      if (!c.state.accounts[sourceAccount]) {
+        throw new UserError("Source account not found", {
+          code: "account_not_found"
+        });
+      }
+      
+      // Check destination account exists
+      if (!c.state.accounts[destinationAccount]) {
+        throw new UserError("Destination account not found", {
+          code: "account_not_found"
+        });
+      }
+      
+      // Check sufficient funds
+      if (c.state.accounts[sourceAccount].balance < amount) {
+        throw new UserError("Insufficient funds", {
+          code: "insufficient_funds"
+        });
+      }
+      
+      // Process the payment
+      c.state.accounts[sourceAccount].balance -= amount;
+      c.state.accounts[destinationAccount].balance += amount;
+      
+      // Record the transaction
+      const transactionId = crypto.randomUUID();
+      const transaction = {
+        id: transactionId,
+        amount,
+        source: sourceAccount,
+        destination: destinationAccount,
+        timestamp: Date.now(),
+        status: "completed"
+      };
+      
+      c.state.transactions.push(transaction);
+      
+      // Notify accounts
+      c.broadcast("transactionCompleted", transaction);
+      
+      return {
+        transactionId,
+        status: "completed"
+      };
+    }
+  }
+});
+```
+
+## Error with Metadata
+
+Adding metadata to errors provides additional context for clients:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const shoppingCart = actor({
+  state: {
+    items: [],
+    cartTotal: 0
+  },
+  
+  actions: {
+    addItem: (c, product, quantity = 1) => {
+      // Validate product
+      if (!product.id || !product.name || product.price === undefined) {
+        throw new UserError("Invalid product data", {
+          code: "invalid_product",
+          meta: { requiredFields: ["id", "name", "price"] }
+        });
+      }
+      
+      // Validate quantity
+      if (quantity <= 0 || !Number.isInteger(quantity)) {
+        throw new UserError("Invalid quantity", {
+          code: "invalid_quantity",
+          meta: { 
+            provided: quantity, 
+            requirements: "Quantity must be a positive integer" 
+          }
+        });
+      }
+      
+      // Check inventory (simulated)
+      const availableQuantity = checkInventory(product.id);
+      if (quantity > availableQuantity) {
+        throw new UserError("Insufficient inventory", {
+          code: "insufficient_inventory",
+          meta: {
+            requested: quantity,
+            available: availableQuantity,
+            productId: product.id
+          }
+        });
+      }
+      
+      // Add to cart
+      const existingItemIndex = c.state.items.findIndex(
+        item => item.product.id === product.id
+      );
+      
+      if (existingItemIndex >= 0) {
+        // Update existing item
+        c.state.items[existingItemIndex].quantity += quantity;
+      } else {
+        // Add new item
+        c.state.items.push({
+          product,
+          quantity,
+          addedAt: Date.now()
+        });
+      }
+      
+      // Recalculate cart total
+      c.state.cartTotal = calculateCartTotal(c.state.items);
+      
+      // Broadcast update
+      c.broadcast("cartUpdated", {
+        items: c.state.items,
+        total: c.state.cartTotal
+      });
+      
+      return {
+        success: true,
+        total: c.state.cartTotal
+      };
+    },
+    
+    checkout: (c, paymentInfo) => {
+      // Validate cart has items
+      if (c.state.items.length === 0) {
+        throw new UserError("Cart is empty", {
+          code: "empty_cart"
+        });
+      }
+      
+      // Validate payment info
+      if (!paymentInfo || !paymentInfo.method) {
+        throw new UserError("Invalid payment information", {
+          code: "invalid_payment",
+          meta: { 
+            requiredFields: ["method", "details"],
+            providedFields: Object.keys(paymentInfo || {})
+          }
+        });
+      }
+      
+      // Process payment (simulated)
+      try {
+        const paymentResult = processPayment(paymentInfo, c.state.cartTotal);
+        
+        if (paymentResult.status === "declined") {
+          throw new UserError("Payment declined", {
+            code: "payment_declined",
+            meta: { 
+              reason: paymentResult.reason,
+              paymentMethod: paymentInfo.method
+            }
+          });
+        }
+        
+        // Clear cart after successful checkout
+        const orderItems = [...c.state.items];
+        c.state.items = [];
+        c.state.cartTotal = 0;
+        
+        // Broadcast update
+        c.broadcast("cartUpdated", {
+          items: c.state.items,
+          total: c.state.cartTotal
+        });
+        
+        return {
+          success: true,
+          orderId: paymentResult.orderId,
+          items: orderItems,
+          total: c.state.cartTotal
+        };
+      } catch (error) {
+        // Handle unexpected payment errors
+        throw new UserError("Payment processing error", {
+          code: "payment_error",
+          meta: { message: error.message }
+        });
+      }
+    }
+  }
+});
+
+// Simulated inventory check
+function checkInventory(productId) {
+  // In a real app, this might call an external inventory service
+  return Math.floor(Math.random() * 10) + 1;
+}
+
+// Calculate cart total
+function calculateCartTotal(items) {
+  return items.reduce((total, item) => {
+    return total + (item.product.price * item.quantity);
+  }, 0);
+}
+
+// Simulated payment processing
+function processPayment(paymentInfo, amount) {
+  // In a real app, this would call a payment gateway
+  
+  // Simulate occasional payment failures
+  if (Math.random() < 0.1) {
+    return {
+      status: "declined",
+      reason: "insufficient_funds"
+    };
+  }
+  
+  return {
+    status: "approved",
+    orderId: crypto.randomUUID(),
+    transactionId: crypto.randomUUID()
+  };
+}
+```
+
+## Validation Error Example
+
+Using UserError for input validation:
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+// Define validation schemas with Zod
+const UserSchema = z.object({
+  username: z.string().min(3).max(20),
+  email: z.string().email(),
+  age: z.number().int().min(13).optional(),
+  preferences: z.object({
+    theme: z.enum(["light", "dark", "system"]).default("system"),
+    notifications: z.boolean().default(true)
+  }).optional()
+});
+
+const userRegistration = actor({
+  state: {
+    users: {}
+  },
+  
+  actions: {
+    registerUser: (c, userData) => {
+      try {
+        // Validate using Zod schema
+        const validatedUser = UserSchema.parse(userData);
+        
+        // Check for existing username
+        if (c.state.users[validatedUser.username]) {
+          throw new UserError("Username already taken", {
+            code: "username_taken",
+            meta: { username: validatedUser.username }
+          });
+        }
+        
+        // Check for existing email
+        const existingEmail = Object.values(c.state.users)
+          .some(user => user.email === validatedUser.email);
+        
+        if (existingEmail) {
+          throw new UserError("Email already registered", {
+            code: "email_exists",
+            meta: { email: validatedUser.email }
+          });
+        }
+        
+        // Store user with defaults applied
+        c.state.users[validatedUser.username] = {
+          ...validatedUser,
+          preferences: validatedUser.preferences || {
+            theme: "system",
+            notifications: true
+          },
+          createdAt: Date.now()
+        };
+        
+        return {
+          success: true,
+          username: validatedUser.username
+        };
+      } catch (error) {
+        // Convert Zod validation errors to UserError
+        if (error instanceof z.ZodError) {
+          throw new UserError("Validation error", {
+            code: "validation_error",
+            meta: { errors: error.errors }
+          });
+        }
+        
+        // Re-throw UserErrors
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        // Handle unexpected errors
+        console.error("Unexpected error:", error);
+        throw new UserError("Registration failed", {
+          code: "registration_error"
+        });
+      }
+    }
+  }
+});
+```
+
+## Hierarchical Error Codes
+
+Organizing error codes hierarchically:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const apiGateway = actor({
+  state: {
+    requests: [],
+    rateLimits: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      apiKey: params.apiKey,
+      clientId: params.clientId
+    };
+  },
+  
+  actions: {
+    makeRequest: async (c, endpoint, data) => {
+      try {
+        // Check authentication
+        if (!c.conn.state.apiKey) {
+          throw new UserError("API key required", {
+            code: "auth.missing_key"
+          });
+        }
+        
+        const apiKey = c.conn.state.apiKey;
+        
+        // Validate API key
+        const keyInfo = await validateApiKey(apiKey);
+        if (!keyInfo.valid) {
+          throw new UserError("Invalid API key", {
+            code: "auth.invalid_key"
+          });
+        }
+        
+        // Check rate limits
+        if (!checkRateLimit(c, apiKey)) {
+          throw new UserError("Rate limit exceeded", {
+            code: "limits.rate_exceeded",
+            meta: {
+              limit: getRateLimit(apiKey),
+              resetAt: getRateLimitReset(apiKey)
+            }
+          });
+        }
+        
+        // Check permission for this endpoint
+        if (!keyInfo.permissions.includes(endpoint)) {
+          throw new UserError("Insufficient permissions", {
+            code: "auth.insufficient_permissions",
+            meta: {
+              endpoint,
+              requiredPermission: endpoint,
+              availablePermissions: keyInfo.permissions
+            }
+          });
+        }
+        
+        // Validate request data
+        if (!validateRequestData(endpoint, data)) {
+          throw new UserError("Invalid request data", {
+            code: "validation.invalid_data",
+            meta: {
+              endpoint,
+              errors: getValidationErrors(endpoint, data)
+            }
+          });
+        }
+        
+        // Track request
+        recordRequest(c, apiKey, endpoint);
+        
+        // Process the request (would normally call an external service)
+        const result = await processRequest(endpoint, data);
+        return result;
+      } catch (error) {
+        // Re-throw UserErrors
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        // Handle unexpected errors
+        console.error("API gateway error:", error);
+        throw new UserError("Internal service error", {
+          code: "service.internal_error",
+          meta: { requestId: generateRequestId() }
+        });
+      }
+    }
+  }
+});
+
+// Simulated implementation details
+function validateApiKey(apiKey) {
+  return { valid: apiKey === "valid-key", permissions: ["users.read", "data.read"] };
+}
+
+function checkRateLimit(c, apiKey) {
+  return true; // Simplified
+}
+
+function getRateLimit(apiKey) {
+  return 100;
+}
+
+function getRateLimitReset(apiKey) {
+  return Date.now() + 3600000;
+}
+
+function validateRequestData(endpoint, data) {
+  return true; // Simplified
+}
+
+function getValidationErrors(endpoint, data) {
+  return [];
+}
+
+function recordRequest(c, apiKey, endpoint) {
+  c.state.requests.push({ apiKey, endpoint, timestamp: Date.now() });
+}
+
+function processRequest(endpoint, data) {
+  return { success: true, data: { message: "Processed successfully" } };
+}
+
+function generateRequestId() {
+  return crypto.randomUUID();
+}
+```
+
+## Client-Side Error Handling
+
+On the client side, you can handle these errors appropriately:
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function handleUserRegistration(userData) {
+  try {
+    const client = createClient<App>("http://localhost:6420");
+    const registration = await client.userRegistration.get();
+    
+    // Try to register
+    const result = await registration.registerUser(userData);
+    
+    // Success
+    showSuccessMessage(`Registration successful for ${result.username}`);
+    return result;
+  } catch (error) {
+    // Handle specific error codes
+    switch (error.code) {
+      case "validation_error":
+        // Format validation errors
+        const validationErrors = error.metadata.errors.map(err => 
+          `${err.path.join('.')}: ${err.message}`
+        ).join('\n');
+        
+        showValidationError(`Please fix the following errors:\n${validationErrors}`);
+        break;
+        
+      case "username_taken":
+        showFieldError("username", `Username "${error.metadata.username}" is already taken`);
+        break;
+        
+      case "email_exists":
+        showFieldError("email", `Email is already registered`);
+        break;
+        
+      default:
+        // Generic error handling
+        showErrorMessage(`Registration failed: ${error.message}`);
+    }
+    
+    throw error;
+  }
+}
+
+// UI helper functions (implementation depends on your UI framework)
+function showSuccessMessage(message) { /* ... */ }
+function showErrorMessage(message) { /* ... */ }
+function showValidationError(message) { /* ... */ }
+function showFieldError(field, message) { /* ... */ }
+```
+
+## Best Practices
+
+1. **Use specific error codes**: Make codes clear and specific to the error condition
+2. **Include relevant metadata**: Provide context that helps clients resolve the issue
+3. **Organize error codes logically**: Use hierarchical codes for better organization
+4. **Be security-conscious**: Don't expose sensitive information in error messages
+5. **Validate early**: Check inputs before performing operations
+6. **Be descriptive**: Make error messages clear and actionable
+7. **Handle client-side gracefully**: Write client code that handles errors appropriately
+8. **Consider localization**: Design error systems that support translated messages
+
+Using ActorCore's UserError system effectively helps you communicate error conditions to clients clearly and securely, leading to better user experiences.

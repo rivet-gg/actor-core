@@ -1,0 +1,1281 @@
+---
+title: Error Boundaries
+description: Implement error boundaries for graceful failure handling
+---
+
+# Error Boundaries
+
+Error boundaries provide a way to contain errors within specific parts of your application, preventing them from crashing the entire system. While ActorCore has built-in isolation between actors, you can implement additional error boundaries within your actors to handle failures gracefully.
+
+## Creating an Error Boundary Pattern
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const robustActor = actor({
+  state: {
+    operations: {},
+    errors: {}
+  },
+  
+  // Utility function to wrap operations in error boundaries
+  createVars: () => ({
+    // Track error counts for circuit breaking
+    errorCounts: {},
+    // Circuit breaker thresholds
+    circuitBreakerThreshold: 5,
+    circuitBreakerResetTime: 60000, // 1 minute
+    // Circuit breaker state
+    openCircuits: {}
+  }),
+  
+  actions: {
+    // Execute an operation within an error boundary
+    executeWithBoundary: async (c, operationName, params = {}) => {
+      // Check if circuit breaker is open for this operation
+      if (isCircuitOpen(c, operationName)) {
+        // Circuit is open, fail fast
+        recordError(c, operationName, "circuit_breaker_open", "Operation disabled due to too many failures");
+        
+        throw new UserError("Operation temporarily disabled due to too many failures", {
+          code: "circuit_breaker_open",
+          meta: {
+            operation: operationName,
+            resetAfter: getCircuitResetTime(c, operationName)
+          }
+        });
+      }
+      
+      try {
+        // Record operation start
+        const operationId = recordOperationStart(c, operationName, params);
+        
+        // Execute the operation based on name
+        let result;
+        
+        try {
+          switch (operationName) {
+            case "processPayment":
+              result = await processPayment(params);
+              break;
+            case "fetchUserData":
+              result = await fetchUserData(params);
+              break;
+            case "generateReport":
+              result = await generateReport(params);
+              break;
+            case "sendNotification":
+              result = await sendNotification(params);
+              break;
+            default:
+              throw new Error(`Unknown operation: ${operationName}`);
+          }
+        } catch (error) {
+          // This is the error boundary - handle operation-specific errors
+          
+          // Increment error count for circuit breaking
+          incrementErrorCount(c, operationName);
+          
+          // Record the error
+          recordError(c, operationName, "operation_error", error.message, error);
+          
+          // Check if we should open the circuit breaker
+          checkCircuitBreaker(c, operationName);
+          
+          // Transform the error (if needed) and rethrow
+          throw new UserError(`${operationName} failed: ${error.message}`, {
+            code: error.code || "operation_error",
+            meta: {
+              operation: operationName,
+              originalError: error.message
+            }
+          });
+        }
+        
+        // Record successful completion
+        recordOperationComplete(c, operationId, result);
+        
+        // Reset error count on success
+        resetErrorCount(c, operationName);
+        
+        return result;
+      } catch (error) {
+        // This is the outer boundary - log and rethrow
+        console.error(`Error boundary caught error in ${operationName}:`, error);
+        
+        // For non-UserError, wrap in a UserError
+        if (!(error instanceof UserError)) {
+          error = new UserError("Operation failed", {
+            code: "boundary_error",
+            meta: {
+              operation: operationName,
+              message: error.message
+            }
+          });
+        }
+        
+        throw error;
+      }
+    },
+    
+    // Process a payment with error boundary
+    processPayment: (c, paymentDetails) => {
+      return c.executeWithBoundary("processPayment", paymentDetails);
+    },
+    
+    // Fetch user data with error boundary
+    fetchUserData: (c, userId) => {
+      return c.executeWithBoundary("fetchUserData", { userId });
+    },
+    
+    // Generate report with error boundary
+    generateReport: (c, reportConfig) => {
+      return c.executeWithBoundary("generateReport", reportConfig);
+    },
+    
+    // Send notification with error boundary
+    sendNotification: (c, notificationData) => {
+      return c.executeWithBoundary("sendNotification", notificationData);
+    },
+    
+    // Get operation history
+    getOperationHistory: (c, operationName = null) => {
+      let operations = Object.values(c.state.operations);
+      
+      if (operationName) {
+        operations = operations.filter(op => op.name === operationName);
+      }
+      
+      // Sort by start time (newest first)
+      operations.sort((a, b) => b.startTime - a.startTime);
+      
+      return operations.slice(0, 50); // Return the 50 most recent
+    },
+    
+    // Get error history
+    getErrorHistory: (c, operationName = null) => {
+      let errors = Object.values(c.state.errors);
+      
+      if (operationName) {
+        errors = errors.filter(err => err.operation === operationName);
+      }
+      
+      // Sort by timestamp (newest first)
+      errors.sort((a, b) => b.timestamp - a.timestamp);
+      
+      return errors.slice(0, 50); // Return the 50 most recent
+    },
+    
+    // Reset circuit breaker for an operation
+    resetCircuitBreaker: (c, operationName) => {
+      // Check if the caller has permission (simplified)
+      if (!c.conn.state.isAdmin) {
+        throw new UserError("Permission denied");
+      }
+      
+      resetErrorCount(c, operationName);
+      
+      if (c.vars.openCircuits[operationName]) {
+        delete c.vars.openCircuits[operationName];
+      }
+      
+      return { success: true, operation: operationName };
+    },
+    
+    // Get circuit breaker status
+    getCircuitBreakerStatus: (c) => {
+      const status = {};
+      
+      // Get status for all tracked operations
+      for (const [operation, count] of Object.entries(c.vars.errorCounts)) {
+        status[operation] = {
+          errorCount: count,
+          isOpen: isCircuitOpen(c, operation),
+          threshold: c.vars.circuitBreakerThreshold,
+          resetTime: c.vars.openCircuits[operation] || null
+        };
+      }
+      
+      return status;
+    }
+  }
+});
+
+// Helper function to record operation start
+function recordOperationStart(c, name, params) {
+  const operationId = crypto.randomUUID();
+  
+  c.state.operations[operationId] = {
+    id: operationId,
+    name,
+    params,
+    startTime: Date.now(),
+    endTime: null,
+    duration: null,
+    status: "running",
+    result: null,
+    error: null
+  };
+  
+  return operationId;
+}
+
+// Helper function to record operation completion
+function recordOperationComplete(c, operationId, result) {
+  const operation = c.state.operations[operationId];
+  
+  if (!operation) return;
+  
+  const now = Date.now();
+  
+  operation.endTime = now;
+  operation.duration = now - operation.startTime;
+  operation.status = "completed";
+  operation.result = result;
+}
+
+// Helper function to record an error
+function recordError(c, operation, code, message, originalError = null) {
+  const errorId = crypto.randomUUID();
+  
+  c.state.errors[errorId] = {
+    id: errorId,
+    operation,
+    code,
+    message,
+    originalError: originalError ? originalError.toString() : null,
+    timestamp: Date.now()
+  };
+  
+  // Update operation record if applicable
+  if (c.state.operations[operation]) {
+    const op = c.state.operations[operation];
+    op.status = "failed";
+    op.error = message;
+    op.endTime = Date.now();
+    op.duration = op.endTime - op.startTime;
+  }
+  
+  return errorId;
+}
+
+// Helper function to increment error count
+function incrementErrorCount(c, operation) {
+  c.vars.errorCounts[operation] = (c.vars.errorCounts[operation] || 0) + 1;
+}
+
+// Helper function to reset error count
+function resetErrorCount(c, operation) {
+  c.vars.errorCounts[operation] = 0;
+  
+  // Also reset circuit breaker if it's open
+  if (c.vars.openCircuits[operation]) {
+    delete c.vars.openCircuits[operation];
+  }
+}
+
+// Helper function to check if circuit breaker should be opened
+function checkCircuitBreaker(c, operation) {
+  const errorCount = c.vars.errorCounts[operation] || 0;
+  
+  if (errorCount >= c.vars.circuitBreakerThreshold) {
+    // Open the circuit
+    c.vars.openCircuits[operation] = Date.now() + c.vars.circuitBreakerResetTime;
+    
+    console.log(`Circuit breaker opened for ${operation} due to too many errors`);
+    
+    // Broadcast circuit breaker opened
+    c.broadcast("circuitBreakerOpened", {
+      operation,
+      errorCount,
+      resetAfter: c.vars.circuitBreakerResetTime
+    });
+  }
+}
+
+// Helper function to check if circuit is open
+function isCircuitOpen(c, operation) {
+  const resetTime = c.vars.openCircuits[operation];
+  
+  // If no reset time, circuit is closed
+  if (!resetTime) return false;
+  
+  // If current time is past reset time, close the circuit
+  if (Date.now() > resetTime) {
+    delete c.vars.openCircuits[operation];
+    return false;
+  }
+  
+  // Circuit is open
+  return true;
+}
+
+// Helper function to get circuit reset time
+function getCircuitResetTime(c, operation) {
+  return c.vars.openCircuits[operation] || 0;
+}
+
+// Mock implementation of operations
+async function processPayment(params) {
+  // Simulate payment processing
+  console.log(`Processing payment of $${params.amount} from ${params.source} to ${params.destination}`);
+  
+  // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 200));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.2) {
+    throw new Error("Payment gateway connection timeout");
+  }
+  
+  return {
+    transactionId: crypto.randomUUID(),
+    status: "completed",
+    amount: params.amount
+  };
+}
+
+async function fetchUserData(params) {
+  // Simulate user data fetch
+  console.log(`Fetching data for user ${params.userId}`);
+  
+  // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 150));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.1) {
+    throw new Error("User database unavailable");
+  }
+  
+  return {
+    userId: params.userId,
+    name: "John Doe",
+    email: "john@example.com"
+  };
+}
+
+async function generateReport(params) {
+  // Simulate report generation
+  console.log(`Generating ${params.type} report from ${params.startDate} to ${params.endDate}`);
+  
+  // Simulate processing
+  await new Promise(resolve => setTimeout(resolve, 300));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.15) {
+    throw new Error("Report generation failed: data inconsistency");
+  }
+  
+  return {
+    reportId: crypto.randomUUID(),
+    type: params.type,
+    generated: true
+  };
+}
+
+async function sendNotification(params) {
+  // Simulate sending notification
+  console.log(`Sending ${params.channel} notification to ${params.recipient}: ${params.message}`);
+  
+  // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.1) {
+    throw new Error("Notification service unreachable");
+  }
+  
+  return {
+    notificationId: crypto.randomUUID(),
+    sent: true,
+    timestamp: Date.now()
+  };
+}
+```
+
+## Compartmentalized Error Handling
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const multiServiceActor = actor({
+  state: {
+    services: {
+      database: { status: "healthy", lastCheck: null },
+      api: { status: "healthy", lastCheck: null },
+      email: { status: "healthy", lastCheck: null },
+      payment: { status: "healthy", lastCheck: null }
+    },
+    errorLog: []
+  },
+  
+  createVars: () => ({
+    // Service clients (initialized in onStart)
+    clients: {},
+    // Error tracking
+    serviceErrors: {
+      database: 0,
+      api: 0,
+      email: 0,
+      payment: 0
+    },
+    maxErrors: 3,
+    errorResetTime: 300000 // 5 minutes
+  }),
+  
+  onStart: (c) => {
+    // Initialize service clients
+    initializeServices(c);
+    
+    // Schedule health check
+    c.schedule.after(60000, "checkServiceHealth");
+  },
+  
+  actions: {
+    // Check health of all services
+    checkServiceHealth: async (c) => {
+      console.log("Checking service health");
+      
+      // Check each service independently
+      await Promise.all([
+        checkServiceWithBoundary(c, "database"),
+        checkServiceWithBoundary(c, "api"),
+        checkServiceWithBoundary(c, "email"),
+        checkServiceWithBoundary(c, "payment")
+      ]);
+      
+      // Schedule next check
+      c.schedule.after(60000, "checkServiceHealth");
+      
+      return {
+        servicesStatus: c.state.services
+      };
+    },
+    
+    // User operation that depends on multiple services
+    processUserRequest: async (c, requestData) => {
+      console.log(`Processing user request: ${requestData.type}`);
+      
+      try {
+        // Validate request
+        validateRequest(requestData);
+        
+        // Execute steps with independent error boundaries
+        
+        // 1. Get user data (uses database service)
+        let userData;
+        try {
+          userData = await executeWithServiceBoundary(
+            c, 
+            "database", 
+            () => getUserData(c, requestData.userId)
+          );
+        } catch (error) {
+          // Handle database service failure
+          return {
+            success: false,
+            stage: "user_data",
+            error: error.message
+          };
+        }
+        
+        // 2. Call external API (uses API service)
+        let apiResponse;
+        try {
+          apiResponse = await executeWithServiceBoundary(
+            c, 
+            "api", 
+            () => callExternalApi(c, requestData, userData)
+          );
+        } catch (error) {
+          // Handle API service failure
+          return {
+            success: false,
+            stage: "external_api",
+            error: error.message,
+            partialData: { userData }
+          };
+        }
+        
+        // 3. Process payment if needed (uses payment service)
+        let paymentResult = null;
+        if (requestData.requiresPayment) {
+          try {
+            paymentResult = await executeWithServiceBoundary(
+              c, 
+              "payment", 
+              () => processPaymentService(c, requestData, userData)
+            );
+          } catch (error) {
+            // Handle payment service failure
+            return {
+              success: false,
+              stage: "payment",
+              error: error.message,
+              partialData: { userData, apiResponse }
+            };
+          }
+        }
+        
+        // 4. Send confirmation email (uses email service)
+        try {
+          await executeWithServiceBoundary(
+            c, 
+            "email", 
+            () => sendConfirmationEmail(c, userData, apiResponse, paymentResult)
+          );
+        } catch (error) {
+          // Email is non-critical, log but continue
+          logServiceError(c, "email", error);
+          
+          // We return success, but note the email issue
+          return {
+            success: true,
+            emailSent: false,
+            emailError: error.message,
+            userData,
+            apiResponse,
+            paymentResult
+          };
+        }
+        
+        // All steps completed successfully
+        return {
+          success: true,
+          emailSent: true,
+          userData,
+          apiResponse,
+          paymentResult
+        };
+      } catch (error) {
+        // Catch any unhandled errors
+        logError(c, "unhandled_error", error);
+        
+        // Return a safe error response
+        return {
+          success: false,
+          stage: "unknown",
+          error: "An unexpected error occurred"
+        };
+      }
+    },
+    
+    // Get service status
+    getServiceStatus: (c) => {
+      return {
+        services: c.state.services,
+        errors: c.vars.serviceErrors
+      };
+    },
+    
+    // Reset a specific service
+    resetService: async (c, serviceName) => {
+      // Verify service exists
+      if (!c.state.services[serviceName]) {
+        throw new UserError(`Unknown service: ${serviceName}`);
+      }
+      
+      // Verify user has permission
+      if (!c.conn.state.isAdmin) {
+        throw new UserError("Permission denied");
+      }
+      
+      console.log(`Resetting service: ${serviceName}`);
+      
+      // Reset error count
+      c.vars.serviceErrors[serviceName] = 0;
+      
+      // Try to reinitialize the service
+      try {
+        await initializeService(c, serviceName);
+        
+        // Update service status
+        c.state.services[serviceName] = {
+          status: "healthy",
+          lastCheck: Date.now(),
+          lastReset: Date.now()
+        };
+        
+        return { success: true };
+      } catch (error) {
+        logServiceError(c, serviceName, error);
+        
+        return {
+          success: false,
+          error: error.message
+        };
+      }
+    },
+    
+    // Get error log
+    getErrorLog: (c, service = null) => {
+      let errors = [...c.state.errorLog];
+      
+      if (service) {
+        errors = errors.filter(err => err.service === service);
+      }
+      
+      // Sort by timestamp (newest first)
+      errors.sort((a, b) => b.timestamp - a.timestamp);
+      
+      return errors.slice(0, 50); // Return the 50 most recent
+    }
+  }
+});
+
+// Initialize all services
+async function initializeServices(c) {
+  try {
+    await Promise.all([
+      initializeService(c, "database"),
+      initializeService(c, "api"),
+      initializeService(c, "email"),
+      initializeService(c, "payment")
+    ]);
+  } catch (error) {
+    console.error("Error initializing services:", error);
+    // Individual service errors are handled in initializeService
+  }
+}
+
+// Initialize a specific service
+async function initializeService(c, serviceName) {
+  console.log(`Initializing ${serviceName} service`);
+  
+  try {
+    // Create service client based on service type
+    switch (serviceName) {
+      case "database":
+        c.vars.clients.database = createDatabaseClient();
+        break;
+      case "api":
+        c.vars.clients.api = createApiClient();
+        break;
+      case "email":
+        c.vars.clients.email = createEmailClient();
+        break;
+      case "payment":
+        c.vars.clients.payment = createPaymentClient();
+        break;
+      default:
+        throw new Error(`Unknown service: ${serviceName}`);
+    }
+    
+    // Update service status
+    c.state.services[serviceName] = {
+      status: "healthy",
+      lastCheck: Date.now()
+    };
+    
+    return true;
+  } catch (error) {
+    // Set service as unhealthy
+    c.state.services[serviceName] = {
+      status: "unhealthy",
+      lastCheck: Date.now(),
+      error: error.message
+    };
+    
+    // Log error
+    logServiceError(c, serviceName, error);
+    
+    throw error;
+  }
+}
+
+// Check service health with error boundary
+async function checkServiceWithBoundary(c, serviceName) {
+  try {
+    // Check the service
+    const result = await executeWithServiceBoundary(
+      c, 
+      serviceName, 
+      () => checkService(c, serviceName)
+    );
+    
+    // Update service status
+    c.state.services[serviceName] = {
+      status: "healthy",
+      lastCheck: Date.now(),
+      ...result
+    };
+    
+    // Reset error count on success
+    c.vars.serviceErrors[serviceName] = 0;
+    
+    return true;
+  } catch (error) {
+    // Service is unhealthy, but don't throw - we continue checking other services
+    console.error(`Service ${serviceName} health check failed:`, error);
+    
+    // Update service status
+    c.state.services[serviceName] = {
+      status: "unhealthy",
+      lastCheck: Date.now(),
+      error: error.message
+    };
+    
+    return false;
+  }
+}
+
+// Execute a function within a service-specific error boundary
+async function executeWithServiceBoundary(c, serviceName, fn) {
+  try {
+    // Call the function
+    return await fn();
+  } catch (error) {
+    // Log the error
+    logServiceError(c, serviceName, error);
+    
+    // Increment error count
+    c.vars.serviceErrors[serviceName]++;
+    
+    // Check if we need to mark the service as failing
+    if (c.vars.serviceErrors[serviceName] >= c.vars.maxErrors) {
+      // Service is now considered failing
+      c.state.services[serviceName] = {
+        status: "failing",
+        lastCheck: Date.now(),
+        error: `Service marked as failing after ${c.vars.maxErrors} consecutive errors`
+      };
+      
+      // Broadcast service failure
+      c.broadcast("serviceFailing", {
+        service: serviceName,
+        errors: c.vars.serviceErrors[serviceName],
+        timestamp: Date.now()
+      });
+      
+      // Schedule service recovery attempt
+      c.schedule.after(c.vars.errorResetTime, "resetService", serviceName);
+    }
+    
+    // Rethrow with more context
+    throw new UserError(`${serviceName} service error: ${error.message}`, {
+      code: `${serviceName}_error`,
+      meta: {
+        service: serviceName,
+        originalError: error.message
+      }
+    });
+  }
+}
+
+// Log a service error
+function logServiceError(c, service, error) {
+  // Create error log entry
+  const errorLog = {
+    id: crypto.randomUUID(),
+    service,
+    message: error.message,
+    stack: error.stack,
+    timestamp: Date.now()
+  };
+  
+  // Add to error log
+  c.state.errorLog.unshift(errorLog);
+  
+  // Limit log size
+  if (c.state.errorLog.length > 100) {
+    c.state.errorLog = c.state.errorLog.slice(0, 100);
+  }
+  
+  console.error(`${service} service error:`, error);
+}
+
+// Log a general error
+function logError(c, type, error) {
+  // Create error log entry
+  const errorLog = {
+    id: crypto.randomUUID(),
+    type,
+    message: error.message,
+    stack: error.stack,
+    timestamp: Date.now()
+  };
+  
+  // Add to error log
+  c.state.errorLog.unshift(errorLog);
+  
+  // Limit log size
+  if (c.state.errorLog.length > 100) {
+    c.state.errorLog = c.state.errorLog.slice(0, 100);
+  }
+  
+  console.error(`${type} error:`, error);
+}
+
+// Service-specific functions
+function checkService(c, serviceName) {
+  switch (serviceName) {
+    case "database":
+      return checkDatabaseService(c);
+    case "api":
+      return checkApiService(c);
+    case "email":
+      return checkEmailService(c);
+    case "payment":
+      return checkPaymentService(c);
+    default:
+      throw new Error(`Unknown service: ${serviceName}`);
+  }
+}
+
+// Mock service check implementations
+async function checkDatabaseService(c) {
+  console.log("Checking database service");
+  
+  // Simulate service check
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.1) {
+    throw new Error("Database connection timeout");
+  }
+  
+  return { latency: Math.random() * 50 };
+}
+
+async function checkApiService(c) {
+  console.log("Checking API service");
+  
+  // Simulate service check
+  await new Promise(resolve => setTimeout(resolve, 80));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.05) {
+    throw new Error("API rate limit exceeded");
+  }
+  
+  return { latency: Math.random() * 200 };
+}
+
+async function checkEmailService(c) {
+  console.log("Checking email service");
+  
+  // Simulate service check
+  await new Promise(resolve => setTimeout(resolve, 150));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.08) {
+    throw new Error("Email service authentication failed");
+  }
+  
+  return { quota: { used: 150, remaining: 850 } };
+}
+
+async function checkPaymentService(c) {
+  console.log("Checking payment service");
+  
+  // Simulate service check
+  await new Promise(resolve => setTimeout(resolve, 120));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.15) {
+    throw new Error("Payment gateway connection refused");
+  }
+  
+  return { status: "operational" };
+}
+
+// Mock client creation functions
+function createDatabaseClient() {
+  return { /* database client */ };
+}
+
+function createApiClient() {
+  return { /* API client */ };
+}
+
+function createEmailClient() {
+  return { /* email client */ };
+}
+
+function createPaymentClient() {
+  return { /* payment client */ };
+}
+
+// Mock operation implementations
+function validateRequest(requestData) {
+  if (!requestData.userId) {
+    throw new UserError("Missing userId");
+  }
+  
+  if (!requestData.type) {
+    throw new UserError("Missing request type");
+  }
+}
+
+async function getUserData(c, userId) {
+  console.log(`Getting data for user ${userId}`);
+  
+  // Simulate database operation
+  await new Promise(resolve => setTimeout(resolve, 80));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.1) {
+    throw new Error("User not found in database");
+  }
+  
+  return {
+    id: userId,
+    name: "John Doe",
+    email: "john@example.com"
+  };
+}
+
+async function callExternalApi(c, requestData, userData) {
+  console.log(`Calling external API for ${requestData.type}`);
+  
+  // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 150));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.15) {
+    throw new Error("External API request failed");
+  }
+  
+  return {
+    requestId: crypto.randomUUID(),
+    status: "success",
+    data: { /* response data */ }
+  };
+}
+
+async function processPaymentService(c, requestData, userData) {
+  console.log(`Processing payment for ${userData.id}`);
+  
+  // Simulate payment processing
+  await new Promise(resolve => setTimeout(resolve, 200));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.2) {
+    throw new Error("Payment authorization failed");
+  }
+  
+  return {
+    transactionId: crypto.randomUUID(),
+    amount: requestData.amount,
+    status: "approved"
+  };
+}
+
+async function sendConfirmationEmail(c, userData, apiResponse, paymentResult) {
+  console.log(`Sending confirmation email to ${userData.email}`);
+  
+  // Simulate email sending
+  await new Promise(resolve => setTimeout(resolve, 120));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.1) {
+    throw new Error("Failed to send email");
+  }
+  
+  return {
+    messageId: crypto.randomUUID(),
+    recipient: userData.email,
+    sent: true
+  };
+}
+```
+
+## Client-Side Error Boundaries
+
+```typescript
+import React, { useState, useEffect } from 'react';
+import { createClient } from 'actor-core/client';
+import type { App } from './app';
+
+// Error boundary component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    // Update state so the next render will show the fallback UI
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // Log the error
+    console.error("Error boundary caught error:", error, errorInfo);
+    
+    // Optional: send error to monitoring service
+    reportError(error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // Render fallback UI
+      return (
+        <div className="error-container">
+          <h2>Something went wrong</h2>
+          <p>{this.state.error?.message || "Unknown error"}</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })}>
+            Try Again
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Function to report errors to monitoring service
+function reportError(error, errorInfo) {
+  // Implementation depends on your monitoring service
+  console.log("Reporting error to monitoring service:", error.message);
+}
+
+// ActorCore service component with error boundary
+function ActorService({ children, serviceName }) {
+  return (
+    <ErrorBoundary>
+      <div className="service-container">
+        <h3>{serviceName}</h3>
+        {children}
+      </div>
+    </ErrorBoundary>
+  );
+}
+
+// Example usage in a React application
+function DataDashboard() {
+  // State for client and connections
+  const [client, setClient] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [notifications, setNotifications] = useState(null);
+  
+  // Error states
+  const [errors, setErrors] = useState({});
+  
+  // Data states
+  const [userData, setUserData] = useState(null);
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [notificationsList, setNotificationsList] = useState([]);
+  
+  // Initialize client and connections
+  useEffect(() => {
+    async function initializeClient() {
+      try {
+        // Create client
+        const newClient = createClient<App>("http://localhost:6420");
+        setClient(newClient);
+        
+        // Connect to actors
+        const profile = await newClient.userProfile.get();
+        setUserProfile(profile);
+        
+        const analyticsActor = await newClient.analytics.get();
+        setAnalytics(analyticsActor);
+        
+        const notificationsActor = await newClient.notifications.get();
+        setNotifications(notificationsActor);
+      } catch (error) {
+        console.error("Failed to initialize client:", error);
+        setErrors(prev => ({ ...prev, initialization: error.message }));
+      }
+    }
+    
+    initializeClient();
+    
+    // Clean up on unmount
+    return () => {
+      if (client) {
+        client.dispose();
+      }
+    };
+  }, []);
+  
+  // Load user data with error handling
+  useEffect(() => {
+    if (!userProfile) return;
+    
+    async function loadUserData() {
+      try {
+        const data = await userProfile.getUserData();
+        setUserData(data);
+      } catch (error) {
+        console.error("Failed to load user data:", error);
+        setErrors(prev => ({ ...prev, userData: error.message }));
+      }
+    }
+    
+    loadUserData();
+  }, [userProfile]);
+  
+  // Load analytics data with error handling
+  useEffect(() => {
+    if (!analytics) return;
+    
+    async function loadAnalyticsData() {
+      try {
+        const data = await analytics.getRecentActivity();
+        setAnalyticsData(data);
+      } catch (error) {
+        console.error("Failed to load analytics:", error);
+        setErrors(prev => ({ ...prev, analytics: error.message }));
+      }
+    }
+    
+    loadAnalyticsData();
+  }, [analytics]);
+  
+  // Load notifications with error handling
+  useEffect(() => {
+    if (!notifications) return;
+    
+    async function loadNotifications() {
+      try {
+        const list = await notifications.getNotifications();
+        setNotificationsList(list);
+        
+        // Subscribe to new notifications
+        notifications.on("newNotification", (notification) => {
+          setNotificationsList(prev => [notification, ...prev]);
+        });
+      } catch (error) {
+        console.error("Failed to load notifications:", error);
+        setErrors(prev => ({ ...prev, notifications: error.message }));
+      }
+    }
+    
+    loadNotifications();
+  }, [notifications]);
+  
+  // Handle action with error boundary
+  const handleAction = async (actionType) => {
+    if (!userProfile) return;
+    
+    try {
+      switch (actionType) {
+        case "update":
+          await userProfile.updateProfile({ status: "Active" });
+          break;
+        case "refresh":
+          const data = await userProfile.getUserData();
+          setUserData(data);
+          break;
+        default:
+          console.warn("Unknown action type:", actionType);
+      }
+      
+      // Clear any existing error for this action
+      setErrors(prev => ({ ...prev, [actionType]: null }));
+    } catch (error) {
+      console.error(`Action ${actionType} failed:`, error);
+      setErrors(prev => ({ ...prev, [actionType]: error.message }));
+    }
+  };
+  
+  return (
+    <div className="dashboard">
+      <h1>User Dashboard</h1>
+      
+      {errors.initialization && (
+        <div className="error-message">
+          Failed to initialize: {errors.initialization}
+        </div>
+      )}
+      
+      <div className="dashboard-grid">
+        {/* User Profile Section with Error Boundary */}
+        <ActorService serviceName="User Profile">
+          {errors.userData ? (
+            <div className="error-state">
+              <p>Failed to load user data: {errors.userData}</p>
+              <button onClick={() => handleAction("refresh")}>Retry</button>
+            </div>
+          ) : userData ? (
+            <div className="user-data">
+              <h4>{userData.name}</h4>
+              <p>Email: {userData.email}</p>
+              <p>Status: {userData.status}</p>
+              <button onClick={() => handleAction("update")}>
+                Update Status
+              </button>
+              {errors.update && <p className="error">Update failed: {errors.update}</p>}
+            </div>
+          ) : (
+            <div className="loading">Loading user data...</div>
+          )}
+        </ActorService>
+        
+        {/* Analytics Section with Error Boundary */}
+        <ActorService serviceName="Analytics">
+          {errors.analytics ? (
+            <div className="error-state">
+              <p>Failed to load analytics: {errors.analytics}</p>
+              <button onClick={() => setErrors(prev => ({ ...prev, analytics: null }))}>
+                Retry
+              </button>
+            </div>
+          ) : analyticsData ? (
+            <div className="analytics-data">
+              <p>Views: {analyticsData.views}</p>
+              <p>Actions: {analyticsData.actions}</p>
+              <p>Conversion Rate: {analyticsData.conversionRate}%</p>
+            </div>
+          ) : (
+            <div className="loading">Loading analytics...</div>
+          )}
+        </ActorService>
+        
+        {/* Notifications Section with Error Boundary */}
+        <ActorService serviceName="Notifications">
+          {errors.notifications ? (
+            <div className="error-state">
+              <p>Failed to load notifications: {errors.notifications}</p>
+              <button onClick={() => setErrors(prev => ({ ...prev, notifications: null }))}>
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div className="notifications-list">
+              {notificationsList.length > 0 ? (
+                <ul>
+                  {notificationsList.map(notification => (
+                    <li key={notification.id}>
+                      {notification.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No notifications</p>
+              )}
+            </div>
+          )}
+        </ActorService>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <DataDashboard />
+    </ErrorBoundary>
+  );
+}
+```
+
+## Best Practices
+
+1. **Compartmentalize errors**: Contain errors within specific boundaries
+2. **Circuit breakers**: Implement circuit breakers to prevent cascading failures
+3. **Graceful degradation**: Design systems to continue functioning when parts fail
+4. **Error classification**: Categorize errors to handle them differently
+5. **Error recovery**: Implement strategies to recover from failures
+6. **Error tracking**: Keep a history of errors for debugging and monitoring
+7. **Retry strategies**: Implement exponential backoff and jitter for retries
+8. **Client-side boundaries**: Use error boundaries in client applications
+9. **Fallback mechanisms**: Provide fallbacks when services are unavailable
+10. **Dependency isolation**: Isolate dependencies to prevent cascading failures
+
+Error boundaries are essential for building resilient applications. By implementing these patterns, you can create systems that handle failures gracefully, maintain reliability in the face of unexpected errors, and provide a better user experience even when things go wrong.

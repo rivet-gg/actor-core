@@ -1,0 +1,620 @@
+---
+title: Testing Events
+description: Verify that events are emitted correctly in tests
+---
+
+# Testing Events
+
+Events are a core communication mechanism in ActorCore. Testing that your actors emit the right events at the right time is crucial for building reliable applications. This guide demonstrates how to effectively test event emissions in your actors.
+
+## Setting Up Event Testing
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test that a chat room emits the expected events
+test("chat room should emit expected events", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to chat room
+  const chatRoom = await client.chatRoom.get({
+    params: {
+      username: "TestUser"
+    }
+  });
+  
+  // Create array to collect received events
+  const receivedEvents = [];
+  
+  // Listen for user joined events
+  chatRoom.on("userJoined", (username) => {
+    receivedEvents.push({ event: "userJoined", username });
+  });
+  
+  // Listen for new message events
+  chatRoom.on("newMessage", (message) => {
+    receivedEvents.push({ event: "newMessage", message });
+  });
+  
+  // Perform actions that should trigger events
+  await chatRoom.sendMessage("Hello, world!");
+  await chatRoom.sendMessage("Testing events");
+  
+  // Wait for events to be processed
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  // Verify events
+  expect(receivedEvents).toHaveLength(2);
+  expect(receivedEvents[0]).toEqual({
+    event: "newMessage",
+    message: {
+      sender: "TestUser",
+      text: "Hello, world!",
+      timestamp: expect.any(Number)
+    }
+  });
+  expect(receivedEvents[1]).toEqual({
+    event: "newMessage",
+    message: {
+      sender: "TestUser", 
+      text: "Testing events",
+      timestamp: expect.any(Number)
+    }
+  });
+});
+```
+
+## Testing Event Parameters
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test event parameters in more detail
+test("score tracker should emit correct score events", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to score tracker
+  const scoreTracker = await client.scoreTracker.get();
+  
+  // Set up promise-based event capturing
+  const scoreUpdatePromise = new Promise(resolve => {
+    scoreTracker.once("scoreUpdated", (player, points, newTotal) => {
+      resolve({ player, points, newTotal });
+    });
+  });
+  
+  const highScorePromise = new Promise(resolve => {
+    scoreTracker.once("highScoreAchieved", (player, score) => {
+      resolve({ player, score });
+    });
+  });
+  
+  // Perform the action that should trigger events
+  await scoreTracker.addPoints("PlayerOne", 1000);
+  
+  // Wait for and verify score update event
+  const scoreUpdate = await scoreUpdatePromise;
+  expect(scoreUpdate).toEqual({
+    player: "PlayerOne",
+    points: 1000,
+    newTotal: 1000
+  });
+  
+  // Wait for and verify high score event
+  const highScore = await highScorePromise;
+  expect(highScore).toEqual({
+    player: "PlayerOne",
+    score: 1000
+  });
+  
+  // Add more points to test another update
+  const nextUpdatePromise = new Promise(resolve => {
+    scoreTracker.once("scoreUpdated", (player, points, newTotal) => {
+      resolve({ player, points, newTotal });
+    });
+  });
+  
+  await scoreTracker.addPoints("PlayerOne", 500);
+  
+  const nextUpdate = await nextUpdatePromise;
+  expect(nextUpdate).toEqual({
+    player: "PlayerOne",
+    points: 500,
+    newTotal: 1500
+  });
+});
+```
+
+## Testing Event Sequence
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test the sequence of events
+test("game room should emit events in the correct sequence", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to game room
+  const gameRoom = await client.gameRoom.get({
+    params: { playerName: "TestPlayer" }
+  });
+  
+  // Add a second player
+  await gameRoom.addBot("BotPlayer");
+  
+  // Array to collect events in sequence
+  const eventSequence = [];
+  
+  // Set up event listeners
+  gameRoom.on("playerJoined", (player) => {
+    eventSequence.push({ event: "playerJoined", player });
+  });
+  
+  gameRoom.on("gameStarted", () => {
+    eventSequence.push({ event: "gameStarted" });
+  });
+  
+  gameRoom.on("turnChanged", (player) => {
+    eventSequence.push({ event: "turnChanged", player });
+  });
+  
+  gameRoom.on("moveMade", (player, position) => {
+    eventSequence.push({ event: "moveMade", player, position });
+  });
+  
+  gameRoom.on("gameEnded", (winner) => {
+    eventSequence.push({ event: "gameEnded", winner });
+  });
+  
+  // Start the game
+  await gameRoom.startGame();
+  
+  // Make some moves
+  await gameRoom.makeMove("TestPlayer", { x: 0, y: 0 });
+  await gameRoom.makeMove("BotPlayer", { x: 1, y: 1 });
+  await gameRoom.makeMove("TestPlayer", { x: 0, y: 1 });
+  await gameRoom.makeMove("BotPlayer", { x: 1, y: 0 });
+  await gameRoom.makeMove("TestPlayer", { x: 0, y: 2 }); // Should win with a column
+  
+  // Wait a bit for all events to be processed
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Verify event sequence
+  expect(eventSequence).toHaveLength(9); // 2 joins + start + 5 moves + end
+  
+  // Verify sequence starts correctly
+  expect(eventSequence[0].event).toBe("playerJoined");
+  expect(eventSequence[0].player).toBe("BotPlayer");
+  
+  expect(eventSequence[1].event).toBe("gameStarted");
+  
+  expect(eventSequence[2].event).toBe("turnChanged");
+  expect(eventSequence[2].player).toBe("TestPlayer");
+  
+  // Verify moves were made in sequence
+  expect(eventSequence[3].event).toBe("moveMade");
+  expect(eventSequence[3].player).toBe("TestPlayer");
+  
+  expect(eventSequence[4].event).toBe("turnChanged");
+  expect(eventSequence[4].player).toBe("BotPlayer");
+  
+  // Verify game ended with the right winner
+  expect(eventSequence[8].event).toBe("gameEnded");
+  expect(eventSequence[8].winner).toBe("TestPlayer");
+});
+```
+
+## Testing Event Counts
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test the number of events emitted
+test("counter should emit expected number of events", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to counter
+  const counter = await client.counter.get();
+  
+  // Event counters
+  let incrementEvents = 0;
+  let resetEvents = 0;
+  let thresholdEvents = 0;
+  
+  // Set up event listeners
+  counter.on("countUpdated", (newCount) => {
+    incrementEvents++;
+  });
+  
+  counter.on("countReset", () => {
+    resetEvents++;
+  });
+  
+  counter.on("thresholdReached", (threshold) => {
+    thresholdEvents++;
+  });
+  
+  // Perform operations
+  await counter.increment(3);
+  await counter.increment(5);
+  await counter.increment(2); // Should trigger threshold at 10
+  await counter.reset();
+  await counter.increment(4);
+  
+  // Verify event counts
+  expect(incrementEvents).toBe(4); // 3 increments + 1 after reset
+  expect(resetEvents).toBe(1);
+  expect(thresholdEvents).toBe(1); // Only one threshold crossing
+  
+  // Test multiple increments
+  const originalIncrementCount = incrementEvents;
+  
+  // Multiple increments in a loop
+  for (let i = 0; i < 5; i++) {
+    await counter.increment(1);
+  }
+  
+  // Each increment should emit an event
+  expect(incrementEvents).toBe(originalIncrementCount + 5);
+});
+```
+
+## Testing Event Payloads in Detail
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test complex event payloads in detail
+test("document editor should emit detailed update events", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to document editor
+  const editor = await client.documentEditor.get();
+  
+  // Capture all contentUpdated events
+  const updateEvents = [];
+  editor.on("contentUpdated", (update) => {
+    updateEvents.push(update);
+  });
+  
+  // Initial content
+  const initialContent = await editor.getContent();
+  expect(initialContent).toBe("");
+  
+  // Make edits
+  await editor.updateContent("Hello");
+  await editor.updateContent("Hello, world!");
+  
+  // Check event count
+  expect(updateEvents).toHaveLength(2);
+  
+  // Check first update event details
+  expect(updateEvents[0]).toEqual({
+    content: "Hello",
+    delta: {
+      inserted: "Hello",
+      deleted: "",
+      position: 0
+    },
+    revision: 1,
+    timestamp: expect.any(Number),
+    author: "system"
+  });
+  
+  // Check second update event details
+  expect(updateEvents[1]).toEqual({
+    content: "Hello, world!",
+    delta: {
+      inserted: ", world!",
+      deleted: "",
+      position: 5
+    },
+    revision: 2,
+    timestamp: expect.any(Number),
+    author: "system"
+  });
+  
+  // Test deletion
+  const deletionPromise = new Promise(resolve => {
+    editor.once("contentUpdated", (update) => resolve(update));
+  });
+  
+  await editor.updateContent("Hello!");
+  
+  const deletionEvent = await deletionPromise;
+  expect(deletionEvent.delta).toEqual({
+    inserted: "!",
+    deleted: ", world!",
+    position: 5
+  });
+  expect(deletionEvent.content).toBe("Hello!");
+});
+```
+
+## Testing Multiple Clients
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test events across multiple clients
+test("chat room broadcasts events to all clients", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect with two different clients
+  const aliceChat = await client.chatRoom.get({
+    params: { username: "Alice" }
+  });
+  
+  const bobChat = await client.chatRoom.get({
+    params: { username: "Bob" }
+  });
+  
+  // Capture events for both clients
+  const aliceEvents = [];
+  const bobEvents = [];
+  
+  aliceChat.on("userJoined", (username) => {
+    aliceEvents.push({ event: "userJoined", username });
+  });
+  
+  aliceChat.on("newMessage", (message) => {
+    aliceEvents.push({ event: "newMessage", message });
+  });
+  
+  bobChat.on("userJoined", (username) => {
+    bobEvents.push({ event: "userJoined", username });
+  });
+  
+  bobChat.on("newMessage", (message) => {
+    bobEvents.push({ event: "newMessage", message });
+  });
+  
+  // Wait a moment for join events to process
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  // Bob should have seen Alice join, Alice should have seen Bob join
+  expect(aliceEvents.find(e => e.event === "userJoined" && e.username === "Bob")).toBeTruthy();
+  expect(bobEvents.find(e => e.event === "userJoined" && e.username === "Alice")).toBeTruthy();
+  
+  // Clear events arrays
+  aliceEvents.length = 0;
+  bobEvents.length = 0;
+  
+  // Alice sends a message
+  await aliceChat.sendMessage("Hello from Alice!");
+  
+  // Wait for message to propagate
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  // Both should receive Alice's message
+  expect(aliceEvents).toHaveLength(1);
+  expect(aliceEvents[0].event).toBe("newMessage");
+  expect(aliceEvents[0].message.sender).toBe("Alice");
+  
+  expect(bobEvents).toHaveLength(1);
+  expect(bobEvents[0].event).toBe("newMessage");
+  expect(bobEvents[0].message.sender).toBe("Alice");
+  
+  // Clear events again
+  aliceEvents.length = 0;
+  bobEvents.length = 0;
+  
+  // Bob sends a message
+  await bobChat.sendMessage("Hi Alice, this is Bob!");
+  
+  // Wait for message to propagate
+  await new Promise(resolve => setTimeout(resolve, 50));
+  
+  // Both should receive Bob's message
+  expect(aliceEvents).toHaveLength(1);
+  expect(aliceEvents[0].event).toBe("newMessage");
+  expect(aliceEvents[0].message.sender).toBe("Bob");
+  
+  expect(bobEvents).toHaveLength(1);
+  expect(bobEvents[0].event).toBe("newMessage");
+  expect(bobEvents[0].message.sender).toBe("Bob");
+});
+```
+
+## Testing Event Flows with State Changes
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test that events correctly reflect state changes
+test("auction house events should reflect state changes", async (t) => {
+  // Set up test environment with specific initial state
+  const { client, getInternalState } = await setupTest(t, app, {
+    initialState: {
+      auctionHouse: {
+        auctions: {
+          "test-auction": {
+            id: "test-auction",
+            itemName: "Vintage Watch",
+            startingPrice: 100,
+            currentPrice: 100,
+            highestBidder: null,
+            status: "active",
+            endTime: Date.now() + 3600000 // 1 hour from now
+          }
+        }
+      }
+    }
+  });
+  
+  // Connect to auction house
+  const auctionHouse = await client.auctionHouse.get();
+  
+  // Event capture promises
+  const bidReceivedPromise = new Promise(resolve => {
+    auctionHouse.once("bidReceived", (auctionId, bidder, amount) => {
+      resolve({ auctionId, bidder, amount });
+    });
+  });
+  
+  const priceUpdatedPromise = new Promise(resolve => {
+    auctionHouse.once("priceUpdated", (auctionId, newPrice) => {
+      resolve({ auctionId, newPrice });
+    });
+  });
+  
+  const highestBidderChangedPromise = new Promise(resolve => {
+    auctionHouse.once("highestBidderChanged", (auctionId, newBidder) => {
+      resolve({ auctionId, newBidder });
+    });
+  });
+  
+  // Place a bid
+  await auctionHouse.placeBid("test-auction", "bidder1", 150);
+  
+  // Check events match expected values
+  const bidEvent = await bidReceivedPromise;
+  expect(bidEvent).toEqual({
+    auctionId: "test-auction",
+    bidder: "bidder1",
+    amount: 150
+  });
+  
+  const priceEvent = await priceUpdatedPromise;
+  expect(priceEvent).toEqual({
+    auctionId: "test-auction",
+    newPrice: 150
+  });
+  
+  const bidderEvent = await highestBidderChangedPromise;
+  expect(bidderEvent).toEqual({
+    auctionId: "test-auction",
+    newBidder: "bidder1"
+  });
+  
+  // Verify internal state was updated
+  const internalState = await getInternalState(auctionHouse);
+  expect(internalState.auctions["test-auction"]).toMatchObject({
+    currentPrice: 150,
+    highestBidder: "bidder1"
+  });
+  
+  // Test outbidding with event capture
+  const outbidEventPromise = new Promise(resolve => {
+    auctionHouse.once("bidderOutbid", (auctionId, previousBidder, newBidder) => {
+      resolve({ auctionId, previousBidder, newBidder });
+    });
+  });
+  
+  // Place a higher bid
+  await auctionHouse.placeBid("test-auction", "bidder2", 200);
+  
+  // Verify outbid event
+  const outbidEvent = await outbidEventPromise;
+  expect(outbidEvent).toEqual({
+    auctionId: "test-auction",
+    previousBidder: "bidder1",
+    newBidder: "bidder2"
+  });
+  
+  // Check that state was updated again
+  const updatedState = await getInternalState(auctionHouse);
+  expect(updatedState.auctions["test-auction"]).toMatchObject({
+    currentPrice: 200,
+    highestBidder: "bidder2"
+  });
+});
+```
+
+## Testing Typed Events
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Import event types for type-safe testing
+import type { GameEvents } from "../src/types";
+
+// Test typed events with TypeScript
+test("game events should have correct types", async (t) => {
+  // Set up test environment
+  const { client } = await setupTest(t, app);
+  
+  // Connect to game
+  const game = await client.typedGame.get({
+    params: { playerName: "TypedPlayer" }
+  });
+  
+  // Type-safe event promises
+  const gameStartPromise = new Promise<GameEvents["gameStarted"][0]>(resolve => {
+    game.once<GameEvents["gameStarted"]>("gameStarted", (gameState) => {
+      resolve(gameState);
+    });
+  });
+  
+  const playerJoinedPromise = new Promise<GameEvents["playerJoined"]>(resolve => {
+    game.once<GameEvents["playerJoined"]>("playerJoined", (playerId, playerName) => {
+      resolve([playerId, playerName]);
+    });
+  });
+  
+  const scoreUpdatePromise = new Promise<GameEvents["scoreUpdated"]>(resolve => {
+    game.once<GameEvents["scoreUpdated"]>("scoreUpdated", (playerId, newScore, reason) => {
+      resolve([playerId, newScore, reason]);
+    });
+  });
+  
+  // Start game and trigger events
+  await game.addPlayer("Player2");
+  await game.startGame();
+  await game.addPoints("TypedPlayer", 100, "First move");
+  
+  // Verify player joined event
+  const playerJoinedEvent = await playerJoinedPromise;
+  expect(playerJoinedEvent[0]).toMatch(/^player-\w+$/); // Player ID format
+  expect(playerJoinedEvent[1]).toBe("Player2");
+  
+  // Verify game start event
+  const gameStartEvent = await gameStartPromise;
+  expect(gameStartEvent.status).toBe("playing");
+  expect(gameStartEvent.players).toHaveProperty("TypedPlayer");
+  expect(gameStartEvent.players).toHaveProperty(playerJoinedEvent[0]);
+  
+  // Verify score update event
+  const scoreUpdateEvent = await scoreUpdatePromise;
+  expect(scoreUpdateEvent[0]).toBe("TypedPlayer");
+  expect(scoreUpdateEvent[1]).toBe(100);
+  expect(scoreUpdateEvent[2]).toBe("First move");
+});
+```
+
+## Best Practices
+
+1. **Track event sequences**: Test that events are emitted in the correct order
+2. **Verify event payloads**: Check that events contain the expected data
+3. **Test with multiple clients**: Ensure events are broadcast to all relevant clients
+4. **Check event counts**: Verify that the expected number of events are emitted
+5. **Use promises for events**: Wrap event listeners in promises for cleaner async tests
+6. **Type safety**: Use TypeScript types to ensure events have the correct structure
+7. **Test state correspondence**: Verify that events accurately reflect actor state
+8. **Isolate tests**: Each test should focus on a specific aspect of event behavior
+9. **Use timeouts carefully**: Allow enough time for events to propagate
+10. **Test edge cases**: Verify event behavior for error conditions and edge cases
+
+By thoroughly testing events, you can ensure that clients receive the correct updates at the right times, making your ActorCore applications more reliable and maintainable.

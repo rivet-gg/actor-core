@@ -1,0 +1,1015 @@
+---
+title: Actor Lifecycle Management
+description: Create and dispose of actors programmatically
+---
+
+# Actor Lifecycle Management
+
+Understanding and managing the lifecycle of actors is crucial for building scalable and efficient systems. ActorCore provides hooks and methods to control actor creation, initialization, and shutdown. This guide covers advanced patterns for managing the complete lifecycle of actors.
+
+## Actor Lifecycle Hooks
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const gameRoom = actor({
+  // 1. Initial state creation (called only once when actor is first created)
+  createState: () => {
+    console.log("Actor created for the first time");
+    return {
+      gameId: crypto.randomUUID(),
+      status: "waiting",
+      players: {},
+      settings: {
+        maxPlayers: 4,
+        roundTime: 60,
+        mode: "standard"
+      },
+      rounds: [],
+      createdAt: Date.now(),
+      lastModified: Date.now()
+    };
+  },
+  
+  // 2. Initialize non-persisted variables (called on every start/restart)
+  createVars: () => {
+    console.log("Actor variables initialized");
+    return {
+      roundTimer: null,
+      gameLoop: null,
+      startTime: Date.now(),
+      metrics: {
+        actionsProcessed: 0,
+        averageResponseTime: 0
+      }
+    };
+  },
+  
+  // 3. Called only once when actor is first created
+  onCreate: async (c, gameType = "standard") => {
+    console.log(`Actor ${c.id} created with game type: ${gameType}`);
+    
+    // One-time setup and initialization
+    c.state.settings.mode = gameType;
+    c.state.lastModified = Date.now();
+    
+    // Load default configuration for this game type
+    const config = await loadGameConfig(gameType);
+    c.state.settings = {
+      ...c.state.settings,
+      ...config
+    };
+    
+    // Log creation
+    console.log(`Game room ${c.state.gameId} created with ${gameType} mode`);
+  },
+  
+  // 4. Called every time actor starts (including after restarts/crashes)
+  onStart: (c) => {
+    console.log(`Actor ${c.id} started`);
+    
+    // Perform startup tasks
+    c.vars.startTime = Date.now();
+    
+    // Set up periodic tasks
+    c.schedule.after(60000, "performMaintenance");
+    
+    // If game was in progress when actor crashed, attempt recovery
+    if (c.state.status === "playing") {
+      console.log("Recovering in-progress game");
+      recoverGameState(c);
+    }
+  },
+  
+  // Called when actor's state changes
+  onStateChange: (c, prevState) => {
+    c.state.lastModified = Date.now();
+    
+    // Check if status changed
+    if (prevState && prevState.status !== c.state.status) {
+      console.log(`Game status changed: ${prevState.status} -> ${c.state.status}`);
+      c.broadcast("statusChanged", c.state.status);
+      
+      // Handle status transitions
+      if (c.state.status === "playing" && prevState.status === "waiting") {
+        // Game just started
+        c.vars.gameLoop = setInterval(() => gameLoop(c), 1000);
+      } else if (c.state.status === "finished") {
+        // Game ended
+        if (c.vars.gameLoop) {
+          clearInterval(c.vars.gameLoop);
+          c.vars.gameLoop = null;
+        }
+      }
+    }
+  },
+  
+  actions: {
+    // Start the game
+    startGame: (c) => {
+      if (c.state.status !== "waiting") {
+        throw new UserError("Game already started");
+      }
+      
+      const playerCount = Object.keys(c.state.players).length;
+      if (playerCount < 2) {
+        throw new UserError("Need at least 2 players to start");
+      }
+      
+      // Update game status
+      c.state.status = "playing";
+      c.state.startTime = Date.now();
+      
+      // Broadcast game started
+      c.broadcast("gameStarted", {
+        gameId: c.state.gameId,
+        players: Object.values(c.state.players),
+        settings: c.state.settings
+      });
+      
+      // Schedule first round
+      c.schedule.after(1000, "startNextRound");
+      
+      return { success: true };
+    },
+    
+    // End the game
+    endGame: (c, reason = "Game completed") => {
+      if (c.state.status === "finished") {
+        return { success: false, reason: "Game already ended" };
+      }
+      
+      // Update game status
+      c.state.status = "finished";
+      c.state.endTime = Date.now();
+      c.state.endReason = reason;
+      
+      // Calculate results
+      const results = calculateResults(c.state);
+      c.state.results = results;
+      
+      // Broadcast game ended
+      c.broadcast("gameEnded", {
+        gameId: c.state.gameId,
+        reason,
+        results,
+        duration: c.state.endTime - c.state.startTime
+      });
+      
+      // Schedule cleanup after a delay (allow clients to see results)
+      c.schedule.after(5 * 60 * 1000, "cleanup");
+      
+      return { success: true, results };
+    },
+    
+    // Periodic maintenance
+    performMaintenance: (c) => {
+      console.log(`Performing maintenance for game ${c.state.gameId}`);
+      
+      // Clean up any stale data
+      cleanupStaleData(c);
+      
+      // Check for inactive players
+      checkPlayerActivity(c);
+      
+      // Schedule next maintenance
+      c.schedule.after(60000, "performMaintenance");
+    },
+    
+    // Cleanup after game ends
+    cleanup: (c) => {
+      if (c.state.status !== "finished") {
+        return; // Only cleanup finished games
+      }
+      
+      console.log(`Cleaning up game ${c.state.gameId}`);
+      
+      // Archive game data if needed
+      archiveGameData(c.state);
+      
+      // Notify clients
+      c.broadcast("gameArchived", {
+        gameId: c.state.gameId,
+        archivedAt: Date.now()
+      });
+      
+      // Shut down the actor
+      c.shutdown();
+    },
+    
+    // Manually reset the game
+    resetGame: (c) => {
+      // Admin check (simplified)
+      if (!c.conn.state.isAdmin) {
+        throw new UserError("Not authorized");
+      }
+      
+      // Reset game state
+      c.state.status = "waiting";
+      c.state.rounds = [];
+      c.state.startTime = null;
+      c.state.endTime = null;
+      c.state.results = null;
+      
+      // Keep players but reset their scores
+      for (const playerId in c.state.players) {
+        c.state.players[playerId].score = 0;
+        c.state.players[playerId].ready = false;
+      }
+      
+      // Clear timers
+      if (c.vars.gameLoop) {
+        clearInterval(c.vars.gameLoop);
+        c.vars.gameLoop = null;
+      }
+      
+      if (c.vars.roundTimer) {
+        clearTimeout(c.vars.roundTimer);
+        c.vars.roundTimer = null;
+      }
+      
+      // Broadcast reset
+      c.broadcast("gameReset", {
+        gameId: c.state.gameId,
+        resetAt: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Start next round
+    startNextRound: (c) => {
+      if (c.state.status !== "playing") {
+        return;
+      }
+      
+      const roundNumber = c.state.rounds.length + 1;
+      
+      // Create new round
+      const round = {
+        number: roundNumber,
+        startTime: Date.now(),
+        endTime: null,
+        moves: []
+      };
+      
+      c.state.rounds.push(round);
+      c.state.currentRound = roundNumber;
+      
+      // Broadcast round started
+      c.broadcast("roundStarted", {
+        roundNumber,
+        duration: c.state.settings.roundTime
+      });
+      
+      // Schedule round end
+      c.vars.roundTimer = setTimeout(() => {
+        endRound(c, roundNumber);
+      }, c.state.settings.roundTime * 1000);
+      
+      // Schedule time warnings
+      if (c.state.settings.roundTime > 10) {
+        setTimeout(() => {
+          if (c.state.currentRound === roundNumber) {
+            c.broadcast("timeWarning", { 
+              roundNumber, 
+              remaining: 10 
+            });
+          }
+        }, (c.state.settings.roundTime - 10) * 1000);
+      }
+    }
+  }
+});
+
+// Helper functions
+function loadGameConfig(gameType) {
+  // In a real app, might load from a database or API
+  const configs = {
+    standard: { roundTime: 60, maxPlayers: 4 },
+    quick: { roundTime: 30, maxPlayers: 2 },
+    tournament: { roundTime: 90, maxPlayers: 8 }
+  };
+  
+  return configs[gameType] || configs.standard;
+}
+
+function recoverGameState(c) {
+  // Attempt to recover in-progress game after a crash
+  
+  // If round was in progress, restart it
+  if (c.state.currentRound) {
+    const roundNumber = c.state.currentRound;
+    const round = c.state.rounds[roundNumber - 1];
+    
+    // If round didn't finish, restart it
+    if (!round.endTime) {
+      // Notify clients about recovery
+      c.broadcast("gameRecovered", {
+        roundNumber,
+        restartedAt: Date.now()
+      });
+      
+      // Restart round timer
+      c.vars.roundTimer = setTimeout(() => {
+        endRound(c, roundNumber);
+      }, c.state.settings.roundTime * 1000);
+    }
+  }
+}
+
+function endRound(c, roundNumber) {
+  // End current round
+  if (c.state.currentRound !== roundNumber) {
+    return; // Not the current round anymore
+  }
+  
+  const round = c.state.rounds[roundNumber - 1];
+  if (!round || round.endTime) {
+    return; // Round already ended
+  }
+  
+  // Update round end time
+  round.endTime = Date.now();
+  
+  // Broadcast round ended
+  c.broadcast("roundEnded", {
+    roundNumber,
+    duration: round.endTime - round.startTime
+  });
+  
+  // Check if this was the last round
+  if (roundNumber >= c.state.settings.maxRounds) {
+    // End the game
+    c.endGame("Final round completed");
+  } else {
+    // Start next round
+    setTimeout(() => {
+      c.startNextRound();
+    }, 3000); // 3-second break between rounds
+  }
+}
+
+function cleanupStaleData(c) {
+  // Implementation depends on what data needs cleanup
+}
+
+function checkPlayerActivity(c) {
+  const now = Date.now();
+  const inactiveThreshold = 5 * 60 * 1000; // 5 minutes
+  
+  for (const playerId in c.state.players) {
+    const player = c.state.players[playerId];
+    
+    if (now - player.lastActivity > inactiveThreshold) {
+      // Mark player as inactive
+      player.active = false;
+      
+      // Notify other players
+      c.broadcast("playerInactive", {
+        playerId,
+        inactiveSince: player.lastActivity
+      });
+    }
+  }
+}
+
+function calculateResults(state) {
+  // Calculate final game results
+  const playerScores = Object.entries(state.players).map(([id, player]) => ({
+    id,
+    name: player.name,
+    score: player.score
+  }));
+  
+  // Sort by score descending
+  playerScores.sort((a, b) => b.score - a.score);
+  
+  return {
+    winner: playerScores[0].id,
+    scores: playerScores,
+    rounds: state.rounds.length,
+    duration: state.endTime - state.startTime
+  };
+}
+
+function archiveGameData(state) {
+  // In a real app, might save to a database or send to analytics service
+  console.log(`Archiving game ${state.gameId}`);
+}
+
+function gameLoop(c) {
+  // Regular game update logic
+  // Implementation depends on game mechanics
+}
+```
+
+## Managing Actor Lifecycle Programmatically
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const instanceManager = actor({
+  state: {
+    instances: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      role: params.role || "user"
+    };
+  },
+  
+  actions: {
+    // Create a new actor instance
+    createInstance: async (c, instanceType, config = {}) => {
+      // Check authorization (simplified)
+      if (c.conn.state.role !== "admin" && instanceType === "sensitive") {
+        throw new UserError("Not authorized to create this instance type");
+      }
+      
+      // Generate instance ID
+      const instanceId = crypto.randomUUID();
+      
+      try {
+        // Get actor handle for the appropriate type
+        let actorHandle;
+        
+        if (instanceType === "game") {
+          // Create a game room actor
+          actorHandle = await c.client.gameRoom.create({
+            id: instanceId,
+            params: {
+              createdBy: c.conn.state.userId,
+              gameType: config.gameType || "standard"
+            }
+          });
+        } else if (instanceType === "chat") {
+          // Create a chat room actor
+          actorHandle = await c.client.chatRoom.create({
+            id: instanceId,
+            params: {
+              createdBy: c.conn.state.userId,
+              roomName: config.roomName || "New Chat Room"
+            }
+          });
+        } else if (instanceType === "sensitive") {
+          // Create a sensitive data actor (admin only)
+          actorHandle = await c.client.sensitiveDataActor.create({
+            id: instanceId,
+            params: {
+              createdBy: c.conn.state.userId,
+              dataType: config.dataType || "general"
+            }
+          });
+        } else {
+          throw new UserError(`Unknown instance type: ${instanceType}`);
+        }
+        
+        // Store instance information
+        c.state.instances[instanceId] = {
+          id: instanceId,
+          type: instanceType,
+          createdBy: c.conn.state.userId,
+          createdAt: Date.now(),
+          config,
+          status: "active"
+        };
+        
+        // Broadcast creation
+        c.broadcast("instanceCreated", {
+          id: instanceId,
+          type: instanceType,
+          createdBy: c.conn.state.userId
+        });
+        
+        // Schedule periodic check
+        if (!c.vars.checkScheduled) {
+          c.schedule.after(60000, "checkInstances");
+          c.vars.checkScheduled = true;
+        }
+        
+        return {
+          instanceId,
+          type: instanceType,
+          createdAt: c.state.instances[instanceId].createdAt
+        };
+      } catch (error) {
+        console.error(`Failed to create instance: ${error.message}`);
+        throw new UserError(`Failed to create instance: ${error.message}`);
+      }
+    },
+    
+    // Shutdown an instance
+    shutdownInstance: async (c, instanceId, reason = "User requested") => {
+      // Check if instance exists
+      if (!c.state.instances[instanceId]) {
+        throw new UserError("Instance not found");
+      }
+      
+      const instance = c.state.instances[instanceId];
+      
+      // Check authorization (owner or admin)
+      if (
+        instance.createdBy !== c.conn.state.userId && 
+        c.conn.state.role !== "admin"
+      ) {
+        throw new UserError("Not authorized to shut down this instance");
+      }
+      
+      try {
+        // Get actor handle for the instance
+        let actorHandle;
+        
+        if (instance.type === "game") {
+          actorHandle = await c.client.gameRoom.getWithId(instanceId);
+        } else if (instance.type === "chat") {
+          actorHandle = await c.client.chatRoom.getWithId(instanceId);
+        } else if (instance.type === "sensitive") {
+          actorHandle = await c.client.sensitiveDataActor.getWithId(instanceId);
+        }
+        
+        // Use appropriate shutdown method based on type
+        if (instance.type === "game") {
+          await actorHandle.endGame(reason);
+        } else {
+          // For actors with direct shutdown support
+          await actorHandle.shutdown(reason);
+        }
+        
+        // Update instance status
+        instance.status = "shutdown";
+        instance.shutdownAt = Date.now();
+        instance.shutdownReason = reason;
+        
+        // Broadcast shutdown
+        c.broadcast("instanceShutdown", {
+          id: instanceId,
+          type: instance.type,
+          shutdownBy: c.conn.state.userId,
+          reason
+        });
+        
+        return { success: true };
+      } catch (error) {
+        console.error(`Failed to shut down instance: ${error.message}`);
+        throw new UserError(`Failed to shut down instance: ${error.message}`);
+      }
+    },
+    
+    // List all instances
+    listInstances: (c, type = null, status = null) => {
+      let instances = Object.values(c.state.instances);
+      
+      // Filter by type if provided
+      if (type) {
+        instances = instances.filter(instance => instance.type === type);
+      }
+      
+      // Filter by status if provided
+      if (status) {
+        instances = instances.filter(instance => instance.status === status);
+      }
+      
+      // If not admin, only show instances created by this user
+      if (c.conn.state.role !== "admin") {
+        instances = instances.filter(
+          instance => instance.createdBy === c.conn.state.userId
+        );
+      }
+      
+      return instances;
+    },
+    
+    // Periodic check for instances that should be cleaned up
+    checkInstances: async (c) => {
+      const now = Date.now();
+      const instances = Object.values(c.state.instances);
+      
+      // Find instances to clean up
+      const inactiveThreshold = 24 * 60 * 60 * 1000; // 24 hours
+      
+      for (const instance of instances) {
+        // Skip already shutdown instances
+        if (instance.status !== "active") continue;
+        
+        // Check if instance needs cleanup
+        const shouldCleanup = await shouldCleanupInstance(c, instance, now, inactiveThreshold);
+        
+        if (shouldCleanup) {
+          try {
+            // Shut down the instance
+            await c.shutdownInstance(
+              instance.id, 
+              "Automatic cleanup due to inactivity"
+            );
+          } catch (error) {
+            console.error(`Failed to clean up instance ${instance.id}: ${error.message}`);
+          }
+        }
+      }
+      
+      // Schedule next check
+      c.schedule.after(60000, "checkInstances");
+    }
+  }
+});
+
+// Helper to determine if an instance should be cleaned up
+async function shouldCleanupInstance(c, instance, now, threshold) {
+  // For already shut down instances, return false
+  if (instance.status !== "active") {
+    return false;
+  }
+  
+  // Check age
+  const age = now - instance.createdAt;
+  
+  // If it's a very old instance, clean it up
+  if (age > threshold) {
+    return true;
+  }
+  
+  try {
+    // Check instance-specific conditions
+    if (instance.type === "game") {
+      // Get game actor handle
+      const gameHandle = await c.client.gameRoom.getWithId(instance.id);
+      
+      // Get game state
+      const gameState = await gameHandle.getStatus();
+      
+      // If game is finished and old, clean it up
+      if (
+        gameState.status === "finished" && 
+        now - gameState.endTime > 1 * 60 * 60 * 1000 // 1 hour
+      ) {
+        return true;
+      }
+      
+      // If waiting for players for too long
+      if (
+        gameState.status === "waiting" && 
+        age > 1 * 60 * 60 * 1000 && // Created more than 1 hour ago
+        Object.keys(gameState.players).length === 0 // No players
+      ) {
+        return true;
+      }
+    } else if (instance.type === "chat") {
+      // Check chat room activity
+      const chatHandle = await c.client.chatRoom.getWithId(instance.id);
+      const chatStatus = await chatHandle.getStatus();
+      
+      // If no messages and old
+      if (
+        chatStatus.messageCount === 0 && 
+        age > 6 * 60 * 60 * 1000 // 6 hours
+      ) {
+        return true;
+      }
+      
+      // If no active connections for a while
+      if (
+        chatStatus.lastActivity && 
+        now - chatStatus.lastActivity > 12 * 60 * 60 * 1000 // 12 hours
+      ) {
+        return true;
+      }
+    }
+  } catch (error) {
+    // If we couldn't connect, the actor might already be gone
+    console.error(`Error checking instance ${instance.id}: ${error.message}`);
+    return true;
+  }
+  
+  return false;
+}
+```
+
+## Auto-Expiring Actors
+
+```typescript
+import { actor } from "actor-core";
+
+const temporarySession = actor({
+  createState: () => {
+    return {
+      created: Date.now(),
+      expiresAt: Date.now() + (30 * 60 * 1000), // 30 minutes from now
+      data: {},
+      accessCount: 0,
+      lastAccessed: null
+    };
+  },
+  
+  onStart: (c) => {
+    // Calculate time until expiration
+    const now = Date.now();
+    const timeUntilExpiration = Math.max(0, c.state.expiresAt - now);
+    
+    // If already expired, shut down immediately
+    if (timeUntilExpiration <= 0) {
+      c.shutdown();
+      return;
+    }
+    
+    // Otherwise, schedule shutdown at expiration time
+    c.schedule.at(c.state.expiresAt, "expire");
+    
+    // Also schedule periodic checks
+    c.schedule.after(5 * 60 * 1000, "checkActivity"); // Every 5 minutes
+  },
+  
+  actions: {
+    // Store data in the session
+    setData: (c, key, value) => {
+      c.state.data[key] = value;
+      c.state.lastAccessed = Date.now();
+      c.state.accessCount++;
+      
+      return true;
+    },
+    
+    // Get data from the session
+    getData: (c, key) => {
+      c.state.lastAccessed = Date.now();
+      c.state.accessCount++;
+      
+      return c.state.data[key];
+    },
+    
+    // Extend the session lifetime
+    extend: (c, minutes = 30) => {
+      // Limit extension
+      if (minutes <= 0 || minutes > 120) {
+        throw new Error("Extension must be between 1 and 120 minutes");
+      }
+      
+      // Calculate new expiration time
+      const newExpiresAt = Date.now() + (minutes * 60 * 1000);
+      
+      // Only extend if it's actually later
+      if (newExpiresAt > c.state.expiresAt) {
+        c.state.expiresAt = newExpiresAt;
+        
+        // Notify clients
+        c.broadcast("sessionExtended", {
+          newExpiresAt,
+          expiresIn: minutes * 60 // seconds
+        });
+        
+        // Reschedule expiration
+        c.schedule.at(newExpiresAt, "expire");
+      }
+      
+      return { expiresAt: c.state.expiresAt };
+    },
+    
+    // Check for inactivity
+    checkActivity: (c) => {
+      const now = Date.now();
+      
+      // If never accessed or not accessed recently, consider inactive
+      if (
+        !c.state.lastAccessed || 
+        now - c.state.lastAccessed > 15 * 60 * 1000 // 15 minutes
+      ) {
+        // Expire early due to inactivity
+        c.expire("Inactivity timeout");
+        return;
+      }
+      
+      // Otherwise, schedule next check
+      c.schedule.after(5 * 60 * 1000, "checkActivity");
+    },
+    
+    // Expire the session
+    expire: (c, reason = "Session timeout") => {
+      // Notify clients
+      c.broadcast("sessionExpired", {
+        reason,
+        expiredAt: Date.now()
+      });
+      
+      // Perform any cleanup
+      performCleanup(c);
+      
+      // Shut down the actor
+      c.shutdown();
+    }
+  }
+});
+
+// Helper function for cleanup
+function performCleanup(c) {
+  // Implementation depends on what needs to be cleaned up
+  console.log(`Cleaning up session ${c.id} with ${c.state.accessCount} accesses`);
+}
+```
+
+## Resources with Shutdown Handlers
+
+```typescript
+import { actor } from "actor-core";
+
+const resourceManager = actor({
+  createState: () => {
+    return {
+      resources: {},
+      locks: {}
+    };
+  },
+  
+  createVars: () => {
+    return {
+      // External service clients
+      dbClient: createDbClient(),
+      storageClient: createStorageClient(),
+      
+      // Shutdown handlers to run on termination
+      shutdownHandlers: []
+    };
+  },
+  
+  onStart: (c) => {
+    // Register shutdown handlers
+    
+    // Database connections
+    if (c.vars.dbClient) {
+      c.vars.shutdownHandlers.push(async () => {
+        console.log("Closing database connections...");
+        await c.vars.dbClient.close();
+      });
+    }
+    
+    // Storage connections
+    if (c.vars.storageClient) {
+      c.vars.shutdownHandlers.push(async () => {
+        console.log("Closing storage connections...");
+        await c.vars.storageClient.close();
+      });
+    }
+    
+    // Resource cleanup
+    c.vars.shutdownHandlers.push(async () => {
+      console.log("Releasing external resources...");
+      
+      // Release any external resources
+      for (const resourceId in c.state.resources) {
+        const resource = c.state.resources[resourceId];
+        if (resource.type === "external" && resource.handle) {
+          try {
+            await releaseExternalResource(resource.handle);
+          } catch (error) {
+            console.error(`Failed to release resource ${resourceId}: ${error.message}`);
+          }
+        }
+      }
+    });
+  },
+  
+  actions: {
+    // Allocate a resource
+    allocateResource: async (c, type, config = {}) => {
+      const resourceId = crypto.randomUUID();
+      
+      try {
+        let resourceHandle;
+        
+        if (type === "database") {
+          // Allocate database resource
+          resourceHandle = await c.vars.dbClient.allocateResource(config);
+        } else if (type === "storage") {
+          // Allocate storage resource
+          resourceHandle = await c.vars.storageClient.allocateResource(config);
+        } else if (type === "external") {
+          // Allocate external resource
+          resourceHandle = await allocateExternalResource(config);
+          
+          // Register resource-specific shutdown handler
+          c.vars.shutdownHandlers.push(async () => {
+            console.log(`Releasing external resource ${resourceId}...`);
+            await releaseExternalResource(resourceHandle);
+          });
+        } else {
+          throw new Error(`Unknown resource type: ${type}`);
+        }
+        
+        // Store resource info
+        c.state.resources[resourceId] = {
+          id: resourceId,
+          type,
+          config,
+          allocatedAt: Date.now(),
+          handle: resourceHandle
+        };
+        
+        return {
+          resourceId,
+          type,
+          allocatedAt: c.state.resources[resourceId].allocatedAt
+        };
+      } catch (error) {
+        console.error(`Failed to allocate resource: ${error.message}`);
+        throw error;
+      }
+    },
+    
+    // Release a resource
+    releaseResource: async (c, resourceId) => {
+      // Check if resource exists
+      if (!c.state.resources[resourceId]) {
+        throw new Error("Resource not found");
+      }
+      
+      const resource = c.state.resources[resourceId];
+      
+      try {
+        if (resource.type === "database") {
+          // Release database resource
+          await c.vars.dbClient.releaseResource(resource.handle);
+        } else if (resource.type === "storage") {
+          // Release storage resource
+          await c.vars.storageClient.releaseResource(resource.handle);
+        } else if (resource.type === "external") {
+          // Release external resource
+          await releaseExternalResource(resource.handle);
+        }
+        
+        // Remove from resources
+        delete c.state.resources[resourceId];
+        
+        return { success: true };
+      } catch (error) {
+        console.error(`Failed to release resource: ${error.message}`);
+        throw error;
+      }
+    },
+    
+    // Manually trigger graceful shutdown
+    shutdown: async (c, reason = "User requested") => {
+      console.log(`Shutting down resource manager: ${reason}`);
+      
+      // Run all shutdown handlers
+      for (const handler of c.vars.shutdownHandlers) {
+        try {
+          await handler();
+        } catch (error) {
+          console.error(`Shutdown handler failed: ${error.message}`);
+        }
+      }
+      
+      // Notify clients
+      c.broadcast("shutdown", {
+        reason,
+        shutdownAt: Date.now()
+      });
+      
+      // Shut down the actor
+      c.shutdown();
+    }
+  }
+});
+
+// Mock implementations
+function createDbClient() {
+  return {
+    allocateResource: async (config) => ({ /* database resource */ }),
+    releaseResource: async (handle) => { /* release database resource */ },
+    close: async () => { /* close all connections */ }
+  };
+}
+
+function createStorageClient() {
+  return {
+    allocateResource: async (config) => ({ /* storage resource */ }),
+    releaseResource: async (handle) => { /* release storage resource */ },
+    close: async () => { /* close all connections */ }
+  };
+}
+
+async function allocateExternalResource(config) {
+  // Mock implementation
+  return { /* external resource */ };
+}
+
+async function releaseExternalResource(handle) {
+  // Mock implementation
+}
+```
+
+## Best Practices
+
+1. **Understand the lifecycle**: Know when each hook is called and its purpose
+2. **Handle all lifecycle events**: Implement onCreate, onStart, and cleanup appropriately
+3. **Graceful shutdown**: Clean up resources properly when shutting down
+4. **Recovery**: Design for crash recovery, especially for in-progress operations
+5. **State transitions**: Handle state transitions cleanly, especially during shutdown
+6. **Resource management**: Properly allocate and release resources
+7. **Timeouts and expiration**: Implement expiration for temporary actors
+8. **Periodic maintenance**: Schedule regular maintenance tasks
+9. **Programmatic creation**: Create actors programmatically when needed
+10. **Cleanup hooks**: Register cleanup handlers for graceful shutdown
+
+Managing the complete lifecycle of actors is essential for building robust, scalable systems. By understanding and implementing these patterns, you can create actors that properly initialize, manage resources, and clean up when they're no longer needed.

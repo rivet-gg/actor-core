@@ -1,0 +1,1135 @@
+---
+title: Next.js Integration
+description: Learn how to integrate ActorCore with Next.js applications
+---
+
+# Next.js Integration
+
+Next.js is a popular React framework that provides features like server-side rendering, static site generation, and API routes. Integrating ActorCore with Next.js creates a powerful combination for building real-time applications with excellent user experience and SEO. This guide shows you how to effectively integrate ActorCore with Next.js.
+
+## Setting Up ActorCore with Next.js
+
+### Basic Setup
+
+First, install the necessary packages:
+
+```bash
+npm install actor-core actor-core-react
+# or
+yarn add actor-core actor-core-react
+```
+
+Create an ActorCore provider component:
+
+```tsx
+// src/components/ActorProvider.tsx
+'use client';
+
+import React from 'react';
+import { ActorProvider } from 'actor-core-react';
+import type { App } from '@/server/app'; // Your ActorCore app type
+
+interface ActorProviderProps {
+  children: React.ReactNode;
+}
+
+export function ActorWrapper({ children }: ActorProviderProps) {
+  return (
+    <ActorProvider<App>
+      url={process.env.NEXT_PUBLIC_ACTOR_URL || 'http://localhost:3001'}
+    >
+      {children}
+    </ActorProvider>
+  );
+}
+```
+
+### Add ActorCore Provider to the App
+
+In your Next.js App Router:
+
+```tsx
+// src/app/layout.tsx
+import { ActorWrapper } from '@/components/ActorProvider';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <ActorWrapper>
+          {children}
+        </ActorWrapper>
+      </body>
+    </html>
+  );
+}
+```
+
+Or with the Pages Router:
+
+```tsx
+// src/pages/_app.tsx
+import type { AppProps } from 'next/app';
+import { ActorWrapper } from '@/components/ActorProvider';
+
+export default function App({ Component, pageProps }: AppProps) {
+  return (
+    <ActorWrapper>
+      <Component {...pageProps} />
+    </ActorWrapper>
+  );
+}
+```
+
+## Client-Side Components with ActorCore
+
+Create client-side components that use ActorCore:
+
+```tsx
+// src/components/Counter.tsx
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useActor } from 'actor-core-react';
+import type { App } from '@/server/app';
+
+export function Counter() {
+  const [count, setCount] = useState<number | null>(null);
+  const { actor, isConnecting, error } = useActor<App>('counter');
+  
+  useEffect(() => {
+    if (actor) {
+      actor.getCount().then(setCount);
+      
+      const unsubscribe = actor.on('countUpdated', (newCount) => {
+        setCount(newCount);
+      });
+      
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [actor]);
+  
+  if (isConnecting) return <div>Connecting...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  if (count === null) return <div>Loading...</div>;
+  
+  return (
+    <div className="counter">
+      <h2>Counter: {count}</h2>
+      <div className="counter-controls">
+        <button onClick={() => actor?.decrement()}>-</button>
+        <button onClick={() => actor?.increment()}>+</button>
+      </div>
+    </div>
+  );
+}
+```
+
+## Handling Server Components and Client Components
+
+Next.js 13+ introduces Server Components. Since ActorCore's React hooks use client-side JavaScript, you need to properly organize your server and client components:
+
+```tsx
+// src/app/page.tsx
+import { Counter } from '@/components/Counter';
+
+export default function HomePage() {
+  return (
+    <main>
+      <h1>ActorCore with Next.js</h1>
+      <p>This is a server component</p>
+      
+      {/* Client component with ActorCore */}
+      <Counter />
+    </main>
+  );
+}
+```
+
+## Creating Custom Hooks for Next.js
+
+Create custom hooks that fit the Next.js lifecycle:
+
+```tsx
+// src/hooks/useChatRoom.ts
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useActorWithId } from 'actor-core-react';
+import type { App } from '@/server/app';
+
+export interface Message {
+  id: string;
+  userId: string;
+  username: string;
+  content: string;
+  timestamp: number;
+}
+
+export interface ChatUser {
+  id: string;
+  username: string;
+  online: boolean;
+  lastSeen: number;
+}
+
+export function useChatRoom(roomId: string, userId: string, username: string) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [users, setUsers] = useState<ChatUser[]>([]);
+  const [isReady, setIsReady] = useState(false);
+  
+  const { actor, isConnecting, error } = useActorWithId<App>(
+    'chatRoom',
+    roomId,
+    {
+      params: {
+        userId,
+        username
+      }
+    }
+  );
+  
+  // Initialize data
+  useEffect(() => {
+    if (actor) {
+      Promise.all([
+        actor.getMessages(),
+        actor.getUsers()
+      ]).then(([messagesData, usersData]) => {
+        setMessages(messagesData);
+        setUsers(usersData);
+        setIsReady(true);
+      }).catch(err => {
+        console.error('Failed to initialize chat data:', err);
+      });
+      
+      // Subscribe to events
+      const unsubscribeMessage = actor.on('newMessage', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
+      
+      const unsubscribeUserJoined = actor.on('userJoined', (user) => {
+        setUsers(prev => [...prev.filter(u => u.id !== user.id), user]);
+      });
+      
+      const unsubscribeUserLeft = actor.on('userLeft', (userId) => {
+        setUsers(prev => 
+          prev.map(u => u.id === userId ? { ...u, online: false } : u)
+        );
+      });
+      
+      return () => {
+        unsubscribeMessage();
+        unsubscribeUserJoined();
+        unsubscribeUserLeft();
+      };
+    }
+  }, [actor, roomId]);
+  
+  // Send message function
+  const sendMessage = useCallback((content: string) => {
+    if (actor && content.trim()) {
+      return actor.sendMessage(content);
+    }
+    return Promise.reject(new Error('Cannot send empty message'));
+  }, [actor]);
+  
+  return {
+    messages,
+    users,
+    sendMessage,
+    isReady,
+    isConnecting,
+    error
+  };
+}
+```
+
+## Server-Side and API Integration
+
+### API Routes with ActorCore
+
+You can create API routes that interact with your ActorCore server:
+
+```typescript
+// src/pages/api/chat/[roomId].ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { app } from '@/server/app-client';
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  const { roomId } = req.query;
+  
+  if (!roomId || Array.isArray(roomId)) {
+    return res.status(400).json({ error: 'Invalid room ID' });
+  }
+  
+  try {
+    // Create a client
+    const client = app.createClient();
+    
+    // Get chat room data
+    const chatRoom = await client.chatRoom.getWithId(roomId);
+    
+    if (req.method === 'GET') {
+      // Get room information
+      const roomInfo = await chatRoom.getRoomInfo();
+      return res.status(200).json(roomInfo);
+    } 
+    else if (req.method === 'POST') {
+      // Add message to room
+      const { message, userId, username } = req.body;
+      
+      if (!message || !userId || !username) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+      
+      const result = await chatRoom.addMessage(userId, username, message);
+      return res.status(200).json(result);
+    }
+    
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    console.error('API error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+```
+
+### Using App Router API Routes
+
+For the App Router, you can create route handlers:
+
+```typescript
+// src/app/api/chat/[roomId]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { app } from '@/server/app-client';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { roomId: string } }
+) {
+  const roomId = params.roomId;
+  
+  try {
+    // Create a client
+    const client = app.createClient();
+    
+    // Get chat room data
+    const chatRoom = await client.chatRoom.getWithId(roomId);
+    const roomInfo = await chatRoom.getRoomInfo();
+    
+    return NextResponse.json(roomInfo);
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch room data' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { roomId: string } }
+) {
+  const roomId = params.roomId;
+  
+  try {
+    const body = await request.json();
+    const { message, userId, username } = body;
+    
+    if (!message || !userId || !username) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+    
+    // Create a client
+    const client = app.createClient();
+    
+    // Get chat room data
+    const chatRoom = await client.chatRoom.getWithId(roomId);
+    const result = await chatRoom.addMessage(userId, username, message);
+    
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Failed to send message' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Data Fetching in Next.js
+
+### Static Site Generation (SSG) with ActorCore
+
+You can use ActorCore for initial data in statically generated pages:
+
+```tsx
+// src/pages/chat/index.tsx
+import { GetStaticProps } from 'next';
+import Link from 'next/link';
+import { app } from '@/server/app-client';
+
+interface RoomInfo {
+  id: string;
+  name: string;
+  userCount: number;
+}
+
+interface HomePageProps {
+  rooms: RoomInfo[];
+}
+
+export default function HomePage({ rooms }: HomePageProps) {
+  return (
+    <div className="room-list">
+      <h1>Available Chat Rooms</h1>
+      
+      <ul>
+        {rooms.map(room => (
+          <li key={room.id}>
+            <Link href={`/chat/${room.id}`}>
+              <a>
+                {room.name} ({room.userCount} users)
+              </a>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export const getStaticProps: GetStaticProps<HomePageProps> = async () => {
+  try {
+    // Create a client
+    const client = app.createClient();
+    
+    // Get room directory
+    const directory = await client.roomDirectory.get();
+    const rooms = await directory.listRooms();
+    
+    return {
+      props: {
+        rooms
+      },
+      // Revalidate the data every 60 seconds
+      revalidate: 60
+    };
+  } catch (error) {
+    console.error('Failed to fetch rooms:', error);
+    
+    // Return empty rooms on error
+    return {
+      props: {
+        rooms: []
+      },
+      revalidate: 60
+    };
+  }
+};
+```
+
+### Server-Side Rendering (SSR) with ActorCore
+
+You can also use ActorCore for server-side rendered pages:
+
+```tsx
+// src/pages/chat/[roomId].tsx
+import { GetServerSideProps } from 'next';
+import { useState } from 'react';
+import { app } from '@/server/app-client';
+import { ChatRoom } from '@/components/ChatRoom';
+import { useUser } from '@/hooks/useUser';
+
+interface RoomPageProps {
+  roomId: string;
+  roomName: string;
+  initialMessages: any[];
+}
+
+export default function RoomPage({ 
+  roomId, 
+  roomName, 
+  initialMessages 
+}: RoomPageProps) {
+  const { user } = useUser();
+  
+  if (!user) {
+    return (
+      <div className="login-prompt">
+        <h1>Please log in to join the chat</h1>
+        {/* Login form or redirect */}
+      </div>
+    );
+  }
+  
+  return (
+    <div className="chat-page">
+      <h1>{roomName}</h1>
+      
+      {/* Client-side component with ActorCore */}
+      <ChatRoom 
+        roomId={roomId} 
+        userId={user.id} 
+        username={user.username} 
+        initialMessages={initialMessages}
+      />
+    </div>
+  );
+}
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const { roomId } = context.params || {};
+  
+  if (!roomId || Array.isArray(roomId)) {
+    return {
+      notFound: true
+    };
+  }
+  
+  try {
+    // Create a client
+    const client = app.createClient();
+    
+    // Get chat room
+    const chatRoom = await client.chatRoom.getWithId(roomId);
+    
+    // Get room info and initial messages
+    const [roomInfo, messages] = await Promise.all([
+      chatRoom.getRoomInfo(),
+      chatRoom.getMessages(20) // Get last 20 messages
+    ]);
+    
+    return {
+      props: {
+        roomId,
+        roomName: roomInfo.name,
+        initialMessages: messages
+      }
+    };
+  } catch (error) {
+    console.error('Failed to fetch room data:', error);
+    
+    return {
+      notFound: true
+    };
+  }
+};
+```
+
+## Hybrid Approach with App Router
+
+In Next.js 13+ with the App Router, you can combine server components with client components:
+
+```tsx
+// src/app/chat/[roomId]/page.tsx
+import { notFound } from 'next/navigation';
+import { app } from '@/server/app-client';
+import { ChatRoomClient } from '@/components/ChatRoomClient';
+
+interface ChatPageProps {
+  params: {
+    roomId: string;
+  };
+}
+
+export default async function ChatPage({ params }: ChatPageProps) {
+  const { roomId } = params;
+  
+  // Fetch initial data on the server
+  try {
+    const client = app.createClient();
+    const chatRoom = await client.chatRoom.getWithId(roomId);
+    const roomInfo = await chatRoom.getRoomInfo();
+    
+    return (
+      <div className="chat-page">
+        <h1>{roomInfo.name}</h1>
+        <p>Created {new Date(roomInfo.createdAt).toLocaleString()}</p>
+        
+        {/* Client component that handles real-time updates */}
+        <ChatRoomClient 
+          roomId={roomId} 
+          initialData={roomInfo}
+        />
+      </div>
+    );
+  } catch (error) {
+    console.error('Failed to fetch room:', error);
+    notFound();
+  }
+}
+```
+
+And the client component:
+
+```tsx
+// src/components/ChatRoomClient.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useActorWithId } from 'actor-core-react';
+import { useUser } from '@/hooks/useUser';
+import type { App } from '@/server/app';
+
+interface ChatRoomClientProps {
+  roomId: string;
+  initialData: any;
+}
+
+export function ChatRoomClient({ roomId, initialData }: ChatRoomClientProps) {
+  const { user } = useUser();
+  const [messages, setMessages] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  
+  // Get actor with connection params
+  const { actor, isConnecting, error } = useActorWithId<App>(
+    'chatRoom',
+    roomId,
+    user ? {
+      params: {
+        userId: user.id,
+        username: user.username
+      }
+    } : undefined
+  );
+  
+  // Initialize and subscribe to events
+  useEffect(() => {
+    if (actor) {
+      // Get message history
+      actor.getMessages().then(setMessages);
+      
+      // Subscribe to new messages
+      const unsubscribe = actor.on('newMessage', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
+      
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [actor]);
+  
+  // Handle message submission
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (actor && newMessage.trim() && user) {
+      try {
+        await actor.sendMessage(newMessage);
+        setNewMessage('');
+      } catch (error) {
+        console.error('Failed to send message:', error);
+      }
+    }
+  };
+  
+  if (!user) {
+    return <div>Please log in to join the chat</div>;
+  }
+  
+  if (isConnecting) return <div>Connecting to chat room...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
+  return (
+    <div className="chat-container">
+      <div className="message-list">
+        {messages.map(msg => (
+          <div 
+            key={msg.id} 
+            className={`message ${msg.userId === user.id ? 'own' : ''}`}
+          >
+            <div className="message-header">
+              <span className="username">{msg.username}</span>
+              <span className="time">
+                {new Date(msg.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+            <div className="message-content">{msg.content}</div>
+          </div>
+        ))}
+      </div>
+      
+      <form onSubmit={handleSendMessage} className="message-form">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Type a message..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  );
+}
+```
+
+## Authentication and Middleware
+
+You can integrate ActorCore with Next.js authentication:
+
+```tsx
+// src/components/AuthenticatedActorProvider.tsx
+'use client';
+
+import React from 'react';
+import { ActorProvider } from 'actor-core-react';
+import { useSession } from 'next-auth/react';
+import type { App } from '@/server/app';
+
+export function AuthenticatedActorProvider({ 
+  children 
+}: { 
+  children: React.ReactNode 
+}) {
+  const { data: session } = useSession();
+  
+  // Include auth token in headers if available
+  const headers = session?.token
+    ? { 'Authorization': `Bearer ${session.token}` }
+    : {};
+  
+  return (
+    <ActorProvider<App>
+      url={process.env.NEXT_PUBLIC_ACTOR_URL || 'http://localhost:3001'}
+      headers={headers}
+      connectOptions={{
+        reconnectDelay: 1000,
+        maxReconnectAttempts: 5
+      }}
+    >
+      {children}
+    </ActorProvider>
+  );
+}
+```
+
+Then use middleware to protect routes:
+
+```typescript
+// src/middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
+
+export async function middleware(request: NextRequest) {
+  const token = await getToken({ req: request });
+  
+  // Protect chat routes
+  if (request.nextUrl.pathname.startsWith('/chat/') && !token) {
+    const url = new URL('/api/auth/signin', request.url);
+    url.searchParams.set('callbackUrl', request.url);
+    return NextResponse.redirect(url);
+  }
+  
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/chat/:path*']
+};
+```
+
+## Running ActorCore Server with Next.js
+
+### Option 1: Separate Server
+
+Run your ActorCore server and Next.js app separately:
+
+```typescript
+// src/server/index.ts
+import { app } from './app';
+
+const port = parseInt(process.env.PORT || '3001', 10);
+
+const server = app.listen({ port });
+
+server.on('listening', () => {
+  console.log(`ActorCore server listening on port ${port}`);
+});
+```
+
+### Option 2: Embedded Server
+
+Embed the ActorCore server in a Next.js API route:
+
+```typescript
+// src/pages/api/actor-server.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { app } from '@/server/app';
+
+let serverStarted = false;
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  // Start server only once
+  if (!serverStarted) {
+    try {
+      const port = parseInt(process.env.ACTOR_PORT || '3001', 10);
+      
+      app.listen({ port });
+      serverStarted = true;
+      
+      res.status(200).json({ status: 'Server started' });
+    } catch (error) {
+      console.error('Failed to start ActorCore server:', error);
+      res.status(500).json({ error: 'Failed to start server' });
+    }
+  } else {
+    res.status(200).json({ status: 'Server already running' });
+  }
+}
+```
+
+## Complete Next.js Project Example
+
+Here's a more complete example of a chat application with Next.js and ActorCore:
+
+```tsx
+// src/app/layout.tsx
+import { ActorWrapper } from '@/components/ActorProvider';
+import { AuthProvider } from '@/components/AuthProvider';
+import './globals.css';
+
+export const metadata = {
+  title: 'ActorCore Chat',
+  description: 'Real-time chat with ActorCore and Next.js',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <AuthProvider>
+          <ActorWrapper>
+            {children}
+          </ActorWrapper>
+        </AuthProvider>
+      </body>
+    </html>
+  );
+}
+
+// src/app/page.tsx
+import Link from 'next/link';
+import { app } from '@/server/app-client';
+import { RoomList } from '@/components/RoomList';
+
+export default async function HomePage() {
+  // Get room list from server
+  const client = app.createClient();
+  const directory = await client.roomDirectory.get();
+  const rooms = await directory.listRooms();
+  
+  return (
+    <main className="container">
+      <h1>ActorCore Chat</h1>
+      
+      <RoomList initialRooms={rooms} />
+      
+      <div className="create-room">
+        <Link href="/chat/new" className="button">
+          Create New Room
+        </Link>
+      </div>
+    </main>
+  );
+}
+
+// src/app/chat/[roomId]/page.tsx
+import { notFound } from 'next/navigation';
+import { app } from '@/server/app-client';
+import { ChatRoom } from '@/components/ChatRoom';
+
+export default async function RoomPage({ 
+  params 
+}: { 
+  params: { roomId: string } 
+}) {
+  const { roomId } = params;
+  
+  try {
+    // Get room info from server
+    const client = app.createClient();
+    const room = await client.chatRoom.getWithId(roomId);
+    const roomInfo = await room.getRoomInfo();
+    
+    return (
+      <main className="container">
+        <h1>{roomInfo.name}</h1>
+        
+        <ChatRoom 
+          roomId={roomId} 
+          initialData={roomInfo} 
+        />
+      </main>
+    );
+  } catch (error) {
+    console.error('Failed to load room:', error);
+    notFound();
+  }
+}
+
+// src/components/RoomList.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useClient } from 'actor-core-react';
+import type { App } from '@/server/app';
+
+interface Room {
+  id: string;
+  name: string;
+  userCount: number;
+}
+
+export function RoomList({ initialRooms }: { initialRooms: Room[] }) {
+  const [rooms, setRooms] = useState(initialRooms);
+  const [isLoading, setIsLoading] = useState(false);
+  const client = useClient<App>();
+  
+  // Refresh room list
+  const refreshRooms = async () => {
+    setIsLoading(true);
+    
+    try {
+      const directory = await client.roomDirectory.get();
+      const updatedRooms = await directory.listRooms();
+      setRooms(updatedRooms);
+    } catch (error) {
+      console.error('Failed to refresh rooms:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  return (
+    <div className="room-list">
+      <div className="header">
+        <h2>Available Rooms</h2>
+        <button 
+          onClick={refreshRooms} 
+          disabled={isLoading}
+          className="refresh-button"
+        >
+          {isLoading ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+      
+      <ul>
+        {rooms.map(room => (
+          <li key={room.id} className="room-item">
+            <Link href={`/chat/${room.id}`} className="room-link">
+              <span className="room-name">{room.name}</span>
+              <span className="user-count">{room.userCount} users</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      
+      {rooms.length === 0 && (
+        <p className="no-rooms">No rooms available. Create one!</p>
+      )}
+    </div>
+  );
+}
+
+// src/components/ChatRoom.tsx
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { useActorWithId } from 'actor-core-react';
+import { useUser } from '@/hooks/useUser';
+import type { App } from '@/server/app';
+
+interface Message {
+  id: string;
+  userId: string;
+  username: string;
+  content: string;
+  timestamp: number;
+}
+
+export function ChatRoom({ 
+  roomId, 
+  initialData 
+}: { 
+  roomId: string;
+  initialData: any;
+}) {
+  const { user } = useUser();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Connect to actor when user is available
+  const { actor, isConnecting, error } = useActorWithId<App>(
+    'chatRoom',
+    roomId,
+    user ? {
+      params: {
+        userId: user.id,
+        username: user.username
+      }
+    } : undefined
+  );
+  
+  // Initialize and subscribe to events
+  useEffect(() => {
+    if (actor && user) {
+      setIsConnected(true);
+      
+      // Get message history
+      actor.getMessages().then(setMessages);
+      
+      // Subscribe to new messages
+      const unsubscribe = actor.on('newMessage', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
+      
+      return () => {
+        unsubscribe();
+        setIsConnected(false);
+      };
+    }
+  }, [actor, user]);
+  
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  
+  // Handle message submission
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (actor && newMessage.trim() && user) {
+      try {
+        await actor.sendMessage(newMessage);
+        setNewMessage('');
+      } catch (error) {
+        console.error('Failed to send message:', error);
+      }
+    }
+  };
+  
+  if (!user) {
+    return (
+      <div className="login-prompt">
+        <p>Please log in to join the chat</p>
+        <button onClick={() => window.location.href = '/api/auth/signin'}>
+          Log In
+        </button>
+      </div>
+    );
+  }
+  
+  if (isConnecting) {
+    return <div className="loading">Connecting to chat room...</div>;
+  }
+  
+  if (error) {
+    return (
+      <div className="error">
+        <p>Error connecting to chat: {error.message}</p>
+        <button onClick={() => window.location.reload()}>
+          Try Again
+        </button>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="chat-container">
+      <div className="connection-status">
+        {isConnected ? 'Connected' : 'Disconnected'}
+      </div>
+      
+      <div className="message-list">
+        {messages.length === 0 ? (
+          <div className="no-messages">
+            No messages yet. Start the conversation!
+          </div>
+        ) : (
+          messages.map(msg => (
+            <div 
+              key={msg.id} 
+              className={`message ${msg.userId === user.id ? 'own-message' : ''}`}
+            >
+              <div className="message-header">
+                <span className="username">{msg.username}</span>
+                <span className="time">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="message-content">{msg.content}</div>
+            </div>
+          ))
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+      
+      <form onSubmit={handleSendMessage} className="message-form">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Type a message..."
+          disabled={!isConnected}
+        />
+        <button type="submit" disabled={!isConnected}>
+          Send
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+## Best Practices
+
+1. **Server vs Client Components**: Clearly separate server and client components when using Next.js App Router.
+
+2. **Initial Data Loading**: Use server-side data fetching for initial data, then enhance with real-time updates on the client.
+
+3. **Authentication**: Integrate authentication and pass tokens securely to ActorCore.
+
+4. **Error Handling**: Implement proper error boundaries and fallbacks for both server and client errors.
+
+5. **Connection Management**: Display connection status and provide reconnection options.
+
+6. **TypeScript Integration**: Ensure full type safety between your ActorCore backend and Next.js frontend.
+
+7. **Deployment**: Consider using separate services for ActorCore and Next.js in production, or a unified solution like Vercel with an embedded ActorCore server.
+
+8. **Performance**: Use proper data fetching strategies based on your needs (SSG, SSR, or client-side).
+
+9. **State Management**: Consider how ActorCore state interacts with client-side state management in Next.js.
+
+10. **Development Workflow**: Set up a smooth development workflow with both ActorCore and Next.js running concurrently.
+
+By following these patterns and best practices, you can build powerful, real-time applications that combine the strengths of Next.js and ActorCore for an excellent user experience with strong SEO capabilities.

@@ -1,0 +1,724 @@
+---
+title: Scheduling at Specific Times
+description: Schedule actions to run at specific timestamps
+---
+
+# Scheduling at Specific Times
+
+While delaying actions by a time interval is useful, many applications need to schedule actions to run at specific times, like calendar events, daily reports, or timed promotions. ActorCore makes this easy with the `schedule.at()` method.
+
+## Basic Scheduling at Timestamp
+
+```typescript
+import { actor } from "actor-core";
+
+const calendar = actor({
+  state: {
+    events: {}
+  },
+  
+  actions: {
+    // Schedule an event at a specific time
+    scheduleEvent: (c, title, description, startTime) => {
+      // Ensure startTime is in the future
+      const now = Date.now();
+      if (startTime <= now) {
+        throw new Error("Event must be scheduled in the future");
+      }
+      
+      // Create event ID
+      const eventId = crypto.randomUUID();
+      
+      // Store event information
+      c.state.events[eventId] = {
+        title,
+        description,
+        startTime,
+        createdAt: now,
+        status: "scheduled"
+      };
+      
+      // Schedule the event notification
+      c.schedule.at(startTime, "triggerEvent", eventId);
+      
+      // Also schedule a reminder 10 minutes before
+      const reminderTime = startTime - (10 * 60 * 1000);
+      if (reminderTime > now) {
+        c.schedule.at(reminderTime, "sendReminder", eventId);
+      }
+      
+      return eventId;
+    },
+    
+    // Called when event time arrives
+    triggerEvent: (c, eventId) => {
+      const event = c.state.events[eventId];
+      
+      if (!event) {
+        console.error(`Event ${eventId} not found`);
+        return;
+      }
+      
+      // Update event status
+      event.status = "active";
+      
+      // Notify all connected clients
+      c.broadcast("eventStarted", {
+        id: eventId,
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        firedAt: Date.now()
+      });
+      
+      // Schedule cleanup after 1 hour
+      const endTime = Date.now() + (60 * 60 * 1000);
+      c.schedule.at(endTime, "endEvent", eventId);
+    },
+    
+    // Send a reminder before event starts
+    sendReminder: (c, eventId) => {
+      const event = c.state.events[eventId];
+      
+      if (!event || event.status !== "scheduled") {
+        return;
+      }
+      
+      // Notify all connected clients
+      c.broadcast("eventReminder", {
+        id: eventId,
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        reminderSentAt: Date.now()
+      });
+    },
+    
+    // End the event
+    endEvent: (c, eventId) => {
+      const event = c.state.events[eventId];
+      
+      if (!event) {
+        return;
+      }
+      
+      // Update event status
+      event.status = "completed";
+      
+      // Notify clients
+      c.broadcast("eventEnded", {
+        id: eventId,
+        title: event.title,
+        endedAt: Date.now()
+      });
+    },
+    
+    // Get all scheduled events
+    getEvents: (c) => {
+      return c.state.events;
+    },
+    
+    // Cancel an event
+    cancelEvent: (c, eventId) => {
+      const event = c.state.events[eventId];
+      
+      if (!event || event.status !== "scheduled") {
+        return false;
+      }
+      
+      // Update status
+      event.status = "cancelled";
+      
+      // Notify clients
+      c.broadcast("eventCancelled", {
+        id: eventId,
+        title: event.title,
+        cancelledAt: Date.now()
+      });
+      
+      return true;
+    }
+  }
+});
+```
+
+## Scheduling with Date Objects
+
+```typescript
+import { actor } from "actor-core";
+
+const eventScheduler = actor({
+  state: {
+    events: []
+  },
+  
+  actions: {
+    // Schedule using JavaScript Date objects
+    scheduleEvent: (c, title, eventDate) => {
+      // Convert Date to timestamp if needed
+      const timestamp = eventDate instanceof Date 
+        ? eventDate.getTime() 
+        : eventDate;
+      
+      // Ensure timestamp is in the future
+      if (timestamp <= Date.now()) {
+        throw new Error("Event must be in the future");
+      }
+      
+      // Create event
+      const event = {
+        id: crypto.randomUUID(),
+        title,
+        scheduledFor: timestamp,
+        createdAt: Date.now()
+      };
+      
+      // Add to state
+      c.state.events.push(event);
+      
+      // Schedule notification
+      c.schedule.at(timestamp, "notifyEvent", event.id);
+      
+      return event.id;
+    },
+    
+    // Schedule using date string in ISO format
+    scheduleEventFromISOString: (c, title, isoDateString) => {
+      // Parse the ISO string
+      const date = new Date(isoDateString);
+      
+      // Verify parsing was successful
+      if (isNaN(date.getTime())) {
+        throw new Error("Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SS.sssZ)");
+      }
+      
+      // Call the main schedule method
+      return c.scheduleEvent(title, date);
+    },
+    
+    // Handle notification
+    notifyEvent: (c, eventId) => {
+      // Find the event
+      const eventIndex = c.state.events.findIndex(e => e.id === eventId);
+      
+      if (eventIndex === -1) {
+        return;
+      }
+      
+      const event = c.state.events[eventIndex];
+      
+      // Broadcast notification
+      c.broadcast("eventTriggered", {
+        id: event.id,
+        title: event.title,
+        scheduledFor: event.scheduledFor,
+        triggeredAt: Date.now()
+      });
+      
+      // Remove from state
+      c.state.events.splice(eventIndex, 1);
+    }
+  }
+});
+```
+
+## Recurring Scheduled Tasks
+
+```typescript
+import { actor } from "actor-core";
+
+const recurringTasks = actor({
+  state: {
+    tasks: {}
+  },
+  
+  onStart: (c) => {
+    // Restore any recurring tasks that were scheduled before restart
+    for (const [taskId, task] of Object.entries(c.state.tasks)) {
+      if (task.isRecurring && task.status === "active") {
+        scheduleNextOccurrence(c, taskId);
+      }
+    }
+  },
+  
+  actions: {
+    // Create a recurring daily task
+    createDailyTask: (c, title, timeOfDay) => {
+      // If timeOfDay is provided as "HH:MM", parse it
+      let targetTime;
+      if (typeof timeOfDay === "string" && timeOfDay.includes(":")) {
+        const [hours, minutes] = timeOfDay.split(":").map(Number);
+        
+        // Create a Date for today at the specified time
+        targetTime = new Date();
+        targetTime.setHours(hours, minutes, 0, 0);
+        
+        // If time already passed today, schedule for tomorrow
+        if (targetTime.getTime() <= Date.now()) {
+          targetTime.setDate(targetTime.getDate() + 1);
+        }
+      } else if (typeof timeOfDay === "number") {
+        // Assume it's milliseconds since epoch
+        targetTime = new Date(timeOfDay);
+      } else {
+        throw new Error("Invalid time format. Use 'HH:MM' or timestamp");
+      }
+      
+      // Create task
+      const taskId = crypto.randomUUID();
+      c.state.tasks[taskId] = {
+        title,
+        isRecurring: true,
+        frequency: "daily",
+        timeOfDay: typeof timeOfDay === "string" ? timeOfDay : null,
+        nextRun: targetTime.getTime(),
+        createdAt: Date.now(),
+        status: "active",
+        lastRun: null
+      };
+      
+      // Schedule first occurrence
+      scheduleNextOccurrence(c, taskId);
+      
+      return taskId;
+    },
+    
+    // Create a weekly task
+    createWeeklyTask: (c, title, dayOfWeek, timeOfDay) => {
+      // Parse day of week (0 = Sunday, 6 = Saturday)
+      const day = typeof dayOfWeek === "string" 
+        ? ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+            .indexOf(dayOfWeek.toLowerCase())
+        : dayOfWeek;
+      
+      if (day < 0 || day > 6) {
+        throw new Error("Invalid day of week");
+      }
+      
+      // Parse time of day
+      const [hours, minutes] = timeOfDay.split(":").map(Number);
+      
+      // Create a Date for the next occurrence of that day and time
+      const targetTime = new Date();
+      targetTime.setHours(hours, minutes, 0, 0);
+      
+      // Adjust to the next occurrence of the specified day
+      const currentDay = targetTime.getDay();
+      if (currentDay !== day) {
+        const daysToAdd = (day - currentDay + 7) % 7;
+        targetTime.setDate(targetTime.getDate() + daysToAdd);
+      } else if (targetTime.getTime() <= Date.now()) {
+        // If it's the right day but time already passed, schedule for next week
+        targetTime.setDate(targetTime.getDate() + 7);
+      }
+      
+      // Create task
+      const taskId = crypto.randomUUID();
+      c.state.tasks[taskId] = {
+        title,
+        isRecurring: true,
+        frequency: "weekly",
+        dayOfWeek: day,
+        timeOfDay,
+        nextRun: targetTime.getTime(),
+        createdAt: Date.now(),
+        status: "active",
+        lastRun: null
+      };
+      
+      // Schedule first occurrence
+      scheduleNextOccurrence(c, taskId);
+      
+      return taskId;
+    },
+    
+    // Create a monthly task
+    createMonthlyTask: (c, title, dayOfMonth, timeOfDay) => {
+      // Validate day of month
+      if (dayOfMonth < 1 || dayOfMonth > 31) {
+        throw new Error("Day of month must be between 1 and 31");
+      }
+      
+      // Parse time of day
+      const [hours, minutes] = timeOfDay.split(":").map(Number);
+      
+      // Create a Date for the next occurrence
+      const targetTime = new Date();
+      targetTime.setHours(hours, minutes, 0, 0);
+      
+      // Set to the specified day of month
+      targetTime.setDate(dayOfMonth);
+      
+      // If that date has passed this month, move to next month
+      if (targetTime.getTime() <= Date.now()) {
+        targetTime.setMonth(targetTime.getMonth() + 1);
+      }
+      
+      // Create task
+      const taskId = crypto.randomUUID();
+      c.state.tasks[taskId] = {
+        title,
+        isRecurring: true,
+        frequency: "monthly",
+        dayOfMonth,
+        timeOfDay,
+        nextRun: targetTime.getTime(),
+        createdAt: Date.now(),
+        status: "active",
+        lastRun: null
+      };
+      
+      // Schedule first occurrence
+      scheduleNextOccurrence(c, taskId);
+      
+      return taskId;
+    },
+    
+    // Execute a scheduled task
+    executeTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task || task.status !== "active") {
+        console.log(`Task ${taskId} not found or not active`);
+        return;
+      }
+      
+      // Update task state
+      task.lastRun = Date.now();
+      task.executionCount = (task.executionCount || 0) + 1;
+      
+      // Broadcast task execution
+      c.broadcast("taskExecuted", {
+        id: taskId,
+        title: task.title,
+        scheduledFor: task.nextRun,
+        executedAt: task.lastRun,
+        executionCount: task.executionCount
+      });
+      
+      // If recurring, schedule next occurrence
+      if (task.isRecurring) {
+        scheduleNextOccurrence(c, taskId);
+      } else {
+        task.status = "completed";
+      }
+      
+      return {
+        executed: true,
+        task: omitInternalFields(task)
+      };
+    },
+    
+    // Pause a recurring task
+    pauseTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        return false;
+      }
+      
+      task.status = "paused";
+      
+      // Broadcast pause status
+      c.broadcast("taskPaused", {
+        id: taskId,
+        title: task.title,
+        pausedAt: Date.now()
+      });
+      
+      return true;
+    },
+    
+    // Resume a paused task
+    resumeTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task || task.status !== "paused") {
+        return false;
+      }
+      
+      task.status = "active";
+      
+      // Calculate next run time based on frequency
+      calculateNextRunTime(task);
+      
+      // Schedule the task
+      scheduleNextOccurrence(c, taskId);
+      
+      // Broadcast resume status
+      c.broadcast("taskResumed", {
+        id: taskId,
+        title: task.title,
+        resumedAt: Date.now(),
+        nextRun: task.nextRun
+      });
+      
+      return true;
+    },
+    
+    // Get all tasks
+    getTasks: (c) => {
+      // Return tasks without internal implementation details
+      return Object.entries(c.state.tasks).reduce((acc, [id, task]) => {
+        acc[id] = omitInternalFields(task);
+        return acc;
+      }, {});
+    }
+  }
+});
+
+// Helper function to schedule the next occurrence
+function scheduleNextOccurrence(c, taskId) {
+  const task = c.state.tasks[taskId];
+  
+  if (!task || task.status !== "active") {
+    return;
+  }
+  
+  // Schedule the task execution
+  c.schedule.at(task.nextRun, "executeTask", taskId);
+  
+  // Calculate and set the next run time after this one
+  calculateNextRunTime(task);
+}
+
+// Calculate the next run time based on frequency
+function calculateNextRunTime(task) {
+  const now = Date.now();
+  let nextRun = new Date(task.nextRun);
+  
+  if (task.frequency === "daily") {
+    // Add 1 day
+    nextRun.setDate(nextRun.getDate() + 1);
+  } else if (task.frequency === "weekly") {
+    // Add 7 days
+    nextRun.setDate(nextRun.getDate() + 7);
+  } else if (task.frequency === "monthly") {
+    // Add 1 month
+    nextRun.setMonth(nextRun.getMonth() + 1);
+  }
+  
+  // Ensure next run is in the future
+  while (nextRun.getTime() <= now) {
+    if (task.frequency === "daily") {
+      nextRun.setDate(nextRun.getDate() + 1);
+    } else if (task.frequency === "weekly") {
+      nextRun.setDate(nextRun.getDate() + 7);
+    } else if (task.frequency === "monthly") {
+      nextRun.setMonth(nextRun.getMonth() + 1);
+    }
+  }
+  
+  task.nextRun = nextRun.getTime();
+}
+
+// Remove internal fields before returning to client
+function omitInternalFields(task) {
+  // Return a copy without internal fields
+  const { ...cleanTask } = task;
+  return cleanTask;
+}
+```
+
+## Using Timezone-Aware Scheduling
+
+```typescript
+import { actor } from "actor-core";
+import { zonedTimeToUtc, utcToZonedTime, format } from "date-fns-tz";
+
+const timezoneScheduler = actor({
+  state: {
+    reminders: {}
+  },
+  
+  actions: {
+    // Schedule a reminder at a specific time in user's timezone
+    scheduleReminder: (c, title, timeString, timezone) => {
+      // Validate input
+      if (!timezone) {
+        throw new Error("Timezone is required (e.g., 'America/New_York')");
+      }
+      
+      // Parse the time in the user's timezone
+      // timeString format: "2023-04-15T14:30:00" (without timezone)
+      try {
+        // Create a zoned time and convert to UTC for storage
+        const zonedTime = zonedTimeToUtc(timeString, timezone);
+        const utcTimestamp = zonedTime.getTime();
+        
+        // Ensure it's in the future
+        if (utcTimestamp <= Date.now()) {
+          throw new Error("Reminder must be scheduled in the future");
+        }
+        
+        // Create reminder
+        const id = crypto.randomUUID();
+        c.state.reminders[id] = {
+          title,
+          scheduledTime: timeString,
+          timezone,
+          utcTimestamp,
+          createdAt: Date.now()
+        };
+        
+        // Schedule the reminder
+        c.schedule.at(utcTimestamp, "triggerReminder", id);
+        
+        return {
+          id,
+          title,
+          scheduledTime: timeString,
+          timezone,
+          utcTime: new Date(utcTimestamp).toISOString()
+        };
+      } catch (error) {
+        throw new Error(`Invalid time or timezone: ${error.message}`);
+      }
+    },
+    
+    // Trigger the reminder
+    triggerReminder: (c, reminderId) => {
+      const reminder = c.state.reminders[reminderId];
+      
+      if (!reminder) {
+        return;
+      }
+      
+      // Format times for display
+      const utcTime = new Date(reminder.utcTimestamp);
+      const localTime = utcToZonedTime(utcTime, reminder.timezone);
+      const formattedLocalTime = format(
+        localTime,
+        "yyyy-MM-dd HH:mm:ss zzz",
+        { timeZone: reminder.timezone }
+      );
+      
+      // Broadcast reminder
+      c.broadcast("reminderTriggered", {
+        id: reminderId,
+        title: reminder.title,
+        triggeredAt: Date.now(),
+        scheduledLocalTime: formattedLocalTime,
+        timezone: reminder.timezone
+      });
+      
+      // Clean up
+      delete c.state.reminders[reminderId];
+    },
+    
+    // Schedule a daily reminder at a specific time in user's timezone
+    scheduleDailyReminder: (c, title, timeString, timezone) => {
+      // Validate time format (should be "HH:MM")
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
+      if (!timeRegex.test(timeString)) {
+        throw new Error("Time must be in format 'HH:MM'");
+      }
+      
+      if (!timezone) {
+        throw new Error("Timezone is required (e.g., 'America/New_York')");
+      }
+      
+      try {
+        // Get current date in the user's timezone
+        const now = new Date();
+        const zonedNow = utcToZonedTime(now, timezone);
+        
+        // Set the time component
+        const [hours, minutes] = timeString.split(":").map(Number);
+        zonedNow.setHours(hours, minutes, 0, 0);
+        
+        // Convert back to UTC
+        let utcTime = zonedTimeToUtc(zonedNow, timezone);
+        
+        // If the time has already passed today, schedule for tomorrow
+        if (utcTime.getTime() <= now.getTime()) {
+          zonedNow.setDate(zonedNow.getDate() + 1);
+          utcTime = zonedTimeToUtc(zonedNow, timezone);
+        }
+        
+        // Create reminder
+        const id = crypto.randomUUID();
+        c.state.reminders[id] = {
+          title,
+          daily: true,
+          scheduledTime: timeString,
+          timezone,
+          utcTimestamp: utcTime.getTime(),
+          createdAt: Date.now()
+        };
+        
+        // Schedule the reminder
+        c.schedule.at(utcTime.getTime(), "triggerDailyReminder", id);
+        
+        return {
+          id,
+          title,
+          scheduledTime: timeString,
+          timezone,
+          nextTrigger: utcTime.toISOString()
+        };
+      } catch (error) {
+        throw new Error(`Invalid time or timezone: ${error.message}`);
+      }
+    },
+    
+    // Trigger daily reminder and reschedule for next day
+    triggerDailyReminder: (c, reminderId) => {
+      const reminder = c.state.reminders[reminderId];
+      
+      if (!reminder || !reminder.daily) {
+        return;
+      }
+      
+      // Trigger the reminder
+      c.broadcast("reminderTriggered", {
+        id: reminderId,
+        title: reminder.title,
+        triggeredAt: Date.now(),
+        scheduledTime: reminder.scheduledTime,
+        timezone: reminder.timezone,
+        isDaily: true
+      });
+      
+      // Schedule for next day
+      try {
+        // Get tomorrow in the user's timezone
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const zonedTomorrow = utcToZonedTime(tomorrow, reminder.timezone);
+        
+        // Set the time component
+        const [hours, minutes] = reminder.scheduledTime.split(":").map(Number);
+        zonedTomorrow.setHours(hours, minutes, 0, 0);
+        
+        // Convert back to UTC
+        const utcTime = zonedTimeToUtc(zonedTomorrow, reminder.timezone);
+        
+        // Update reminder
+        reminder.utcTimestamp = utcTime.getTime();
+        
+        // Schedule the next reminder
+        c.schedule.at(utcTime.getTime(), "triggerDailyReminder", reminderId);
+        
+        // Log the reschedule
+        console.log(`Rescheduled daily reminder "${reminder.title}" for ${utcTime.toISOString()}`);
+      } catch (error) {
+        console.error(`Failed to reschedule reminder: ${error.message}`);
+      }
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Always check the timestamp**: Ensure scheduled times are in the future
+2. **Handle timezone issues**: Be aware of timezone differences when scheduling
+3. **Store contextual info**: Save any data needed to properly handle the scheduled action
+4. **Implement cancellation**: Allow scheduled tasks to be cancelled or rescheduled
+5. **Recover after crashes**: Restore schedules after actor restarts
+6. **Use recurring patterns**: For repeating tasks, calculate next occurrence after execution
+7. **Keep timezone info**: For user-facing schedules, maintain timezone information
+8. **Add grace periods**: If exact timing isn't critical, use a grace period for flexibility
+
+By using ActorCore's timestamp-based scheduling, you can implement precise time-based features like calendars, reminders, and recurring tasks with confidence.

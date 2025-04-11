@@ -1,0 +1,345 @@
+---
+title: Standalone Topology Setup
+description: Learn how to configure and use the Standalone topology in ActorCore
+---
+
+# Standalone Topology Setup
+
+The Standalone topology is the simplest and most common way to run ActorCore. It creates a single instance of each actor type, making it perfect for development, small applications, and scenarios where actor state doesn't need to be distributed across multiple nodes.
+
+## Understanding Standalone Topology
+
+Standalone topology is the default when you set up an ActorCore application. In this topology:
+
+- Each actor type has exactly one instance
+- All actor instances live on the same node (server process)
+- Actor state is stored in memory by default (but can be persisted using drivers)
+- Perfect for development, testing, and single-server deployments
+
+## Basic Standalone Setup
+
+```typescript
+import { setup } from "actor-core";
+
+// Define your actors
+import { chatRoom } from "./actors/chat-room";
+import { userProfile } from "./actors/user-profile";
+
+// Set up the application with standalone topology (default)
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile
+  },
+  // Standalone topology is used by default, so we don't need to specify it
+});
+
+export type App = typeof app;
+```
+
+## Configuring Standalone Topology Explicitly
+
+While standalone is the default, you can explicitly configure it for clarity:
+
+```typescript
+import { setup, standaloneTopology } from "actor-core";
+import { memoryDriver } from "actor-core/drivers/memory";
+
+// Define your actors
+import { chatRoom } from "./actors/chat-room";
+import { userProfile } from "./actors/user-profile";
+
+// Explicitly set up standalone topology
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile
+  },
+  topology: standaloneTopology({
+    driver: memoryDriver()
+  })
+});
+
+export type App = typeof app;
+```
+
+## Using File System Driver for Persistence
+
+While the memory driver works well for development, you can use the file system driver for simple persistence:
+
+```typescript
+import { setup, standaloneTopology } from "actor-core";
+import { fileSystemDriver } from "actor-core/drivers/file-system";
+
+// Define your actors
+import { chatRoom } from "./actors/chat-room";
+import { userProfile } from "./actors/user-profile";
+
+// Configure with file system driver for persistence
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile
+  },
+  topology: standaloneTopology({
+    driver: fileSystemDriver({
+      // Store state in the .actor-state directory
+      directory: "./.actor-state"
+    })
+  })
+});
+
+export type App = typeof app;
+```
+
+## Using Redis Driver for Persistence
+
+For more robust persistence and potential future scaling, you can use the Redis driver:
+
+```typescript
+import { setup, standaloneTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+// Define your actors
+import { chatRoom } from "./actors/chat-room";
+import { userProfile } from "./actors/user-profile";
+
+// Configure with Redis driver
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile
+  },
+  topology: standaloneTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      prefix: "my-app" // Namespace for Redis keys
+    })
+  })
+});
+
+export type App = typeof app;
+```
+
+## Working with Standalone Actors
+
+When using the standalone topology, you can access actor instances through the client:
+
+```typescript
+import { app } from "./app";
+
+async function main() {
+  // Get the client
+  const client = app.createClient();
+  
+  // Get references to actors
+  const chat = await client.chatRoom.get();
+  const user = await client.userProfile.get();
+  
+  // Use the actors
+  await user.createProfile("alice", "Alice Smith");
+  await chat.sendMessage("alice", "Hello, ActorCore!");
+  
+  // Get chat history
+  const messages = await chat.getHistory();
+  console.log(messages);
+}
+
+main().catch(console.error);
+```
+
+## Testing with Standalone Topology
+
+The standalone topology makes testing simple:
+
+```typescript
+import { test } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+test("chat functionality", async (t) => {
+  // Set up test environment with the app
+  const { client } = await setupTest(t, app);
+  
+  // Get actor references
+  const chat = await client.chatRoom.get();
+  const user = await client.userProfile.get();
+  
+  // Set up test data
+  await user.createProfile("testuser", "Test User");
+  
+  // Test sending a message
+  await chat.sendMessage("testuser", "Test message");
+  
+  // Verify the message was stored
+  const history = await chat.getHistory();
+  
+  // Assertions
+  t.equal(history.length, 1);
+  t.equal(history[0].username, "testuser");
+  t.equal(history[0].message, "Test message");
+});
+```
+
+## Using Environment Variables
+
+For greater flexibility, you can use environment variables to configure your topology:
+
+```typescript
+import { setup, standaloneTopology } from "actor-core";
+import { memoryDriver } from "actor-core/drivers/memory";
+import { fileSystemDriver } from "actor-core/drivers/file-system";
+import { redisDriver } from "actor-core/drivers/redis";
+
+// Define your actors
+import { chatRoom } from "./actors/chat-room";
+import { userProfile } from "./actors/user-profile";
+
+// Choose driver based on environment
+function getDriver() {
+  const driverType = process.env.ACTOR_DRIVER || "memory";
+  
+  switch (driverType) {
+    case "file-system":
+      return fileSystemDriver({
+        directory: process.env.ACTOR_STATE_DIR || "./.actor-state"
+      });
+    
+    case "redis":
+      return redisDriver({
+        url: process.env.REDIS_URL || "redis://localhost:6379",
+        prefix: process.env.REDIS_PREFIX || "my-app"
+      });
+    
+    case "memory":
+    default:
+      return memoryDriver();
+  }
+}
+
+// Set up the application
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile
+  },
+  topology: standaloneTopology({
+    driver: getDriver()
+  })
+});
+
+export type App = typeof app;
+```
+
+## Complete Standalone Example
+
+Here's a complete example of a standalone ActorCore application:
+
+```typescript
+// src/actors/counter.ts
+import { actor } from "actor-core";
+
+export const counter = actor({
+  state: { count: 0 },
+  
+  actions: {
+    increment: (c, amount = 1) => {
+      c.state.count += amount;
+      
+      // Broadcast the new count to all connected clients
+      c.broadcast("countUpdated", c.state.count);
+      
+      return c.state.count;
+    },
+    
+    decrement: (c, amount = 1) => {
+      c.state.count -= amount;
+      
+      // Broadcast the new count to all connected clients
+      c.broadcast("countUpdated", c.state.count);
+      
+      return c.state.count;
+    },
+    
+    reset: (c) => {
+      const previousCount = c.state.count;
+      c.state.count = 0;
+      
+      // Broadcast the new count to all connected clients
+      c.broadcast("countUpdated", c.state.count);
+      
+      return { previousCount, newCount: 0 };
+    },
+    
+    getCount: (c) => {
+      return c.state.count;
+    }
+  }
+});
+
+// src/app.ts
+import { setup, standaloneTopology } from "actor-core";
+import { memoryDriver } from "actor-core/drivers/memory";
+import { counter } from "./actors/counter";
+
+export const app = setup({
+  actors: { counter },
+  topology: standaloneTopology({
+    driver: memoryDriver()
+  })
+});
+
+export type App = typeof app;
+
+// src/index.ts
+import { app } from "./app";
+
+async function main() {
+  const client = app.createClient();
+  
+  // Get the counter actor
+  const counter = await client.counter.get();
+  
+  // Subscribe to counter updates
+  counter.on("countUpdated", (count) => {
+    console.log(`Counter updated: ${count}`);
+  });
+  
+  // Perform some operations
+  console.log(`Initial count: ${await counter.getCount()}`);
+  
+  await counter.increment(5);
+  console.log(`After incrementing by 5: ${await counter.getCount()}`);
+  
+  await counter.decrement(2);
+  console.log(`After decrementing by 2: ${await counter.getCount()}`);
+  
+  const { previousCount } = await counter.reset();
+  console.log(`Reset from ${previousCount} to ${await counter.getCount()}`);
+}
+
+main().catch(console.error);
+```
+
+## Standalone Topology Limitations
+
+While the standalone topology is simple and effective, it does have limitations:
+
+1. **Single Instance**: Only one instance of each actor type can exist, which limits horizontal scaling
+2. **Single Node**: All actors run on the same node, so you can't distribute the workload
+3. **Limited Fault Tolerance**: If the node goes down, all actors go down with it
+4. **Memory Constraints**: All actor state must fit in the memory of a single node
+
+For applications that need to overcome these limitations, consider using the [Partition Topology](/guides/topologies/partition) or [Coordinate Topology](/guides/topologies/coordinate) instead.
+
+## When to Use Standalone Topology
+
+Standalone topology is ideal for:
+
+- Development and testing environments
+- Small to medium applications
+- Single-server deployments
+- Applications with limited scalability requirements
+- Scenarios where simplicity is preferred over distributed features
+
+By understanding and properly configuring the standalone topology, you can quickly build and deploy ActorCore applications with minimal overhead.

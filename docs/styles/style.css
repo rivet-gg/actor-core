@@ -26,6 +26,53 @@
   }
 }
 
+/* Guides page styles */
+.guides-container {
+  margin-top: 0;
+  margin-bottom: 2rem;
+  gap: 25px;
+  text-lg: 1.125rem;
+  color: rgba(255, 255, 255, 0.7);
+  columns: 1;
+}
+
+@media (min-width: 768px) {
+  .guides-container {
+    columns: 2;
+  }
+}
+
+.guides-section {
+  break-inside: avoid;
+  padding-bottom: 25px;
+}
+
+.guides-section-title {
+  margin-top: 0;
+  margin-bottom: 12px;
+  border-radius: 0.25rem;
+  background-color: #1a1a1a;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  text-align: center;
+  font-size: 1.125rem;
+  font-variant: all-petite-caps;
+}
+
+.guide-link {
+  margin: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  line-height: 1.15;
+}
+
+.guide-link a {
+  color: #ff4f00 !important;
+  text-decoration: none !important;
+  border-bottom: none;
+  font-weight: 500;
+}
+
 .inline-icon {
   display: inline-block;
   width: 1em;

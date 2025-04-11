@@ -1,0 +1,720 @@
+---
+title: Client Error Handling
+description: Handle errors gracefully on the client side with proper patterns
+---
+
+# Client Error Handling
+
+When clients interact with actors, they need to handle errors properly to provide a good user experience. ActorCore provides structured error information that makes error handling more predictable and robust.
+
+## Basic Error Handling
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function submitForm(username, email) {
+  try {
+    // Create client and get actor handle
+    const client = createClient<App>("http://localhost:6420");
+    const userAccount = await client.userAccount.get();
+    
+    // Call actor action - might throw an error
+    const result = await userAccount.createUser(username, email);
+    
+    // Handle success
+    console.log("User created successfully:", result);
+    return result;
+  } catch (error) {
+    // Handle errors
+    console.error("Failed to create user:", error.message);
+    throw error; // Re-throw or handle as needed
+  }
+}
+```
+
+## Error Code Based Handling
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function processPayment(amount, sourceAccount, destinationAccount) {
+  try {
+    const client = createClient<App>("http://localhost:6420");
+    const paymentProcessor = await client.paymentProcessor.get();
+    
+    const result = await paymentProcessor.processPayment(
+      amount, 
+      sourceAccount, 
+      destinationAccount
+    );
+    
+    return result;
+  } catch (error) {
+    // Check error code and handle accordingly
+    switch (error.code) {
+      case "invalid_amount":
+        showFieldError("amount", "Please enter a valid payment amount");
+        break;
+        
+      case "account_not_found":
+        showFieldError("account", "Account not found");
+        break;
+        
+      case "insufficient_funds":
+        showAlert(
+          "Insufficient Funds", 
+          "Your account does not have sufficient funds for this transfer"
+        );
+        
+        // Offer to navigate to funding page
+        offerFundingOption(sourceAccount);
+        break;
+        
+      default:
+        // Generic error handling
+        showAlert("Payment Error", `Failed to process payment: ${error.message}`);
+    }
+    
+    throw error;
+  }
+}
+
+// UI helper functions
+function showFieldError(field, message) {
+  // Display error message next to the field
+  const errorElement = document.querySelector(`#${field}-error`);
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.style.display = "block";
+  }
+}
+
+function showAlert(title, message) {
+  // Display alert popup
+  // Implementation depends on your UI framework
+}
+
+function offerFundingOption(account) {
+  // Show option to add funds
+  const addFundsButton = document.querySelector("#add-funds");
+  if (addFundsButton) {
+    addFundsButton.style.display = "block";
+    addFundsButton.addEventListener("click", () => {
+      window.location.href = `/funding?account=${account}`;
+    });
+  }
+}
+```
+
+## Working with Error Metadata
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function addItemToCart(product, quantity) {
+  try {
+    const client = createClient<App>("http://localhost:6420");
+    const shoppingCart = await client.shoppingCart.get();
+    
+    const result = await shoppingCart.addItem(product, quantity);
+    
+    // Update UI with success
+    updateCartUI(result.total);
+    showNotification("Item added to cart");
+    
+    return result;
+  } catch (error) {
+    switch (error.code) {
+      case "invalid_product":
+        console.error("Product validation failed");
+        
+        // Show which fields are missing
+        if (error.metadata?.requiredFields) {
+          const missingFields = error.metadata.requiredFields.filter(
+            field => !product[field]
+          );
+          
+          showError(`Invalid product data. Missing: ${missingFields.join(", ")}`);
+        } else {
+          showError("Invalid product data");
+        }
+        break;
+        
+      case "invalid_quantity":
+        console.error("Quantity validation failed", error.metadata?.provided);
+        showFieldError(
+          "quantity", 
+          error.metadata?.requirements || "Please enter a valid quantity"
+        );
+        break;
+        
+      case "insufficient_inventory":
+        console.error("Not enough inventory", error.metadata);
+        
+        // Show helpful message with available quantity
+        if (error.metadata?.available > 0) {
+          showError(
+            `Sorry, only ${error.metadata.available} items available. ` +
+            `You requested ${error.metadata.requested}.`
+          );
+          
+          // Update quantity input to max available
+          updateQuantityInput(error.metadata.available);
+        } else {
+          showError("This item is out of stock");
+        }
+        break;
+        
+      default:
+        console.error("Cart error:", error);
+        showError(`Failed to add item: ${error.message}`);
+    }
+    
+    throw error;
+  }
+}
+
+// UI helper functions
+function updateCartUI(total) {
+  const cartTotal = document.querySelector("#cart-total");
+  if (cartTotal) {
+    cartTotal.textContent = `$${total.toFixed(2)}`;
+  }
+}
+
+function showNotification(message) {
+  // Display notification toast
+  // Implementation depends on your UI framework
+}
+
+function showError(message) {
+  const errorElement = document.querySelector("#error-message");
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.style.display = "block";
+  }
+}
+
+function showFieldError(field, message) {
+  const fieldError = document.querySelector(`#${field}-error`);
+  if (fieldError) {
+    fieldError.textContent = message;
+    fieldError.style.display = "block";
+  }
+}
+
+function updateQuantityInput(value) {
+  const quantityInput = document.querySelector("#quantity-input");
+  if (quantityInput) {
+    quantityInput.value = value;
+  }
+}
+```
+
+## Form Validation with Zod Errors
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function registerUser(formData) {
+  try {
+    const client = createClient<App>("http://localhost:6420");
+    const registration = await client.userRegistration.get();
+    
+    // Extract form data
+    const userData = {
+      username: formData.get("username"),
+      email: formData.get("email"),
+      age: parseInt(formData.get("age") || "0", 10),
+      preferences: {
+        theme: formData.get("theme") || "system",
+        notifications: formData.get("notifications") === "on"
+      }
+    };
+    
+    // Submit form data
+    const result = await registration.registerUser(userData);
+    
+    // Handle success
+    showSuccessMessage("Registration successful!");
+    navigateTo("/welcome");
+    
+    return result;
+  } catch (error) {
+    // Clear previous errors
+    clearFormErrors();
+    
+    if (error.code === "validation_error" && error.metadata?.errors) {
+      // Handle Zod validation errors
+      handleValidationErrors(error.metadata.errors);
+    } else if (error.code === "username_taken") {
+      // Handle specific business logic errors
+      showFieldError("username", "This username is already taken");
+    } else if (error.code === "email_exists") {
+      showFieldError("email", "This email is already registered");
+      
+      // Offer login option
+      showLoginLink(formData.get("email"));
+    } else {
+      // Handle generic errors
+      showFormError(`Registration failed: ${error.message}`);
+    }
+    
+    throw error;
+  }
+}
+
+// Helper to handle validation errors
+function handleValidationErrors(errors) {
+  // Group errors by field
+  const fieldErrors = {};
+  
+  for (const error of errors) {
+    const field = error.path.join(".");
+    fieldErrors[field] = fieldErrors[field] || [];
+    fieldErrors[field].push(error.message);
+  }
+  
+  // Display errors for each field
+  for (const [field, messages] of Object.entries(fieldErrors)) {
+    // Find the appropriate field in the form
+    // Handle nested fields like "preferences.theme"
+    const fieldPath = field.split(".");
+    const topField = fieldPath[0];
+    
+    // Display the first error message for the field
+    showFieldError(topField, messages[0]);
+    
+    // Highlight the field in the form
+    highlightField(topField);
+  }
+  
+  // Scroll to the first error
+  scrollToError();
+}
+
+// UI helper functions
+function clearFormErrors() {
+  // Remove all error messages
+  document.querySelectorAll(".error-message").forEach(el => {
+    el.textContent = "";
+    el.style.display = "none";
+  });
+  
+  // Remove error highlights
+  document.querySelectorAll(".field-error").forEach(el => {
+    el.classList.remove("field-error");
+  });
+}
+
+function showFieldError(field, message) {
+  const errorElement = document.querySelector(`#${field}-error`);
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.style.display = "block";
+  }
+}
+
+function highlightField(field) {
+  const inputElement = document.querySelector(`#${field}`);
+  if (inputElement) {
+    inputElement.classList.add("field-error");
+  }
+}
+
+function scrollToError() {
+  const firstError = document.querySelector(".field-error");
+  if (firstError) {
+    firstError.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+function showFormError(message) {
+  const formError = document.querySelector("#form-error");
+  if (formError) {
+    formError.textContent = message;
+    formError.style.display = "block";
+  }
+}
+
+function showSuccessMessage(message) {
+  const successElement = document.querySelector("#success-message");
+  if (successElement) {
+    successElement.textContent = message;
+    successElement.style.display = "block";
+  }
+}
+
+function navigateTo(url) {
+  window.location.href = url;
+}
+
+function showLoginLink(email) {
+  const loginLink = document.querySelector("#login-link");
+  if (loginLink) {
+    loginLink.href = `/login?email=${encodeURIComponent(email)}`;
+    loginLink.style.display = "block";
+  }
+}
+```
+
+## React Component with Error Handling
+
+```tsx
+import React, { useState, useEffect } from 'react';
+import { createClient } from 'actor-core/client';
+import type { App } from './src/app';
+
+// Define error state interface
+interface FormErrors {
+  username?: string;
+  email?: string;
+  general?: string;
+}
+
+const RegistrationForm: React.FC = () => {
+  // Form state
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [age, setAge] = useState<number | undefined>();
+  
+  // Error state
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  
+  // Client reference
+  const [client, setClient] = useState<any>(null);
+  
+  // Initialize client
+  useEffect(() => {
+    const setupClient = async () => {
+      const newClient = createClient<App>('http://localhost:6420');
+      setClient(newClient);
+    };
+    
+    setupClient();
+    
+    // Cleanup on unmount
+    return () => {
+      if (client) {
+        client.dispose();
+      }
+    };
+  }, []);
+  
+  // Form submission handler
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Clear previous errors
+    setErrors({});
+    setIsSubmitting(true);
+    setSubmitSuccess(false);
+    
+    try {
+      if (!client) throw new Error('Client not initialized');
+      
+      // Get actor handle
+      const registration = await client.userRegistration.get();
+      
+      // Call actor action
+      const result = await registration.registerUser({
+        username,
+        email,
+        age: age || undefined,
+        preferences: {
+          theme: 'system',
+          notifications: true
+        }
+      });
+      
+      // Handle success
+      setSubmitSuccess(true);
+      console.log('Registration successful', result);
+      
+      // Reset form after success
+      setUsername('');
+      setEmail('');
+      setAge(undefined);
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Handle different error types
+      if (error.code === 'validation_error' && error.metadata?.errors) {
+        // Process validation errors
+        const newErrors: FormErrors = {};
+        
+        for (const validationError of error.metadata.errors) {
+          const field = validationError.path[0];
+          if (field === 'username' || field === 'email') {
+            newErrors[field] = validationError.message;
+          }
+        }
+        
+        setErrors(newErrors);
+      } else if (error.code === 'username_taken') {
+        setErrors({ username: 'This username is already taken' });
+      } else if (error.code === 'email_exists') {
+        setErrors({ email: 'This email is already registered' });
+      } else {
+        // Generic error
+        setErrors({ 
+          general: `Registration failed: ${error.message}` 
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  return (
+    <div className="registration-form">
+      <h2>Create an Account</h2>
+      
+      {submitSuccess && (
+        <div className="success-message">
+          Registration successful! Check your email to verify your account.
+        </div>
+      )}
+      
+      {errors.general && (
+        <div className="error-message general">{errors.general}</div>
+      )}
+      
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="username">Username</label>
+          <input
+            id="username"
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className={errors.username ? 'input-error' : ''}
+          />
+          {errors.username && (
+            <div className="field-error">{errors.username}</div>
+          )}
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="email">Email</label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={errors.email ? 'input-error' : ''}
+          />
+          {errors.email && (
+            <div className="field-error">{errors.email}</div>
+          )}
+        </div>
+        
+        <div className="form-group">
+          <label htmlFor="age">Age (optional)</label>
+          <input
+            id="age"
+            type="number"
+            value={age === undefined ? '' : age}
+            onChange={(e) => setAge(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+          />
+        </div>
+        
+        <button 
+          type="submit" 
+          disabled={isSubmitting || !username || !email}
+        >
+          {isSubmitting ? 'Submitting...' : 'Register'}
+        </button>
+      </form>
+      
+      {errors.email === 'This email is already registered' && (
+        <div className="login-link">
+          <p>Already have an account? <a href={`/login?email=${encodeURIComponent(email)}`}>Login here</a></p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default RegistrationForm;
+```
+
+## Connection Error Handling
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+class ApiClient {
+  #client;
+  #connected = false;
+  #connectionListeners = [];
+  
+  constructor(endpoint) {
+    this.#client = createClient<App>(endpoint);
+    
+    // Listen for connection events
+    this.#client.on("connected", () => {
+      this.#connected = true;
+      this.#notifyConnectionListeners("connected");
+    });
+    
+    this.#client.on("disconnected", () => {
+      this.#connected = false;
+      this.#notifyConnectionListeners("disconnected");
+    });
+    
+    this.#client.on("reconnecting", (attempt) => {
+      this.#notifyConnectionListeners("reconnecting", attempt);
+    });
+    
+    this.#client.on("error", (error) => {
+      this.#notifyConnectionListeners("error", error);
+    });
+  }
+  
+  onConnectionChange(listener) {
+    this.#connectionListeners.push(listener);
+    return () => {
+      this.#connectionListeners = this.#connectionListeners.filter(l => l !== listener);
+    };
+  }
+  
+  #notifyConnectionListeners(status, data) {
+    for (const listener of this.#connectionListeners) {
+      listener(status, data);
+    }
+  }
+  
+  async callApi(actorName, actionName, ...args) {
+    try {
+      // Get actor handle
+      const actor = await this.#client[actorName].get();
+      
+      // Call the action
+      return await actor[actionName](...args);
+    } catch (error) {
+      // Handle different error categories
+      if (!this.#connected) {
+        throw new Error("Cannot perform action: disconnected from server");
+      } else if (error.code?.startsWith("auth.")) {
+        // Authentication errors
+        console.error("Authentication error:", error);
+        
+        // Redirect to login if unauthorized
+        if (error.code === "auth.unauthorized" || error.code === "auth.invalid_token") {
+          this.redirectToLogin();
+        }
+        
+        throw error;
+      } else if (error.code?.startsWith("validation.")) {
+        // Validation errors - pass through for form handling
+        console.log("Validation error:", error);
+        throw error;
+      } else if (error.code?.startsWith("service.")) {
+        // Service errors (may indicate server issues)
+        console.error("Service error:", error);
+        
+        // Show appropriate message
+        if (error.code === "service.internal_error") {
+          this.showError("The server encountered an error. Please try again later.");
+        } else if (error.code === "service.unavailable") {
+          this.showError("This service is temporarily unavailable.");
+        }
+        
+        throw error;
+      } else {
+        // Unknown errors
+        console.error("API error:", error);
+        this.showError(`An error occurred: ${error.message}`);
+        throw error;
+      }
+    }
+  }
+  
+  // Helper methods for handling errors
+  redirectToLogin() {
+    window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+  }
+  
+  showError(message) {
+    // Display error toast or notification
+    const errorToast = document.getElementById("error-toast");
+    if (errorToast) {
+      errorToast.textContent = message;
+      errorToast.style.display = "block";
+      
+      // Hide after 5 seconds
+      setTimeout(() => {
+        errorToast.style.display = "none";
+      }, 5000);
+    } else {
+      alert(message);
+    }
+  }
+  
+  // Clean up resources
+  dispose() {
+    if (this.#client) {
+      this.#client.dispose();
+    }
+  }
+}
+
+// Usage example
+const api = new ApiClient("http://localhost:6420");
+
+// Listen for connection status
+api.onConnectionChange((status, data) => {
+  const connectionStatusElement = document.getElementById("connection-status");
+  if (connectionStatusElement) {
+    if (status === "connected") {
+      connectionStatusElement.textContent = "Connected";
+      connectionStatusElement.className = "status-connected";
+    } else if (status === "disconnected") {
+      connectionStatusElement.textContent = "Disconnected";
+      connectionStatusElement.className = "status-disconnected";
+    } else if (status === "reconnecting") {
+      connectionStatusElement.textContent = `Reconnecting (Attempt ${data})...`;
+      connectionStatusElement.className = "status-reconnecting";
+    } else if (status === "error") {
+      connectionStatusElement.textContent = `Connection Error: ${data.message}`;
+      connectionStatusElement.className = "status-error";
+    }
+  }
+});
+
+// Example API call with error handling
+async function getUserProfile(userId) {
+  try {
+    return await api.callApi("userProfile", "getProfile", userId);
+  } catch (error) {
+    // Additional component-specific error handling
+    if (error.code === "not_found") {
+      showUserNotFoundError();
+    }
+    throw error;
+  }
+}
+```
+
+## Best Practices
+
+1. **Categorize errors**: Group errors by type to streamline handling
+2. **Be specific in UI**: Display clear, specific error messages to users
+3. **Handle connection errors**: Account for network issues and reconnection
+4. **Provide feedback**: Show loading states, success messages, and clear errors
+5. **Field-level errors**: Map validation errors to specific form fields
+6. **Offer solutions**: Suggest actions users can take to fix issues
+7. **Clean up resources**: Dispose of clients when components unmount
+8. **Use error boundaries**: In React, use error boundaries to catch rendering errors
+9. **Log errors**: Log errors for debugging but avoid exposing sensitive information
+10. **Retry strategically**: Implement retry logic for transient errors
+
+By implementing robust error handling on the client side, you can provide a better user experience while making your application more resilient to failures.

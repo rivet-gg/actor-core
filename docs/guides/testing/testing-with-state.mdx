@@ -1,0 +1,582 @@
+---
+title: Testing with State Initialization
+description: Test actors with specific initial states
+---
+
+# Testing with State Initialization
+
+When testing actors, it's often necessary to start with a specific state rather than the default. ActorCore's testing utilities allow you to initialize actors with custom state, making it easier to test specific scenarios and edge cases.
+
+## Basic State Initialization
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test with custom initial state
+test("todo list should display existing items", async (t) => {
+  // Set up test with custom initial state
+  const { client } = await setupTest(t, app, {
+    initialState: {
+      todoList: {
+        items: [
+          { id: "item-1", text: "Buy groceries", completed: false },
+          { id: "item-2", text: "Clean house", completed: true },
+          { id: "item-3", text: "Walk dog", completed: false }
+        ]
+      }
+    }
+  });
+  
+  // Connect to todo list actor
+  const todoList = await client.todoList.get();
+  
+  // Test that initial items are loaded
+  const items = await todoList.getItems();
+  
+  // Verify all items are present
+  expect(items).toHaveLength(3);
+  
+  // Verify specific item details
+  expect(items[0].text).toBe("Buy groceries");
+  expect(items[0].completed).toBe(false);
+  
+  expect(items[1].text).toBe("Clean house");
+  expect(items[1].completed).toBe(true);
+  
+  // Test completing an item
+  await todoList.toggleComplete("item-1");
+  
+  // Get updated items
+  const updatedItems = await todoList.getItems();
+  
+  // Find the first item
+  const firstItem = updatedItems.find(item => item.id === "item-1");
+  
+  // Verify it's now completed
+  expect(firstItem.completed).toBe(true);
+});
+```
+
+## Testing Different Initial States
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test same actor with different initial states
+test("counter should work with different initial values", async (t) => {
+  // Test with zero initial value
+  const { client: client1 } = await setupTest(t, app, {
+    initialState: {
+      counter: { count: 0 }
+    }
+  });
+  
+  const counter1 = await client1.counter.get();
+  
+  // Increment and verify
+  await counter1.increment(5);
+  expect(await counter1.getCount()).toBe(5);
+  
+  // Test with positive initial value
+  const { client: client2 } = await setupTest(t, app, {
+    initialState: {
+      counter: { count: 10 }
+    }
+  });
+  
+  const counter2 = await client2.counter.get();
+  
+  // Increment and verify
+  await counter2.increment(5);
+  expect(await counter2.getCount()).toBe(15);
+  
+  // Test with negative initial value
+  const { client: client3 } = await setupTest(t, app, {
+    initialState: {
+      counter: { count: -10 }
+    }
+  });
+  
+  const counter3 = await client3.counter.get();
+  
+  // Increment and verify
+  await counter3.increment(5);
+  expect(await counter3.getCount()).toBe(-5);
+});
+```
+
+## Testing Complex Initial State
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test with complex nested initial state
+test("social network should handle existing relationships", async (t) => {
+  // Set up test with complex initial state
+  const { client } = await setupTest(t, app, {
+    initialState: {
+      socialNetwork: {
+        users: {
+          "user-1": {
+            id: "user-1",
+            username: "alice",
+            displayName: "Alice",
+            createdAt: Date.now() - 10000
+          },
+          "user-2": {
+            id: "user-2",
+            username: "bob",
+            displayName: "Bob",
+            createdAt: Date.now() - 8000
+          },
+          "user-3": {
+            id: "user-3",
+            username: "charlie",
+            displayName: "Charlie",
+            createdAt: Date.now() - 6000
+          }
+        },
+        friendships: {
+          "user-1": ["user-2"], // Alice is friends with Bob
+          "user-2": ["user-1", "user-3"], // Bob is friends with Alice and Charlie
+          "user-3": ["user-2"] // Charlie is friends with Bob
+        },
+        pendingFriendRequests: {
+          "user-1": ["user-3"] // Alice sent a request to Charlie
+        }
+      }
+    }
+  });
+  
+  // Connect to social network actor
+  const socialNetwork = await client.socialNetwork.get();
+  
+  // Test existing relationships
+  const aliceFriends = await socialNetwork.getFriends("user-1");
+  expect(aliceFriends).toHaveLength(1);
+  expect(aliceFriends[0].username).toBe("bob");
+  
+  const bobFriends = await socialNetwork.getFriends("user-2");
+  expect(bobFriends).toHaveLength(2);
+  expect(bobFriends.map(f => f.username).sort()).toEqual(["alice", "charlie"]);
+  
+  // Test pending requests
+  const charliePendingRequests = await socialNetwork.getPendingRequests("user-3");
+  expect(charliePendingRequests).toHaveLength(1);
+  expect(charliePendingRequests[0].from.username).toBe("alice");
+  
+  // Test accepting a request
+  await socialNetwork.acceptFriendRequest("user-3", "user-1");
+  
+  // Verify friendship was created
+  const updatedAliceFriends = await socialNetwork.getFriends("user-1");
+  expect(updatedAliceFriends).toHaveLength(2);
+  expect(updatedAliceFriends.map(f => f.username).sort()).toEqual(["bob", "charlie"]);
+  
+  const updatedCharlieFriends = await socialNetwork.getFriends("user-3");
+  expect(updatedCharlieFriends).toHaveLength(2);
+  expect(updatedCharlieFriends.map(f => f.username).sort()).toEqual(["alice", "bob"]);
+  
+  // Verify request was removed
+  const updatedPendingRequests = await socialNetwork.getPendingRequests("user-3");
+  expect(updatedPendingRequests).toHaveLength(0);
+});
+```
+
+## Testing Specific Edge Cases
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test edge cases with initial state
+test("inventory should handle edge cases", async (t) => {
+  // Set up test with edge case initial state
+  const { client } = await setupTest(t, app, {
+    initialState: {
+      inventory: {
+        items: {
+          // Edge case 1: Item at max quantity
+          "item-1": {
+            id: "item-1",
+            name: "Max Quantity Item",
+            quantity: 999, // Maximum quantity
+            createdAt: Date.now()
+          },
+          // Edge case 2: Item with zero quantity
+          "item-2": {
+            id: "item-2",
+            name: "Zero Quantity Item",
+            quantity: 0,
+            createdAt: Date.now()
+          },
+          // Edge case 3: Item with fractional quantity
+          "item-3": {
+            id: "item-3",
+            name: "Fractional Quantity Item",
+            quantity: 1.5,
+            createdAt: Date.now()
+          }
+        }
+      }
+    }
+  });
+  
+  // Connect to inventory actor
+  const inventory = await client.inventory.get();
+  
+  // Test edge case 1: Adding to max quantity item
+  try {
+    await inventory.addQuantity("item-1", 10);
+    // Should fail and not reach this line
+    expect(false).toBe(true);
+  } catch (error) {
+    // Should throw an error
+    expect(error.message).toContain("Maximum quantity exceeded");
+  }
+  
+  // Test edge case 2: Removing from zero quantity item
+  try {
+    await inventory.removeQuantity("item-2", 10);
+    // Should fail and not reach this line
+    expect(false).toBe(true);
+  } catch (error) {
+    // Should throw an error
+    expect(error.message).toContain("Insufficient quantity");
+  }
+  
+  // Test edge case 3: Working with fractional quantities
+  await inventory.addQuantity("item-3", 1.5);
+  const item3 = await inventory.getItem("item-3");
+  expect(item3.quantity).toBe(3);
+});
+```
+
+## Testing State Transitions
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test state transitions from different initial states
+test("order should handle different status transitions", async (t) => {
+  // Test from "created" state
+  const { client: client1 } = await setupTest(t, app, {
+    initialState: {
+      orderManager: {
+        orders: {
+          "order-1": {
+            id: "order-1",
+            items: [{ productId: "prod-1", quantity: 1 }],
+            status: "created",
+            createdAt: Date.now() - 1000
+          }
+        }
+      }
+    }
+  });
+  
+  const orderManager1 = await client1.orderManager.get();
+  
+  // Process the order
+  await orderManager1.processOrder("order-1");
+  
+  // Verify new status
+  const order1 = await orderManager1.getOrder("order-1");
+  expect(order1.status).toBe("processing");
+  
+  // Test from "processing" state
+  const { client: client2 } = await setupTest(t, app, {
+    initialState: {
+      orderManager: {
+        orders: {
+          "order-2": {
+            id: "order-2",
+            items: [{ productId: "prod-1", quantity: 1 }],
+            status: "processing",
+            createdAt: Date.now() - 5000,
+            processedAt: Date.now() - 1000
+          }
+        }
+      }
+    }
+  });
+  
+  const orderManager2 = await client2.orderManager.get();
+  
+  // Complete the order
+  await orderManager2.completeOrder("order-2");
+  
+  // Verify new status
+  const order2 = await orderManager2.getOrder("order-2");
+  expect(order2.status).toBe("completed");
+  
+  // Test invalid transition
+  const { client: client3 } = await setupTest(t, app, {
+    initialState: {
+      orderManager: {
+        orders: {
+          "order-3": {
+            id: "order-3",
+            items: [{ productId: "prod-1", quantity: 1 }],
+            status: "completed",
+            createdAt: Date.now() - 10000,
+            processedAt: Date.now() - 5000,
+            completedAt: Date.now() - 1000
+          }
+        }
+      }
+    }
+  });
+  
+  const orderManager3 = await client3.orderManager.get();
+  
+  // Try to process a completed order (should fail)
+  try {
+    await orderManager3.processOrder("order-3");
+    // Should not reach this line
+    expect(false).toBe(true);
+  } catch (error) {
+    // Should throw an error
+    expect(error.message).toContain("Invalid status transition");
+  }
+});
+```
+
+## Testing with Multiple Actors
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test interactions between multiple actors with initial state
+test("shopping system should handle end-to-end purchase", async (t) => {
+  // Set up test with initial state for multiple actors
+  const { client } = await setupTest(t, app, {
+    initialState: {
+      // Product catalog with items
+      productCatalog: {
+        products: {
+          "product-1": {
+            id: "product-1",
+            name: "Widget",
+            price: 9.99,
+            stock: 50
+          },
+          "product-2": {
+            id: "product-2",
+            name: "Gadget",
+            price: 19.99,
+            stock: 25
+          }
+        }
+      },
+      // Empty shopping cart
+      shoppingCart: {
+        items: {},
+        itemCount: 0,
+        total: 0
+      },
+      // User with balance
+      userAccount: {
+        users: {
+          "user-1": {
+            id: "user-1",
+            name: "Test User",
+            balance: 100.00,
+            orders: []
+          }
+        }
+      },
+      // Empty order system
+      orderSystem: {
+        orders: {}
+      }
+    }
+  });
+  
+  // Connect to all required actors
+  const catalog = await client.productCatalog.get();
+  const cart = await client.shoppingCart.get();
+  const account = await client.userAccount.get();
+  const orders = await client.orderSystem.get();
+  
+  // Test the end-to-end purchase flow
+  
+  // 1. Add items to cart
+  await cart.addItem("product-1", 2);
+  await cart.addItem("product-2", 1);
+  
+  // Verify cart state
+  const cartContents = await cart.getContents();
+  expect(cartContents.itemCount).toBe(3);
+  expect(cartContents.total).toBeCloseTo(39.97, 2);
+  
+  // 2. Checkout to create order
+  const orderId = await cart.checkout("user-1");
+  
+  // Verify order was created
+  const order = await orders.getOrder(orderId);
+  expect(order.status).toBe("pending");
+  expect(order.total).toBeCloseTo(39.97, 2);
+  expect(order.items).toHaveLength(2);
+  
+  // 3. Process payment
+  await orders.processPayment(orderId);
+  
+  // Verify order status updated
+  const updatedOrder = await orders.getOrder(orderId);
+  expect(updatedOrder.status).toBe("paid");
+  
+  // Verify account balance changed
+  const user = await account.getUser("user-1");
+  expect(user.balance).toBeCloseTo(60.03, 2);
+  expect(user.orders).toContain(orderId);
+  
+  // 4. Check product stock was updated
+  const product1 = await catalog.getProduct("product-1");
+  const product2 = await catalog.getProduct("product-2");
+  
+  expect(product1.stock).toBe(48); // 50 - 2
+  expect(product2.stock).toBe(24); // 25 - 1
+});
+```
+
+## Testing Initialization Errors
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test invalid initial state
+test("actor should handle invalid initial state", async (t) => {
+  // Set up test with invalid initial state
+  const { client } = await setupTest(t, app, {
+    initialState: {
+      validationActor: {
+        // Missing required fields
+        items: null,
+        // Invalid type
+        count: "not-a-number"
+      }
+    }
+  });
+  
+  // Try to connect to actor with invalid state
+  try {
+    await client.validationActor.get();
+    // Should not reach this line
+    expect(false).toBe(true);
+  } catch (error) {
+    // Should throw a specific error
+    expect(error.message).toContain("Invalid state");
+  }
+});
+```
+
+## Reading and Modifying State During Tests
+
+```typescript
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test with direct state access
+test("game engine should update internal state correctly", async (t) => {
+  // Set up test with initial state
+  const { client, getInternalState, setInternalState } = await setupTest(t, app, {
+    initialState: {
+      gameEngine: {
+        players: {
+          "player-1": {
+            id: "player-1",
+            name: "Player One",
+            position: { x: 10, y: 10 },
+            health: 100,
+            inventory: []
+          }
+        },
+        world: {
+          entities: {
+            "entity-1": {
+              id: "entity-1",
+              type: "item",
+              name: "Potion",
+              position: { x: 15, y: 10 }
+            }
+          },
+          size: { width: 100, height: 100 }
+        },
+        gameTime: 0
+      }
+    }
+  });
+  
+  // Connect to game engine
+  const gameEngine = await client.gameEngine.get();
+  
+  // Get initial internal state
+  const initialState = await getInternalState(gameEngine);
+  
+  // Verify initial state
+  expect(initialState.players["player-1"].health).toBe(100);
+  expect(initialState.world.entities["entity-1"].type).toBe("item");
+  
+  // Move player to item position
+  await gameEngine.movePlayer("player-1", { x: 15, y: 10 });
+  
+  // Verify player position updated
+  const stateAfterMove = await getInternalState(gameEngine);
+  expect(stateAfterMove.players["player-1"].position).toEqual({ x: 15, y: 10 });
+  
+  // Verify item was picked up
+  expect(stateAfterMove.world.entities["entity-1"]).toBeUndefined();
+  expect(stateAfterMove.players["player-1"].inventory).toContain("Potion");
+  
+  // Directly modify internal state to simulate damage
+  await setInternalState(gameEngine, {
+    ...stateAfterMove,
+    players: {
+      ...stateAfterMove.players,
+      "player-1": {
+        ...stateAfterMove.players["player-1"],
+        health: 50 // Simulate damage
+      }
+    }
+  });
+  
+  // Verify state was updated
+  const stateAfterDamage = await getInternalState(gameEngine);
+  expect(stateAfterDamage.players["player-1"].health).toBe(50);
+  
+  // Test game behavior with modified state
+  const playerStatus = await gameEngine.getPlayerStatus("player-1");
+  expect(playerStatus.health).toBe(50);
+  expect(playerStatus.status).toBe("injured");
+});
+```
+
+## Best Practices
+
+1. **Use realistic initial states**: Create initial states that represent real-world scenarios
+2. **Test edge cases**: Initialize with extreme values to test edge case handling
+3. **Test state transitions**: Start from different states to test various transition paths
+4. **Keep it focused**: Initialize only the state needed for the specific test
+5. **Multiple actor testing**: Set up initial state for all interacting actors
+6. **Test validation**: Verify that invalid states are properly rejected
+7. **Test recovery**: Verify actors can recover from problematic states
+8. **Use getInternalState**: Inspect internal state changes during tests
+9. **Use setInternalState**: Modify state directly to set up specific scenarios
+10. **Nested state**: Correctly structure complex nested state objects
+
+By using these techniques, you can thoroughly test your actors' behavior under various initial conditions, ensuring they handle all edge cases and state transitions correctly.

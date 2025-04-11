@@ -1,0 +1,2235 @@
+---
+title: Using External Services
+description: Integrate ActorCore with external APIs and services
+---
+
+# Using External Services
+
+ActorCore actors often need to interact with external services like databases, APIs, or third-party integrations. This guide demonstrates patterns for effectively connecting to and using external services while maintaining the reliability and performance of your actor system.
+
+## Connecting to External APIs
+
+```typescript
+import { actor, UserError } from "actor-core";
+import type { AxiosInstance, AxiosRequestConfig } from "axios";
+
+// In a real application, you would import axios
+// import axios from "axios";
+
+// This is a mock implementation for the example
+const mockAxios = {
+  create: (config: any) => {
+    return {
+      get: async (url: string, config?: any) => {
+        // Mock implementation
+        if (url.includes("weather")) {
+          return {
+            data: {
+              location: "New York",
+              temperature: 72,
+              conditions: "Partly Cloudy",
+              humidity: 45,
+              timestamp: Date.now()
+            }
+          };
+        }
+        if (url.includes("users")) {
+          return {
+            data: {
+              users: [
+                { id: 1, name: "Alice" },
+                { id: 2, name: "Bob" }
+              ]
+            }
+          };
+        }
+        throw new Error(`Unexpected URL: ${url}`);
+      },
+      post: async (url: string, data: any, config?: any) => {
+        // Mock implementation
+        if (url.includes("subscribe")) {
+          return {
+            data: {
+              subscriptionId: "sub_" + Math.random().toString(36).substring(2, 10),
+              status: "active",
+              createdAt: new Date().toISOString()
+            }
+          };
+        }
+        throw new Error(`Unexpected URL: ${url}`);
+      }
+    };
+  }
+};
+
+// Weather service actor that uses an external API
+const weatherService = actor({
+  state: {
+    cachedWeather: {} as Record<string, {
+      data: any,
+      fetchedAt: number
+    }>,
+    requestCounts: {} as Record<string, number>
+  },
+  
+  // Store API client in non-persisted vars
+  createVars: () => ({
+    // API client for weather service
+    apiClient: mockAxios.create({
+      baseURL: "https://api.weatherservice.com/v1",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.WEATHER_API_KEY || "demo-api-key"}`
+      },
+      timeout: 5000
+    }) as AxiosInstance
+  }),
+  
+  actions: {
+    // Get current weather for a location
+    getCurrentWeather: async (c, location: string) => {
+      try {
+        // Normalize location for caching
+        const normalizedLocation = location.trim().toLowerCase();
+        
+        // Check cache first (30 minute validity)
+        const cacheKey = `weather:${normalizedLocation}`;
+        const cachedData = c.state.cachedWeather[cacheKey];
+        const now = Date.now();
+        
+        if (cachedData && (now - cachedData.fetchedAt) < 30 * 60 * 1000) {
+          // Update request count for statistics
+          c.state.requestCounts[cacheKey] = (c.state.requestCounts[cacheKey] || 0) + 1;
+          
+          return {
+            ...cachedData.data,
+            fromCache: true,
+            cachedAt: new Date(cachedData.fetchedAt).toISOString()
+          };
+        }
+        
+        // Fetch from API
+        const response = await c.vars.apiClient.get("/weather", {
+          params: { location: normalizedLocation }
+        });
+        
+        // Cache the response
+        c.state.cachedWeather[cacheKey] = {
+          data: response.data,
+          fetchedAt: now
+        };
+        
+        // Update request count
+        c.state.requestCounts[cacheKey] = (c.state.requestCounts[cacheKey] || 0) + 1;
+        
+        // Clean up old cache entries (keep last 100)
+        const cacheEntries = Object.entries(c.state.cachedWeather);
+        if (cacheEntries.length > 100) {
+          // Sort by fetched time and remove oldest
+          cacheEntries.sort((a, b) => b[1].fetchedAt - a[1].fetchedAt);
+          
+          const entriesToRemove = cacheEntries.slice(100);
+          for (const [key] of entriesToRemove) {
+            delete c.state.cachedWeather[key];
+          }
+        }
+        
+        return {
+          ...response.data,
+          fromCache: false
+        };
+      } catch (error) {
+        c.log.error("Error fetching weather data", {
+          location,
+          error: error.message
+        });
+        
+        throw new UserError("Failed to fetch weather data");
+      }
+    },
+    
+    // Subscribe to weather alerts
+    subscribeToAlerts: async (c, location: string, email: string) => {
+      try {
+        // Validate input
+        if (!email.includes("@")) {
+          throw new UserError("Invalid email address");
+        }
+        
+        // Call subscription API
+        const response = await c.vars.apiClient.post("/subscribe", {
+          location,
+          email,
+          alertTypes: ["severe", "daily"],
+          format: "email"
+        });
+        
+        return {
+          subscriptionId: response.data.subscriptionId,
+          status: response.data.status,
+          createdAt: response.data.createdAt
+        };
+      } catch (error) {
+        c.log.error("Error subscribing to weather alerts", {
+          location,
+          email,
+          error: error.message
+        });
+        
+        throw new UserError("Failed to subscribe to weather alerts");
+      }
+    },
+    
+    // Get API usage statistics
+    getUsageStats: (c) => {
+      const totalRequests = Object.values(c.state.requestCounts).reduce(
+        (sum, count) => sum + count, 0
+      );
+      
+      const topLocations = Object.entries(c.state.requestCounts)
+        .map(([key, count]) => ({
+          location: key.replace("weather:", ""),
+          count
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+      
+      const cacheSize = Object.keys(c.state.cachedWeather).length;
+      
+      return {
+        totalRequests,
+        topLocations,
+        cacheSize,
+        cacheMaxSize: 100
+      };
+    }
+  }
+});
+```
+
+## Database Integration
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Mock database client interfaces
+interface DbClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+}
+
+interface UserRepository {
+  findById(id: string): Promise<any>;
+  findByEmail(email: string): Promise<any>;
+  create(user: any): Promise<any>;
+  update(id: string, updates: any): Promise<any>;
+  delete(id: string): Promise<boolean>;
+}
+
+// Mock implementations for the example
+class MockDbClient implements DbClient {
+  #connected = false;
+  
+  async connect(): Promise<void> {
+    // Simulate connection delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    this.#connected = true;
+  }
+  
+  async disconnect(): Promise<void> {
+    // Simulate disconnection delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    this.#connected = false;
+  }
+  
+  isConnected(): boolean {
+    return this.#connected;
+  }
+}
+
+class MockUserRepository implements UserRepository {
+  #users: Record<string, any> = {
+    "user1": { 
+      id: "user1", 
+      email: "user1@example.com", 
+      name: "User One", 
+      createdAt: Date.now() - 1000000 
+    },
+    "user2": { 
+      id: "user2", 
+      email: "user2@example.com", 
+      name: "User Two", 
+      createdAt: Date.now() - 500000 
+    }
+  };
+  
+  async findById(id: string): Promise<any> {
+    // Simulate database query delay
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return this.#users[id] || null;
+  }
+  
+  async findByEmail(email: string): Promise<any> {
+    // Simulate database query delay
+    await new Promise(resolve => setTimeout(resolve, 30));
+    return Object.values(this.#users).find(u => u.email === email) || null;
+  }
+  
+  async create(user: any): Promise<any> {
+    // Simulate database write delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    const id = user.id || `user${Object.keys(this.#users).length + 1}`;
+    this.#users[id] = {
+      ...user,
+      id,
+      createdAt: Date.now()
+    };
+    
+    return this.#users[id];
+  }
+  
+  async update(id: string, updates: any): Promise<any> {
+    // Simulate database write delay
+    await new Promise(resolve => setTimeout(resolve, 40));
+    
+    if (!this.#users[id]) {
+      return null;
+    }
+    
+    this.#users[id] = {
+      ...this.#users[id],
+      ...updates,
+      updatedAt: Date.now()
+    };
+    
+    return this.#users[id];
+  }
+  
+  async delete(id: string): Promise<boolean> {
+    // Simulate database write delay
+    await new Promise(resolve => setTimeout(resolve, 30));
+    
+    if (!this.#users[id]) {
+      return false;
+    }
+    
+    delete this.#users[id];
+    return true;
+  }
+}
+
+// User management actor with database integration
+const userManager = actor({
+  state: {
+    cachedUsers: {} as Record<string, {
+      data: any,
+      cachedAt: number
+    }>,
+    stats: {
+      totalUsers: 0,
+      lastUpdated: 0
+    }
+  },
+  
+  createVars: () => ({
+    // Database client
+    dbClient: new MockDbClient(),
+    
+    // User repository
+    userRepo: new MockUserRepository(),
+    
+    // Connection state for cleanup
+    isConnected: false,
+    
+    // Reconnection state
+    reconnecting: false,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 5,
+    reconnectBackoff: 1000 // ms
+  }),
+  
+  // Initialize database connection on actor start
+  onStart: async (c) => {
+    try {
+      await connectDatabase(c);
+      
+      // Schedule periodic cache cleanup
+      c.schedule.after(60 * 60 * 1000, "cleanupCache"); // 1 hour
+      
+      // Schedule stats update
+      c.schedule.after(10 * 60 * 1000, "updateStats"); // 10 minutes
+    } catch (error) {
+      c.log.error("Failed to connect to database on start", { error });
+      
+      // Schedule reconnection attempt
+      scheduleReconnect(c);
+    }
+  },
+  
+  actions: {
+    // Get user by ID
+    getUserById: async (c, userId: string) => {
+      // Ensure database connection
+      if (!c.vars.isConnected) {
+        await connectDatabase(c);
+      }
+      
+      try {
+        // Check cache first (5 minute validity)
+        const cacheKey = `user:${userId}`;
+        const cachedData = c.state.cachedUsers[cacheKey];
+        const now = Date.now();
+        
+        if (cachedData && (now - cachedData.cachedAt) < 5 * 60 * 1000) {
+          return {
+            ...cachedData.data,
+            fromCache: true
+          };
+        }
+        
+        // Fetch from database
+        const user = await c.vars.userRepo.findById(userId);
+        
+        if (!user) {
+          throw new UserError("User not found");
+        }
+        
+        // Cache the result
+        c.state.cachedUsers[cacheKey] = {
+          data: user,
+          cachedAt: now
+        };
+        
+        return {
+          ...user,
+          fromCache: false
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error fetching user", { userId, error });
+        handleDatabaseError(c, error);
+        
+        throw new UserError("Failed to fetch user data");
+      }
+    },
+    
+    // Create new user
+    createUser: async (c, userData: {
+      email: string,
+      name: string,
+      [key: string]: any
+    }) => {
+      // Ensure database connection
+      if (!c.vars.isConnected) {
+        await connectDatabase(c);
+      }
+      
+      try {
+        // Check if email already exists
+        const existingUser = await c.vars.userRepo.findByEmail(userData.email);
+        
+        if (existingUser) {
+          throw new UserError("Email already in use");
+        }
+        
+        // Create user in database
+        const newUser = await c.vars.userRepo.create(userData);
+        
+        // Invalidate stats
+        c.state.stats.lastUpdated = 0;
+        
+        // Schedule stats update
+        c.schedule.after(5000, "updateStats");
+        
+        return {
+          id: newUser.id,
+          email: newUser.email,
+          name: newUser.name,
+          createdAt: newUser.createdAt
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error creating user", { userData, error });
+        handleDatabaseError(c, error);
+        
+        throw new UserError("Failed to create user");
+      }
+    },
+    
+    // Update user
+    updateUser: async (c, userId: string, updates: {
+      name?: string,
+      [key: string]: any
+    }) => {
+      // Ensure database connection
+      if (!c.vars.isConnected) {
+        await connectDatabase(c);
+      }
+      
+      try {
+        // Update user in database
+        const updatedUser = await c.vars.userRepo.update(userId, updates);
+        
+        if (!updatedUser) {
+          throw new UserError("User not found");
+        }
+        
+        // Invalidate cache
+        const cacheKey = `user:${userId}`;
+        delete c.state.cachedUsers[cacheKey];
+        
+        return {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          updatedAt: updatedUser.updatedAt
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error updating user", { userId, updates, error });
+        handleDatabaseError(c, error);
+        
+        throw new UserError("Failed to update user");
+      }
+    },
+    
+    // Delete user
+    deleteUser: async (c, userId: string) => {
+      // Ensure database connection
+      if (!c.vars.isConnected) {
+        await connectDatabase(c);
+      }
+      
+      try {
+        // Delete user from database
+        const success = await c.vars.userRepo.delete(userId);
+        
+        if (!success) {
+          throw new UserError("User not found");
+        }
+        
+        // Invalidate cache
+        const cacheKey = `user:${userId}`;
+        delete c.state.cachedUsers[cacheKey];
+        
+        // Invalidate stats
+        c.state.stats.lastUpdated = 0;
+        
+        // Schedule stats update
+        c.schedule.after(5000, "updateStats");
+        
+        return { success: true };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error deleting user", { userId, error });
+        handleDatabaseError(c, error);
+        
+        throw new UserError("Failed to delete user");
+      }
+    },
+    
+    // Clean up cache periodically
+    cleanupCache: (c) => {
+      const now = Date.now();
+      let removedEntries = 0;
+      
+      // Remove entries older than 10 minutes
+      for (const [key, entry] of Object.entries(c.state.cachedUsers)) {
+        if ((now - entry.cachedAt) > 10 * 60 * 1000) {
+          delete c.state.cachedUsers[key];
+          removedEntries++;
+        }
+      }
+      
+      // Schedule next cleanup
+      c.schedule.after(60 * 60 * 1000, "cleanupCache"); // 1 hour
+      
+      return {
+        entriesRemoved: removedEntries,
+        remainingEntries: Object.keys(c.state.cachedUsers).length
+      };
+    },
+    
+    // Update user statistics
+    updateStats: async (c) => {
+      // If we updated recently, skip
+      const now = Date.now();
+      if ((now - c.state.stats.lastUpdated) < 10 * 60 * 1000) {
+        return c.state.stats;
+      }
+      
+      try {
+        // Ensure database connection
+        if (!c.vars.isConnected) {
+          await connectDatabase(c);
+        }
+        
+        // In a real app, you would query the database for counts
+        // For this example, we'll simulate counting
+        // const totalUsers = await c.vars.userRepo.count();
+        
+        // Mock implementation
+        const mockTotalUsers = Object.keys(
+          (c.vars.userRepo as any).#users
+        ).length;
+        
+        // Update stats
+        c.state.stats = {
+          totalUsers: mockTotalUsers,
+          lastUpdated: now
+        };
+        
+        // Schedule next update
+        c.schedule.after(10 * 60 * 1000, "updateStats"); // 10 minutes
+        
+        return c.state.stats;
+      } catch (error) {
+        c.log.error("Error updating stats", { error });
+        handleDatabaseError(c, error);
+        
+        // Return last known stats
+        return c.state.stats;
+      }
+    },
+    
+    // Force database reconnection (useful for testing)
+    reconnectDatabase: async (c) => {
+      try {
+        // Disconnect if connected
+        if (c.vars.isConnected) {
+          await c.vars.dbClient.disconnect();
+          c.vars.isConnected = false;
+        }
+        
+        // Reset reconnection state
+        c.vars.reconnecting = false;
+        c.vars.reconnectAttempts = 0;
+        
+        // Connect
+        await connectDatabase(c);
+        
+        return { success: true, connected: c.vars.isConnected };
+      } catch (error) {
+        c.log.error("Error reconnecting to database", { error });
+        
+        // Schedule reconnection
+        scheduleReconnect(c);
+        
+        return { success: false, error: error.message };
+      }
+    }
+  }
+});
+
+// Helper functions
+async function connectDatabase(c: any): Promise<void> {
+  if (c.vars.isConnected) {
+    return;
+  }
+  
+  try {
+    c.log.info("Connecting to database...");
+    await c.vars.dbClient.connect();
+    c.vars.isConnected = true;
+    c.vars.reconnectAttempts = 0;
+    c.vars.reconnecting = false;
+    c.log.info("Database connected successfully");
+  } catch (error) {
+    c.log.error("Failed to connect to database", { error });
+    c.vars.isConnected = false;
+    throw error;
+  }
+}
+
+function handleDatabaseError(c: any, error: any): void {
+  // Check if it's a connection error
+  const isConnectionError = error.message?.includes("connection") || 
+                           !c.vars.dbClient.isConnected();
+  
+  if (isConnectionError && c.vars.isConnected) {
+    c.log.error("Database connection lost", { error });
+    c.vars.isConnected = false;
+    
+    // Schedule reconnection
+    scheduleReconnect(c);
+  }
+}
+
+function scheduleReconnect(c: any): void {
+  if (c.vars.reconnecting) {
+    return;
+  }
+  
+  c.vars.reconnecting = true;
+  
+  // Calculate backoff
+  const attempt = c.vars.reconnectAttempts + 1;
+  if (attempt > c.vars.maxReconnectAttempts) {
+    c.log.error(`Maximum reconnection attempts (${c.vars.maxReconnectAttempts}) reached`);
+    return;
+  }
+  
+  const backoff = c.vars.reconnectBackoff * Math.pow(2, attempt - 1);
+  const jitter = Math.random() * 1000;
+  const delay = Math.min(backoff + jitter, 60000); // Max 1 minute
+  
+  c.log.info(`Scheduling database reconnection attempt ${attempt} in ${Math.round(delay)}ms`);
+  c.vars.reconnectAttempts = attempt;
+  
+  // Schedule reconnection
+  c.schedule.after(delay, "reconnectDatabase");
+}
+```
+
+## Message Queue Integration
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Mock message queue interfaces
+interface QueueClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+}
+
+interface Queue {
+  send(message: any): Promise<string>;
+  receiveMessages(count: number): Promise<QueueMessage[]>;
+  deleteMessage(receiptHandle: string): Promise<void>;
+}
+
+interface QueueMessage {
+  id: string;
+  body: any;
+  receiptHandle: string;
+  receivedCount: number;
+}
+
+// Mock implementations for the example
+class MockQueueClient implements QueueClient {
+  #connected = false;
+  
+  async connect(): Promise<void> {
+    // Simulate connection delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    this.#connected = true;
+  }
+  
+  async disconnect(): Promise<void> {
+    // Simulate disconnection delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    this.#connected = false;
+  }
+  
+  isConnected(): boolean {
+    return this.#connected;
+  }
+  
+  createQueue(name: string): Queue {
+    return new MockQueue(name);
+  }
+}
+
+class MockQueue implements Queue {
+  private name: string;
+  private messages: QueueMessage[] = [];
+  private nextId = 1;
+  
+  constructor(name: string) {
+    this.name = name;
+  }
+  
+  async send(message: any): Promise<string> {
+    // Simulate send delay
+    await new Promise(resolve => setTimeout(resolve, 30));
+    
+    const id = `msg-${this.nextId++}`;
+    this.messages.push({
+      id,
+      body: message,
+      receiptHandle: `receipt-${id}`,
+      receivedCount: 0
+    });
+    
+    return id;
+  }
+  
+  async receiveMessages(count: number): Promise<QueueMessage[]> {
+    // Simulate receive delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    const receivedMessages = this.messages
+      .slice(0, count)
+      .map(msg => ({
+        ...msg,
+        receivedCount: msg.receivedCount + 1
+      }));
+    
+    return receivedMessages;
+  }
+  
+  async deleteMessage(receiptHandle: string): Promise<void> {
+    // Simulate delete delay
+    await new Promise(resolve => setTimeout(resolve, 20));
+    
+    const index = this.messages.findIndex(msg => msg.receiptHandle === receiptHandle);
+    if (index !== -1) {
+      this.messages.splice(index, 1);
+    }
+  }
+}
+
+// Email notification actor that uses a message queue
+const notificationService = actor({
+  state: {
+    // Stats for monitoring
+    stats: {
+      messagesSent: 0,
+      messagesProcessed: 0,
+      messagesFailed: 0,
+      lastProcessed: 0
+    },
+    
+    // Configuration
+    config: {
+      processingInterval: 60000, // 1 minute
+      batchSize: 10,
+      maxRetries: 3
+    }
+  },
+  
+  createVars: () => ({
+    // Queue client
+    queueClient: new MockQueueClient(),
+    
+    // Queues
+    emailQueue: null as Queue | null,
+    deadLetterQueue: null as Queue | null,
+    
+    // Connection state
+    isConnected: false,
+    
+    // Processing state
+    isProcessing: false
+  }),
+  
+  onStart: async (c) => {
+    try {
+      await connectQueues(c);
+      
+      // Schedule message processing
+      c.schedule.after(c.state.config.processingInterval, "processQueue");
+    } catch (error) {
+      c.log.error("Failed to connect to message queues on start", { error });
+      
+      // Schedule reconnection
+      c.schedule.after(5000, "reconnectQueues");
+    }
+  },
+  
+  actions: {
+    // Send an email notification
+    sendEmailNotification: async (c, email: string, subject: string, body: string) => {
+      // Validate input
+      if (!email || !email.includes("@")) {
+        throw new UserError("Invalid email address");
+      }
+      
+      if (!subject || !body) {
+        throw new UserError("Subject and body are required");
+      }
+      
+      try {
+        // Ensure connection
+        if (!c.vars.isConnected) {
+          await connectQueues(c);
+        }
+        
+        // Create message
+        const message = {
+          type: "email",
+          recipient: email,
+          subject,
+          body,
+          metadata: {
+            sentAt: Date.now(),
+            priority: "normal"
+          }
+        };
+        
+        // Send to queue
+        const messageId = await c.vars.emailQueue!.send(message);
+        
+        // Update stats
+        c.state.stats.messagesSent++;
+        
+        return {
+          success: true,
+          messageId,
+          queuedAt: new Date().toISOString()
+        };
+      } catch (error) {
+        c.log.error("Error sending email notification to queue", {
+          email,
+          subject,
+          error
+        });
+        
+        handleQueueError(c, error);
+        
+        throw new UserError("Failed to queue email notification");
+      }
+    },
+    
+    // Send a batch of notifications
+    sendBatchNotifications: async (c, notifications: Array<{
+      email: string,
+      subject: string,
+      body: string
+    }>) => {
+      if (!notifications.length) {
+        return { success: true, count: 0 };
+      }
+      
+      try {
+        // Ensure connection
+        if (!c.vars.isConnected) {
+          await connectQueues(c);
+        }
+        
+        // Process in batches of 10
+        const results = {
+          success: 0,
+          failed: 0,
+          messageIds: [] as string[]
+        };
+        
+        for (const notification of notifications) {
+          try {
+            // Validate
+            if (!notification.email || !notification.email.includes("@") ||
+                !notification.subject || !notification.body) {
+              results.failed++;
+              continue;
+            }
+            
+            // Create message
+            const message = {
+              type: "email",
+              recipient: notification.email,
+              subject: notification.subject,
+              body: notification.body,
+              metadata: {
+                sentAt: Date.now(),
+                priority: "normal",
+                isBatch: true
+              }
+            };
+            
+            // Send to queue
+            const messageId = await c.vars.emailQueue!.send(message);
+            results.success++;
+            results.messageIds.push(messageId);
+          } catch (error) {
+            c.log.error("Error sending batch notification item", {
+              email: notification.email,
+              error
+            });
+            results.failed++;
+          }
+        }
+        
+        // Update stats
+        c.state.stats.messagesSent += results.success;
+        
+        return {
+          success: results.success > 0,
+          sent: results.success,
+          failed: results.failed,
+          total: notifications.length
+        };
+      } catch (error) {
+        c.log.error("Error sending batch notifications", { error });
+        handleQueueError(c, error);
+        
+        throw new UserError("Failed to send batch notifications");
+      }
+    },
+    
+    // Process queued messages
+    processQueue: async (c) => {
+      // Skip if already processing
+      if (c.vars.isProcessing) {
+        return { skipped: true, reason: "Already processing" };
+      }
+      
+      // Ensure connection
+      if (!c.vars.isConnected) {
+        try {
+          await connectQueues(c);
+        } catch (error) {
+          c.log.error("Failed to connect to queues during processing", { error });
+          
+          // Schedule next processing attempt
+          c.schedule.after(c.state.config.processingInterval, "processQueue");
+          
+          return { 
+            success: false, 
+            error: "Failed to connect to queues" 
+          };
+        }
+      }
+      
+      c.vars.isProcessing = true;
+      
+      try {
+        // Receive messages from queue
+        const messages = await c.vars.emailQueue!.receiveMessages(
+          c.state.config.batchSize
+        );
+        
+        if (messages.length === 0) {
+          c.log.info("No messages to process in queue");
+          
+          // Schedule next processing
+          c.schedule.after(c.state.config.processingInterval, "processQueue");
+          
+          c.vars.isProcessing = false;
+          return { processed: 0 };
+        }
+        
+        let processed = 0;
+        let failed = 0;
+        
+        // Process each message
+        for (const message of messages) {
+          try {
+            // In a real app, would actually send the email here
+            // For this example, we'll simulate sending
+            const result = await processEmailMessage(message.body);
+            
+            if (result.success) {
+              // Delete message from queue
+              await c.vars.emailQueue!.deleteMessage(message.receiptHandle);
+              processed++;
+            } else {
+              // Check retry count
+              if (message.receivedCount >= c.state.config.maxRetries) {
+                // Move to dead letter queue
+                await c.vars.deadLetterQueue!.send({
+                  originalMessage: message.body,
+                  error: result.error,
+                  attempts: message.receivedCount,
+                  lastAttempt: Date.now()
+                });
+                
+                // Delete from main queue
+                await c.vars.emailQueue!.deleteMessage(message.receiptHandle);
+                failed++;
+              }
+              // If retries remain, leave in queue for next attempt
+            }
+          } catch (error) {
+            c.log.error("Error processing message", {
+              messageId: message.id,
+              error
+            });
+            failed++;
+          }
+        }
+        
+        // Update stats
+        c.state.stats.messagesProcessed += processed;
+        c.state.stats.messagesFailed += failed;
+        c.state.stats.lastProcessed = Date.now();
+        
+        // Schedule next processing
+        c.schedule.after(
+          messages.length < c.state.config.batchSize 
+            ? c.state.config.processingInterval 
+            : 1000 // Process immediately if queue has more messages
+        , "processQueue");
+        
+        c.vars.isProcessing = false;
+        
+        return {
+          processed,
+          failed,
+          total: messages.length
+        };
+      } catch (error) {
+        c.log.error("Error during queue processing", { error });
+        handleQueueError(c, error);
+        
+        // Schedule next processing
+        c.schedule.after(c.state.config.processingInterval, "processQueue");
+        
+        c.vars.isProcessing = false;
+        
+        return {
+          success: false,
+          error: "Failed to process queue"
+        };
+      }
+    },
+    
+    // Reconnect to queues
+    reconnectQueues: async (c) => {
+      try {
+        // Disconnect if connected
+        if (c.vars.isConnected) {
+          await c.vars.queueClient.disconnect();
+          c.vars.isConnected = false;
+        }
+        
+        // Connect
+        await connectQueues(c);
+        
+        return { success: true };
+      } catch (error) {
+        c.log.error("Failed to reconnect to queues", { error });
+        
+        // Schedule another reconnection attempt
+        c.schedule.after(5000, "reconnectQueues");
+        
+        return { success: false };
+      }
+    },
+    
+    // Get service statistics
+    getServiceStats: (c) => {
+      const queueStatus = c.vars.isConnected ? "connected" : "disconnected";
+      
+      return {
+        ...c.state.stats,
+        queueStatus,
+        isProcessing: c.vars.isProcessing,
+        config: c.state.config
+      };
+    },
+    
+    // Update configuration
+    updateConfig: (c, updates: Partial<typeof c.state.config>) => {
+      Object.assign(c.state.config, updates);
+      
+      return { success: true, config: c.state.config };
+    }
+  }
+});
+
+// Helper functions
+async function connectQueues(c: any): Promise<void> {
+  if (c.vars.isConnected) {
+    return;
+  }
+  
+  try {
+    c.log.info("Connecting to message queues...");
+    await c.vars.queueClient.connect();
+    
+    // Initialize queues
+    c.vars.emailQueue = c.vars.queueClient.createQueue("email-notifications");
+    c.vars.deadLetterQueue = c.vars.queueClient.createQueue("dead-letter");
+    
+    c.vars.isConnected = true;
+    c.log.info("Successfully connected to message queues");
+  } catch (error) {
+    c.log.error("Failed to connect to message queues", { error });
+    c.vars.isConnected = false;
+    throw error;
+  }
+}
+
+function handleQueueError(c: any, error: any): void {
+  // Check if it's a connection error
+  const isConnectionError = error.message?.includes("connection") || 
+                           !c.vars.queueClient.isConnected();
+  
+  if (isConnectionError && c.vars.isConnected) {
+    c.log.error("Queue connection lost", { error });
+    c.vars.isConnected = false;
+    
+    // Schedule reconnection
+    c.schedule.after(5000, "reconnectQueues");
+  }
+}
+
+// Simulate email sending
+async function processEmailMessage(message: any): Promise<{ success: boolean, error?: string }> {
+  // Simulate processing delay
+  await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+  
+  // Simulate occasional failures
+  if (Math.random() < 0.1) {
+    return {
+      success: false,
+      error: "Failed to send email: SMTP error"
+    };
+  }
+  
+  return { success: true };
+}
+```
+
+## Payment Processing Integration
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Mock payment provider interfaces
+interface PaymentProvider {
+  createPaymentIntent(amount: number, currency: string, metadata: any): Promise<PaymentIntent>;
+  capturePaymentIntent(id: string): Promise<PaymentIntent>;
+  cancelPaymentIntent(id: string): Promise<PaymentIntent>;
+  getPaymentIntent(id: string): Promise<PaymentIntent>;
+  createRefund(paymentIntentId: string, amount?: number): Promise<Refund>;
+}
+
+interface PaymentIntent {
+  id: string;
+  amount: number;
+  currency: string;
+  status: "requires_payment_method" | "requires_confirmation" | "processing" | "succeeded" | "canceled";
+  clientSecret?: string;
+  createdAt: number;
+  metadata: any;
+}
+
+interface Refund {
+  id: string;
+  paymentIntentId: string;
+  amount: number;
+  status: "pending" | "succeeded" | "failed";
+  createdAt: number;
+}
+
+// Mock implementation for the example
+class MockPaymentProvider implements PaymentProvider {
+  private paymentIntents: Record<string, PaymentIntent> = {};
+  private refunds: Record<string, Refund> = {};
+  private nextId = 1;
+  
+  async createPaymentIntent(amount: number, currency: string, metadata: any = {}): Promise<PaymentIntent> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    const id = `pi_${this.nextId++}`;
+    const paymentIntent: PaymentIntent = {
+      id,
+      amount,
+      currency,
+      status: "requires_payment_method",
+      clientSecret: `${id}_secret_${Math.random().toString(36).substring(2, 10)}`,
+      createdAt: Date.now(),
+      metadata
+    };
+    
+    this.paymentIntents[id] = paymentIntent;
+    return paymentIntent;
+  }
+  
+  async capturePaymentIntent(id: string): Promise<PaymentIntent> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    const paymentIntent = this.paymentIntents[id];
+    if (!paymentIntent) {
+      throw new Error(`Payment intent ${id} not found`);
+    }
+    
+    if (paymentIntent.status !== "requires_confirmation") {
+      throw new Error(`Payment intent ${id} cannot be captured in status ${paymentIntent.status}`);
+    }
+    
+    // Simulate occasional failures
+    if (Math.random() < 0.05) {
+      paymentIntent.status = "canceled";
+      throw new Error("Payment processing failed");
+    }
+    
+    paymentIntent.status = "succeeded";
+    return paymentIntent;
+  }
+  
+  async cancelPaymentIntent(id: string): Promise<PaymentIntent> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    const paymentIntent = this.paymentIntents[id];
+    if (!paymentIntent) {
+      throw new Error(`Payment intent ${id} not found`);
+    }
+    
+    if (paymentIntent.status === "succeeded") {
+      throw new Error(`Payment intent ${id} has already succeeded and cannot be canceled`);
+    }
+    
+    paymentIntent.status = "canceled";
+    return paymentIntent;
+  }
+  
+  async getPaymentIntent(id: string): Promise<PaymentIntent> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const paymentIntent = this.paymentIntents[id];
+    if (!paymentIntent) {
+      throw new Error(`Payment intent ${id} not found`);
+    }
+    
+    return paymentIntent;
+  }
+  
+  async createRefund(paymentIntentId: string, amount?: number): Promise<Refund> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 250));
+    
+    const paymentIntent = this.paymentIntents[paymentIntentId];
+    if (!paymentIntent) {
+      throw new Error(`Payment intent ${paymentIntentId} not found`);
+    }
+    
+    if (paymentIntent.status !== "succeeded") {
+      throw new Error(`Payment intent ${paymentIntentId} must be succeeded to create a refund`);
+    }
+    
+    const refundAmount = amount || paymentIntent.amount;
+    if (refundAmount > paymentIntent.amount) {
+      throw new Error(`Refund amount ${refundAmount} exceeds payment amount ${paymentIntent.amount}`);
+    }
+    
+    const id = `re_${this.nextId++}`;
+    const refund: Refund = {
+      id,
+      paymentIntentId,
+      amount: refundAmount,
+      status: "pending",
+      createdAt: Date.now()
+    };
+    
+    this.refunds[id] = refund;
+    
+    // Simulate processing
+    setTimeout(() => {
+      refund.status = Math.random() < 0.9 ? "succeeded" : "failed";
+    }, 1000);
+    
+    return refund;
+  }
+}
+
+// Payment processing actor
+const paymentProcessor = actor({
+  state: {
+    orders: {} as Record<string, {
+      id: string,
+      userId: string,
+      amount: number,
+      currency: string,
+      items: Array<{ id: string, name: string, price: number, quantity: number }>,
+      status: "created" | "pending" | "paid" | "failed" | "refunded",
+      paymentIntentId?: string,
+      refundId?: string,
+      createdAt: number,
+      updatedAt: number
+    }>,
+    stats: {
+      totalProcessed: 0,
+      totalAmount: 0,
+      totalRefunded: 0,
+      refundCount: 0
+    }
+  },
+  
+  createVars: () => ({
+    // Payment provider client
+    paymentProvider: new MockPaymentProvider(),
+    
+    // Webhook processing flag
+    processingWebhook: false
+  }),
+  
+  actions: {
+    // Create a new order and payment intent
+    createOrder: async (c, input: {
+      userId: string,
+      items: Array<{ id: string, name: string, price: number, quantity: number }>
+    }) => {
+      try {
+        // Validate input
+        if (!input.userId) {
+          throw new UserError("User ID is required");
+        }
+        
+        if (!input.items?.length) {
+          throw new UserError("Order must contain at least one item");
+        }
+        
+        // Calculate total
+        const amount = input.items.reduce(
+          (sum, item) => sum + (item.price * item.quantity), 
+          0
+        );
+        
+        // Create order
+        const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const now = Date.now();
+        
+        const order = {
+          id: orderId,
+          userId: input.userId,
+          amount,
+          currency: "usd", // Hard-coded for simplicity
+          items: input.items,
+          status: "created" as const,
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        c.state.orders[orderId] = order;
+        
+        // Create payment intent
+        const paymentIntent = await c.vars.paymentProvider.createPaymentIntent(
+          amount,
+          order.currency,
+          { orderId, userId: input.userId }
+        );
+        
+        // Update order with payment intent
+        c.state.orders[orderId] = {
+          ...order,
+          paymentIntentId: paymentIntent.id,
+          status: "pending"
+        };
+        
+        return {
+          orderId,
+          amount,
+          currency: order.currency,
+          paymentIntentId: paymentIntent.id,
+          clientSecret: paymentIntent.clientSecret
+        };
+      } catch (error) {
+        c.log.error("Error creating order", { input, error });
+        
+        throw new UserError("Failed to create order");
+      }
+    },
+    
+    // Handle payment webhook (usually called by payment provider)
+    handlePaymentWebhook: async (c, event: {
+      type: string,
+      data: any
+    }) => {
+      // Prevent concurrent webhook processing
+      if (c.vars.processingWebhook) {
+        return { success: false, reason: "Already processing webhook" };
+      }
+      
+      c.vars.processingWebhook = true;
+      
+      try {
+        // Process based on event type
+        if (event.type === "payment_intent.succeeded") {
+          await handlePaymentSuccess(c, event.data.id);
+        } else if (event.type === "payment_intent.payment_failed") {
+          await handlePaymentFailure(c, event.data.id);
+        } else if (event.type === "charge.refunded") {
+          await handleRefund(c, event.data.payment_intent, event.data.refund);
+        }
+        
+        c.vars.processingWebhook = false;
+        return { success: true };
+      } catch (error) {
+        c.log.error("Error processing webhook", { event, error });
+        
+        c.vars.processingWebhook = false;
+        return { success: false, error: error.message };
+      }
+    },
+    
+    // Get order details
+    getOrder: (c, orderId: string) => {
+      const order = c.state.orders[orderId];
+      
+      if (!order) {
+        throw new UserError("Order not found");
+      }
+      
+      return {
+        id: order.id,
+        userId: order.userId,
+        amount: order.amount,
+        currency: order.currency,
+        items: order.items,
+        status: order.status,
+        paymentIntentId: order.paymentIntentId,
+        refundId: order.refundId,
+        createdAt: new Date(order.createdAt).toISOString(),
+        updatedAt: new Date(order.updatedAt).toISOString()
+      };
+    },
+    
+    // Issue a refund for an order
+    refundOrder: async (c, orderId: string, amount?: number) => {
+      try {
+        const order = c.state.orders[orderId];
+        
+        if (!order) {
+          throw new UserError("Order not found");
+        }
+        
+        if (order.status !== "paid") {
+          throw new UserError(`Cannot refund order in status ${order.status}`);
+        }
+        
+        if (!order.paymentIntentId) {
+          throw new UserError("Order has no payment intent ID");
+        }
+        
+        // Validate refund amount
+        const refundAmount = amount || order.amount;
+        if (refundAmount <= 0 || refundAmount > order.amount) {
+          throw new UserError(`Invalid refund amount: ${refundAmount}`);
+        }
+        
+        // Process refund
+        const refund = await c.vars.paymentProvider.createRefund(
+          order.paymentIntentId,
+          refundAmount
+        );
+        
+        // Update order
+        order.status = "refunded";
+        order.refundId = refund.id;
+        order.updatedAt = Date.now();
+        
+        // Update stats
+        c.state.stats.totalRefunded += refundAmount;
+        c.state.stats.refundCount++;
+        
+        return {
+          success: true,
+          orderId,
+          refundId: refund.id,
+          amount: refundAmount,
+          status: refund.status
+        };
+      } catch (error) {
+        c.log.error("Error refunding order", { orderId, amount, error });
+        
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        throw new UserError("Failed to process refund");
+      }
+    },
+    
+    // Get payment stats
+    getPaymentStats: (c) => {
+      const ordersByStatus = {
+        created: 0,
+        pending: 0,
+        paid: 0,
+        failed: 0,
+        refunded: 0
+      };
+      
+      // Count orders by status
+      for (const order of Object.values(c.state.orders)) {
+        ordersByStatus[order.status]++;
+      }
+      
+      return {
+        stats: c.state.stats,
+        ordersByStatus,
+        totalOrders: Object.keys(c.state.orders).length
+      };
+    }
+  }
+});
+
+// Helper functions
+async function handlePaymentSuccess(c: any, paymentIntentId: string): Promise<void> {
+  // Find order with this payment intent
+  const order = Object.values(c.state.orders).find(
+    o => o.paymentIntentId === paymentIntentId
+  );
+  
+  if (!order) {
+    c.log.warn(`No order found for payment intent ${paymentIntentId}`);
+    return;
+  }
+  
+  // Update order
+  order.status = "paid";
+  order.updatedAt = Date.now();
+  
+  // Update stats
+  c.state.stats.totalProcessed++;
+  c.state.stats.totalAmount += order.amount;
+  
+  c.log.info(`Order ${order.id} marked as paid`);
+}
+
+async function handlePaymentFailure(c: any, paymentIntentId: string): Promise<void> {
+  // Find order with this payment intent
+  const order = Object.values(c.state.orders).find(
+    o => o.paymentIntentId === paymentIntentId
+  );
+  
+  if (!order) {
+    c.log.warn(`No order found for payment intent ${paymentIntentId}`);
+    return;
+  }
+  
+  // Update order
+  order.status = "failed";
+  order.updatedAt = Date.now();
+  
+  c.log.info(`Order ${order.id} marked as failed`);
+}
+
+async function handleRefund(c: any, paymentIntentId: string, refundId: string): Promise<void> {
+  // Find order with this payment intent
+  const order = Object.values(c.state.orders).find(
+    o => o.paymentIntentId === paymentIntentId
+  );
+  
+  if (!order) {
+    c.log.warn(`No order found for payment intent ${paymentIntentId}`);
+    return;
+  }
+  
+  // Update order if not already refunded
+  if (order.status !== "refunded") {
+    order.status = "refunded";
+    order.refundId = refundId;
+    order.updatedAt = Date.now();
+    
+    // Update stats if not already counted
+    if (!order.refundId) {
+      c.state.stats.refundCount++;
+      c.state.stats.totalRefunded += order.amount;
+    }
+    
+    c.log.info(`Order ${order.id} marked as refunded`);
+  }
+}
+```
+
+## File Storage Integration
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Mock file storage interfaces
+interface StorageClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+}
+
+interface FileStorage {
+  uploadFile(key: string, data: Uint8Array, metadata?: any): Promise<FileInfo>;
+  downloadFile(key: string): Promise<{ data: Uint8Array, metadata: any }>;
+  deleteFile(key: string): Promise<boolean>;
+  listFiles(prefix: string): Promise<FileInfo[]>;
+  getFileInfo(key: string): Promise<FileInfo>;
+}
+
+interface FileInfo {
+  key: string;
+  size: number;
+  lastModified: number;
+  etag?: string;
+  metadata: any;
+  url?: string;
+}
+
+// Mock implementations for the example
+class MockStorageClient implements StorageClient {
+  #connected = false;
+  
+  async connect(): Promise<void> {
+    // Simulate connection delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    this.#connected = true;
+  }
+  
+  async disconnect(): Promise<void> {
+    // Simulate disconnection delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    this.#connected = false;
+  }
+  
+  isConnected(): boolean {
+    return this.#connected;
+  }
+  
+  createBucket(name: string): FileStorage {
+    return new MockFileStorage(name);
+  }
+}
+
+class MockFileStorage implements FileStorage {
+  private bucketName: string;
+  private files: Record<string, {
+    data: Uint8Array,
+    info: FileInfo
+  }> = {};
+  
+  constructor(bucketName: string) {
+    this.bucketName = bucketName;
+  }
+  
+  async uploadFile(key: string, data: Uint8Array, metadata: any = {}): Promise<FileInfo> {
+    // Simulate upload delay (proportional to size)
+    await new Promise(resolve => setTimeout(resolve, 100 + data.length / 1024));
+    
+    const info: FileInfo = {
+      key,
+      size: data.length,
+      lastModified: Date.now(),
+      etag: `"${Math.random().toString(36).substring(2, 10)}"`,
+      metadata,
+      url: `https://mock-storage.example.com/${this.bucketName}/${key}`
+    };
+    
+    this.files[key] = { data, info };
+    return info;
+  }
+  
+  async downloadFile(key: string): Promise<{ data: Uint8Array, metadata: any }> {
+    // Simulate download delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const file = this.files[key];
+    if (!file) {
+      throw new Error(`File not found: ${key}`);
+    }
+    
+    // Simulate download delay (proportional to size)
+    await new Promise(resolve => 
+      setTimeout(resolve, 50 + file.data.length / 1024)
+    );
+    
+    return {
+      data: file.data,
+      metadata: file.info.metadata
+    };
+  }
+  
+  async deleteFile(key: string): Promise<boolean> {
+    // Simulate operation delay
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    if (!this.files[key]) {
+      return false;
+    }
+    
+    delete this.files[key];
+    return true;
+  }
+  
+  async listFiles(prefix: string): Promise<FileInfo[]> {
+    // Simulate operation delay
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    return Object.values(this.files)
+      .filter(file => file.info.key.startsWith(prefix))
+      .map(file => file.info);
+  }
+  
+  async getFileInfo(key: string): Promise<FileInfo> {
+    // Simulate operation delay
+    await new Promise(resolve => setTimeout(resolve, 30));
+    
+    const file = this.files[key];
+    if (!file) {
+      throw new Error(`File not found: ${key}`);
+    }
+    
+    return file.info;
+  }
+}
+
+// File manager actor
+const fileManager = actor({
+  state: {
+    files: {} as Record<string, {
+      id: string,
+      originalName: string,
+      storageKey: string,
+      mimeType: string,
+      size: number,
+      metadata: any,
+      uploadedBy: string,
+      uploadedAt: number,
+      downloads: number,
+      url?: string
+    }>,
+    userFiles: {} as Record<string, string[]>, // userId -> fileIds
+    tags: {} as Record<string, string[]> // tag -> fileIds
+  },
+  
+  createVars: () => ({
+    // Storage client
+    storageClient: new MockStorageClient(),
+    
+    // File storage
+    fileStorage: null as FileStorage | null,
+    
+    // Connection state
+    isConnected: false,
+    
+    // File processing state
+    processingFiles: {} as Record<string, boolean>
+  }),
+  
+  onStart: async (c) => {
+    try {
+      await connectStorage(c);
+    } catch (error) {
+      c.log.error("Failed to connect to storage on start", { error });
+      
+      // Schedule reconnection
+      c.schedule.after(5000, "reconnectStorage");
+    }
+  },
+  
+  actions: {
+    // Upload a file
+    uploadFile: async (c, input: {
+      userId: string,
+      fileData: Uint8Array,  // In a real app, would be a stream or file path
+      fileName: string,
+      mimeType: string,
+      tags?: string[]
+    }) => {
+      // Validate input
+      if (!input.userId) {
+        throw new UserError("User ID is required");
+      }
+      
+      if (!input.fileData || !input.fileData.length) {
+        throw new UserError("File data is required");
+      }
+      
+      if (!input.fileName) {
+        throw new UserError("File name is required");
+      }
+      
+      try {
+        // Ensure storage connection
+        if (!c.vars.isConnected) {
+          await connectStorage(c);
+        }
+        
+        // Generate file ID and storage key
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Create a clean file name for storage
+        const storageFileName = input.fileName
+          .replace(/[^a-zA-Z0-9.-]/g, "_")
+          .toLowerCase();
+        
+        // Create storage key with user ID and file ID
+        const storageKey = `users/${input.userId}/${fileId}/${storageFileName}`;
+        
+        // Process tags
+        const tags = input.tags || [];
+        
+        // Upload to storage
+        const fileInfo = await c.vars.fileStorage!.uploadFile(
+          storageKey,
+          input.fileData,
+          {
+            originalName: input.fileName,
+            mimeType: input.mimeType,
+            uploadedBy: input.userId,
+            uploadedAt: Date.now(),
+            tags
+          }
+        );
+        
+        // Store file information
+        c.state.files[fileId] = {
+          id: fileId,
+          originalName: input.fileName,
+          storageKey,
+          mimeType: input.mimeType,
+          size: fileInfo.size,
+          metadata: fileInfo.metadata,
+          uploadedBy: input.userId,
+          uploadedAt: fileInfo.lastModified,
+          downloads: 0,
+          url: fileInfo.url
+        };
+        
+        // Add to user files
+        if (!c.state.userFiles[input.userId]) {
+          c.state.userFiles[input.userId] = [];
+        }
+        c.state.userFiles[input.userId].push(fileId);
+        
+        // Add to tags
+        for (const tag of tags) {
+          if (!c.state.tags[tag]) {
+            c.state.tags[tag] = [];
+          }
+          c.state.tags[tag].push(fileId);
+        }
+        
+        return {
+          fileId,
+          originalName: input.fileName,
+          mimeType: input.mimeType,
+          size: fileInfo.size,
+          url: fileInfo.url
+        };
+      } catch (error) {
+        c.log.error("Error uploading file", { 
+          fileName: input.fileName, 
+          userId: input.userId, 
+          error 
+        });
+        
+        handleStorageError(c, error);
+        
+        throw new UserError("Failed to upload file");
+      }
+    },
+    
+    // Get file info
+    getFileInfo: async (c, fileId: string) => {
+      const file = c.state.files[fileId];
+      
+      if (!file) {
+        throw new UserError("File not found");
+      }
+      
+      try {
+        // Ensure storage connection
+        if (!c.vars.isConnected) {
+          await connectStorage(c);
+        }
+        
+        // Get latest info from storage
+        const fileInfo = await c.vars.fileStorage!.getFileInfo(file.storageKey);
+        
+        // Update local record
+        file.size = fileInfo.size;
+        file.url = fileInfo.url;
+        
+        return {
+          id: file.id,
+          originalName: file.originalName,
+          mimeType: file.mimeType,
+          size: file.size,
+          uploadedBy: file.uploadedBy,
+          uploadedAt: new Date(file.uploadedAt).toISOString(),
+          downloads: file.downloads,
+          url: file.url,
+          tags: fileInfo.metadata.tags || []
+        };
+      } catch (error) {
+        c.log.error("Error getting file info", { fileId, error });
+        
+        handleStorageError(c, error);
+        
+        // Return local info if storage request fails
+        return {
+          id: file.id,
+          originalName: file.originalName,
+          mimeType: file.mimeType,
+          size: file.size,
+          uploadedBy: file.uploadedBy,
+          uploadedAt: new Date(file.uploadedAt).toISOString(),
+          downloads: file.downloads,
+          url: file.url,
+          fromCache: true
+        };
+      }
+    },
+    
+    // Get download URL
+    getDownloadUrl: async (c, fileId: string, userId: string) => {
+      const file = c.state.files[fileId];
+      
+      if (!file) {
+        throw new UserError("File not found");
+      }
+      
+      // In a production environment, you would check user permissions here
+      
+      try {
+        // Ensure storage connection
+        if (!c.vars.isConnected) {
+          await connectStorage(c);
+        }
+        
+        // Increment download count
+        file.downloads++;
+        
+        // In a real implementation, might generate a signed URL
+        // with expiration time for secure downloads
+        
+        return {
+          url: file.url,
+          fileName: file.originalName,
+          mimeType: file.mimeType,
+          size: file.size
+        };
+      } catch (error) {
+        c.log.error("Error getting download URL", { fileId, userId, error });
+        
+        handleStorageError(c, error);
+        
+        throw new UserError("Failed to generate download URL");
+      }
+    },
+    
+    // List user files
+    listUserFiles: async (c, userId: string) => {
+      if (!c.state.userFiles[userId]) {
+        return { files: [] };
+      }
+      
+      try {
+        // Ensure storage connection
+        if (!c.vars.isConnected) {
+          await connectStorage(c);
+        }
+        
+        // Get file details
+        const fileIds = c.state.userFiles[userId];
+        const files = [];
+        
+        for (const fileId of fileIds) {
+          const file = c.state.files[fileId];
+          if (!file) continue;
+          
+          files.push({
+            id: file.id,
+            originalName: file.originalName,
+            mimeType: file.mimeType,
+            size: file.size,
+            uploadedAt: new Date(file.uploadedAt).toISOString(),
+            downloads: file.downloads
+          });
+        }
+        
+        return {
+          userId,
+          files,
+          totalFiles: files.length,
+          totalSize: files.reduce((sum, file) => sum + file.size, 0)
+        };
+      } catch (error) {
+        c.log.error("Error listing user files", { userId, error });
+        
+        handleStorageError(c, error);
+        
+        throw new UserError("Failed to list user files");
+      }
+    },
+    
+    // Delete file
+    deleteFile: async (c, fileId: string, userId: string) => {
+      const file = c.state.files[fileId];
+      
+      if (!file) {
+        throw new UserError("File not found");
+      }
+      
+      // Check if user has permission to delete
+      if (file.uploadedBy !== userId) {
+        throw new UserError("Not authorized to delete this file");
+      }
+      
+      try {
+        // Ensure storage connection
+        if (!c.vars.isConnected) {
+          await connectStorage(c);
+        }
+        
+        // Delete from storage
+        await c.vars.fileStorage!.deleteFile(file.storageKey);
+        
+        // Remove from state
+        delete c.state.files[fileId];
+        
+        // Remove from user files
+        if (c.state.userFiles[userId]) {
+          c.state.userFiles[userId] = c.state.userFiles[userId].filter(
+            id => id !== fileId
+          );
+        }
+        
+        // Remove from tags
+        for (const [tag, files] of Object.entries(c.state.tags)) {
+          c.state.tags[tag] = files.filter(id => id !== fileId);
+          
+          // Clean up empty tag arrays
+          if (c.state.tags[tag].length === 0) {
+            delete c.state.tags[tag];
+          }
+        }
+        
+        return { success: true };
+      } catch (error) {
+        c.log.error("Error deleting file", { fileId, userId, error });
+        
+        handleStorageError(c, error);
+        
+        throw new UserError("Failed to delete file");
+      }
+    },
+    
+    // Search files by tags
+    searchFilesByTags: (c, tags: string[]) => {
+      if (!tags || !tags.length) {
+        return { files: [] };
+      }
+      
+      // Find files that match ALL tags
+      const taggedFileSets = tags.map(tag => new Set(c.state.tags[tag] || []));
+      
+      if (taggedFileSets.length === 0 || taggedFileSets[0].size === 0) {
+        return { files: [] };
+      }
+      
+      // Start with the first tag's files
+      let matchingFileIds = [...taggedFileSets[0]];
+      
+      // Filter for files that exist in all tag sets
+      for (let i = 1; i < taggedFileSets.length; i++) {
+        matchingFileIds = matchingFileIds.filter(id => taggedFileSets[i].has(id));
+      }
+      
+      // Get file details
+      const files = matchingFileIds.map(fileId => {
+        const file = c.state.files[fileId];
+        return {
+          id: file.id,
+          originalName: file.originalName,
+          mimeType: file.mimeType,
+          size: file.size,
+          uploadedBy: file.uploadedBy,
+          uploadedAt: new Date(file.uploadedAt).toISOString()
+        };
+      });
+      
+      return {
+        tags,
+        files,
+        count: files.length
+      };
+    },
+    
+    // Reconnect to storage
+    reconnectStorage: async (c) => {
+      try {
+        // Disconnect if connected
+        if (c.vars.isConnected) {
+          await c.vars.storageClient.disconnect();
+          c.vars.isConnected = false;
+        }
+        
+        // Connect
+        await connectStorage(c);
+        
+        return { success: true };
+      } catch (error) {
+        c.log.error("Failed to reconnect to storage", { error });
+        
+        // Schedule another reconnection attempt
+        c.schedule.after(5000, "reconnectStorage");
+        
+        return { success: false };
+      }
+    }
+  }
+});
+
+// Helper functions
+async function connectStorage(c: any): Promise<void> {
+  if (c.vars.isConnected) {
+    return;
+  }
+  
+  try {
+    c.log.info("Connecting to storage...");
+    await c.vars.storageClient.connect();
+    
+    // Initialize storage bucket
+    c.vars.fileStorage = c.vars.storageClient.createBucket("user-files");
+    
+    c.vars.isConnected = true;
+    c.log.info("Successfully connected to storage");
+  } catch (error) {
+    c.log.error("Failed to connect to storage", { error });
+    c.vars.isConnected = false;
+    throw error;
+  }
+}
+
+function handleStorageError(c: any, error: any): void {
+  // Check if it's a connection error
+  const isConnectionError = error.message?.includes("connection") || 
+                           !c.vars.storageClient.isConnected();
+  
+  if (isConnectionError && c.vars.isConnected) {
+    c.log.error("Storage connection lost", { error });
+    c.vars.isConnected = false;
+    
+    // Schedule reconnection
+    c.schedule.after(5000, "reconnectStorage");
+  }
+}
+```
+
+## Best Practices
+
+1. **Connection Management**: Initialize connections during `onStart` and gracefully handle reconnections after failures.
+
+2. **Caching**: Cache responses from external services to reduce latency and avoid unnecessary calls.
+
+3. **Error Handling**: Implement proper error handling for external service failures, including retries with exponential backoff.
+
+4. **Use Non-Persisted Variables**: Store service clients in `vars` rather than persisted state.
+
+5. **Graceful Degradation**: When external services are unavailable, provide degraded functionality where possible.
+
+6. **Client Initialization**: Initialize clients outside of action handlers to avoid connection overhead on each request.
+
+7. **Batch Operations**: Combine multiple operations to external services when possible to reduce round trips.
+
+8. **Connection Cleanup**: Implement cleanup mechanisms to close connections when they are no longer needed.
+
+9. **Structured Logging**: Use structured logging to track external service interactions for debugging.
+
+10. **Circuit Breakers**: Implement circuit breakers to prevent cascading failures when external services are unstable.
+
+11. **Monitoring**: Track metrics like response time, error rate, and success rate for external service calls.
+
+12. **Decoupling**: Use message queues or event-driven patterns to decouple critical operations from external service availability.
+
+By following these patterns and best practices, you can build reliable ActorCore applications that effectively integrate with external services while maintaining resilience and performance.

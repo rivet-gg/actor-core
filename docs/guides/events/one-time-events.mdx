@@ -1,0 +1,356 @@
+---
+title: One-Time Event Handling
+description: Listen for a single event occurrence with once()
+---
+
+# One-Time Event Handling
+
+In many scenarios, you only need to handle an event once. ActorCore provides the `once()` method for these situations, allowing clients to listen for a single occurrence of an event without having to manually manage event subscription cleanup.
+
+## Basic One-Time Event Handling
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function waitForGameStart() {
+  const client = createClient<App>("http://localhost:6420");
+  
+  // Connect to game room
+  const gameRoom = await client.gameRoom.get({
+    params: { username: "Player1" }
+  });
+  
+  console.log("Waiting for game to start...");
+  
+  // Use once() to listen for a single occurrence of the event
+  return new Promise(resolve => {
+    gameRoom.once("gameStarted", (gameState) => {
+      console.log("Game has started!", gameState);
+      resolve(gameState);
+    });
+  });
+}
+
+// Usage
+async function joinGame() {
+  // Wait for game to start
+  const gameState = await waitForGameStart();
+  
+  // Initialize game UI with received state
+  initializeGameUI(gameState);
+  
+  // Game logic continues...
+}
+
+function initializeGameUI(gameState) {
+  // Setup game UI based on initial state
+  // Implementation depends on your UI framework
+}
+```
+
+## Comparing `on()` vs `once()`
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function demonstrateEventHandling() {
+  const client = createClient<App>("http://localhost:6420");
+  const notifications = await client.notifications.get();
+  
+  // Using on() - will be called for every event
+  const removeListener = notifications.on("notification", (message) => {
+    console.log("Ongoing notification:", message);
+    // This will be called for every notification event
+  });
+  
+  // Using once() - will be called only for the first event
+  notifications.once("notification", (message) => {
+    console.log("First notification only:", message);
+    // This will be called only once, then automatically removed
+  });
+  
+  // Later, when we want to stop listening to ongoing notifications
+  removeListener();
+}
+```
+
+## Awaiting a Specific One-Time Event
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+// Function to await a specific event with timeout
+function waitForEvent(actor, eventName, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    // Set timeout
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Timeout waiting for ${eventName} event`));
+    }, timeout);
+    
+    // Listen for event once
+    actor.once(eventName, (data) => {
+      clearTimeout(timeoutId);  // Clear timeout
+      resolve(data);
+    });
+  });
+}
+
+// Usage example
+async function processPayment(paymentId) {
+  const client = createClient<App>("http://localhost:6420");
+  const payments = await client.paymentProcessor.get();
+  
+  // Start payment processing
+  await payments.startProcessing(paymentId);
+  
+  try {
+    // Wait for payment to complete (or timeout after 1 minute)
+    const result = await waitForEvent(payments, "paymentCompleted", 60000);
+    
+    // Handle successful payment
+    updateOrderStatus(result.orderId, "paid");
+    showSuccessMessage(`Payment processed successfully: ${result.transactionId}`);
+    
+    return result;
+  } catch (error) {
+    // Handle timeout or other errors
+    showErrorMessage(`Payment processing failed: ${error.message}`);
+    throw error;
+  }
+}
+```
+
+## Combining with Promise.race for Multiple Events
+
+Sometimes you want to wait for one of several possible events:
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+// Wait for one of multiple possible events
+function waitForAnyEvent(actor, eventNames, timeout = 30000) {
+  return Promise.race([
+    // Create promise for timeout
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Timeout")), timeout)
+    ),
+    
+    // Create promises for each event
+    ...eventNames.map(eventName => 
+      new Promise(resolve => 
+        actor.once(eventName, data => resolve({ event: eventName, data }))
+      )
+    )
+  ]);
+}
+
+// Usage example
+async function monitorConnection() {
+  const client = createClient<App>("http://localhost:6420");
+  const connection = await client.connectionMonitor.get();
+  
+  try {
+    // Wait for either connection success or failure
+    const result = await waitForAnyEvent(
+      connection, 
+      ["connected", "connectionFailed", "connectionTimeout"],
+      10000
+    );
+    
+    // Handle based on which event occurred
+    switch (result.event) {
+      case "connected":
+        showStatus("Connected successfully");
+        startApplication(result.data.connectionId);
+        break;
+        
+      case "connectionFailed":
+        showError(`Connection failed: ${result.data.reason}`);
+        offerRetry();
+        break;
+        
+      case "connectionTimeout":
+        showError("Connection timed out");
+        checkNetworkStatus();
+        break;
+    }
+    
+    return result;
+  } catch (error) {
+    // Handle waiting timeout (different from connection timeout event)
+    showError("Monitoring timed out. Please try again.");
+    throw error;
+  }
+}
+```
+
+## Implementing a Loading State
+
+One-time events are perfect for managing loading states in UI:
+
+```tsx
+import React, { useState, useEffect } from 'react';
+import { createClient } from 'actor-core/client';
+import type { App } from './src/app';
+
+// React component that waits for data to load
+function DataLoader({ dataId, onLoaded }) {
+  const [status, setStatus] = useState('loading');
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  
+  useEffect(() => {
+    let isMounted = true;
+    
+    async function loadData() {
+      try {
+        // Connect to data service
+        const client = createClient<App>('http://localhost:6420');
+        const dataService = await client.dataService.get();
+        
+        // Request data
+        await dataService.requestData(dataId);
+        
+        // Wait for data to be ready - one time event
+        dataService.once('dataReady', (loadedData) => {
+          if (!isMounted) return;
+          
+          setStatus('loaded');
+          setData(loadedData);
+          onLoaded && onLoaded(loadedData);
+        });
+        
+        // Listen for error events
+        dataService.once('dataError', (errorInfo) => {
+          if (!isMounted) return;
+          
+          setStatus('error');
+          setError(errorInfo.message);
+        });
+      } catch (error) {
+        if (!isMounted) return;
+        
+        setStatus('error');
+        setError(error.message);
+      }
+    }
+    
+    loadData();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, [dataId, onLoaded]);
+  
+  // Render based on status
+  if (status === 'loading') {
+    return <div className="loader">Loading data...</div>;
+  } else if (status === 'error') {
+    return <div className="error">Error: {error}</div>;
+  } else {
+    return (
+      <div className="data-display">
+        <h2>Data Loaded</h2>
+        <pre>{JSON.stringify(data, null, 2)}</pre>
+      </div>
+    );
+  }
+}
+
+// Usage
+function App() {
+  const handleDataLoaded = (data) => {
+    console.log('Data loaded:', data);
+  };
+  
+  return (
+    <div className="app">
+      <h1>Data Viewer</h1>
+      <DataLoader 
+        dataId="report-123" 
+        onLoaded={handleDataLoaded} 
+      />
+    </div>
+  );
+}
+```
+
+## Handling One-Time Authentication Events
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+// Function to handle authentication flow
+async function authenticateUser(credentials) {
+  const client = createClient<App>("http://localhost:6420");
+  const auth = await client.authService.get();
+  
+  // Start authentication process
+  const authRequestId = await auth.startAuthentication(credentials);
+  
+  // Wait for authentication result (success or failure)
+  return new Promise((resolve, reject) => {
+    // Set timeout for auth process
+    const timeoutId = setTimeout(() => {
+      reject(new Error("Authentication timed out"));
+    }, 15000);
+    
+    // Handle successful authentication
+    auth.once("authSuccess", (userData) => {
+      clearTimeout(timeoutId);
+      
+      // Store auth token
+      localStorage.setItem("authToken", userData.token);
+      
+      // Resolve with user data
+      resolve(userData);
+    });
+    
+    // Handle authentication failure
+    auth.once("authFailure", (errorData) => {
+      clearTimeout(timeoutId);
+      
+      // Reject with error data
+      reject(new Error(errorData.message));
+    });
+  });
+}
+
+// Usage
+async function loginUser(username, password) {
+  try {
+    const userData = await authenticateUser({ username, password });
+    
+    // Update UI with user info
+    showWelcomeMessage(userData.displayName);
+    
+    // Navigate to dashboard
+    navigateToDashboard();
+    
+    return userData;
+  } catch (error) {
+    // Show login error
+    showLoginError(error.message);
+    
+    throw error;
+  }
+}
+```
+
+## Best Practices
+
+1. **Use `once()` for initialization**: When you need to initialize components based on a single event
+2. **Consider timeouts**: Always include timeouts when waiting for events to prevent indefinite waiting
+3. **Combine with promises**: Use Promise-based patterns for cleaner async code with events
+4. **Clean up properly**: If your component might unmount before the event occurs, ensure cleanup is handled
+5. **Consider multiple events**: Be prepared to handle multiple possible events that might resolve your wait
+6. **Error handling**: Always include error handling for better user experience
+7. **Event parameters**: Make sure you understand what parameters the event will provide
+
+The `once()` method provides a simple yet powerful way to handle one-time events without worrying about subscription management, making your code cleaner and more robust.

@@ -1,0 +1,436 @@
+---
+title: Client Event Subscription
+description: Subscribe to events on the client side with proper cleanup
+---
+
+# Client Event Subscription
+
+Clients need to subscribe to events to receive updates from actors. ActorCore provides a simple, flexible API for event subscriptions with proper lifecycle management.
+
+## Basic Event Subscription
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function connectToChat() {
+  // Create client
+  const client = createClient<App>("http://localhost:6420");
+  
+  // Connect to chat room actor
+  const chatRoom = await client.chatRoom.get({
+    params: {
+      username: "Alice"
+    }
+  });
+  
+  // Subscribe to new message events
+  chatRoom.on("newMessage", (message) => {
+    console.log(`${message.sender}: ${message.content}`);
+    
+    // Update UI with the new message
+    addMessageToUI(message);
+  });
+  
+  // Subscribe to user joined events
+  chatRoom.on("userJoined", (username) => {
+    console.log(`${username} joined the chat`);
+    
+    // Update UI with notification
+    showNotification(`${username} joined the chat`);
+  });
+  
+  // Subscribe to user left events
+  chatRoom.on("userLeft", (username) => {
+    console.log(`${username} left the chat`);
+    
+    // Update UI with notification
+    showNotification(`${username} left the chat`);
+  });
+  
+  // Send a message
+  await chatRoom.sendMessage("Hello, everyone!");
+  
+  // Return the actor handle for later cleanup
+  return chatRoom;
+}
+
+// UI update functions (implementation depends on your UI framework)
+function addMessageToUI(message) { /* ... */ }
+function showNotification(text) { /* ... */ }
+```
+
+## Proper Event Cleanup
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+class ChatComponent {
+  private client;
+  private chatRoom;
+  private eventHandlers = [];
+  
+  async connect() {
+    // Create client
+    this.client = createClient<App>("http://localhost:6420");
+    
+    // Connect to chat room
+    this.chatRoom = await this.client.chatRoom.get({
+      params: { username: "Bob" }
+    });
+    
+    // Keep track of event subscriptions for cleanup
+    this.eventHandlers.push(
+      this.chatRoom.on("newMessage", this.handleNewMessage.bind(this))
+    );
+    
+    this.eventHandlers.push(
+      this.chatRoom.on("userJoined", this.handleUserJoined.bind(this))
+    );
+    
+    this.eventHandlers.push(
+      this.chatRoom.on("userLeft", this.handleUserLeft.bind(this))
+    );
+    
+    console.log("Connected to chat room");
+  }
+  
+  // Clean up subscriptions
+  disconnect() {
+    // Remove all event listeners
+    for (const removeListener of this.eventHandlers) {
+      removeListener();
+    }
+    this.eventHandlers = [];
+    
+    // Dispose of actor handle and client
+    if (this.chatRoom) {
+      this.chatRoom.dispose();
+      this.chatRoom = null;
+    }
+    
+    if (this.client) {
+      this.client.dispose();
+      this.client = null;
+    }
+    
+    console.log("Disconnected from chat room");
+  }
+  
+  // Event handlers
+  private handleNewMessage(message) {
+    console.log(`${message.sender}: ${message.content}`);
+  }
+  
+  private handleUserJoined(username) {
+    console.log(`${username} joined the chat`);
+  }
+  
+  private handleUserLeft(username) {
+    console.log(`${username} left the chat`);
+  }
+  
+  // Send a message
+  async sendMessage(content) {
+    if (this.chatRoom) {
+      await this.chatRoom.sendMessage(content);
+    }
+  }
+}
+
+// Usage
+const chat = new ChatComponent();
+await chat.connect();
+
+// Later, when done
+chat.disconnect();
+```
+
+## React Integration
+
+```typescript
+import React, { useState, useEffect, useCallback } from 'react';
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+function ChatApp() {
+  const [client, setClient] = useState(null);
+  const [chatRoom, setChatRoom] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  
+  // Connect to actor on component mount
+  useEffect(() => {
+    const setupClient = async () => {
+      // Create client
+      const newClient = createClient<App>("http://localhost:6420");
+      
+      // Connect to chat room
+      const room = await newClient.chatRoom.get({
+        params: { username: "ReactUser" }
+      });
+      
+      // Set state
+      setClient(newClient);
+      setChatRoom(room);
+      
+      // Get initial data
+      const history = await room.getHistory();
+      setMessages(history);
+      
+      const activeUsers = await room.getActiveUsers();
+      setUsers(activeUsers);
+    };
+    
+    setupClient();
+    
+    // Cleanup on unmount
+    return () => {
+      if (chatRoom) {
+        chatRoom.dispose();
+      }
+      if (client) {
+        client.dispose();
+      }
+    };
+  }, []);
+  
+  // Set up event listeners when chatRoom is available
+  useEffect(() => {
+    if (!chatRoom) return;
+    
+    // Subscribe to events
+    const messageHandler = chatRoom.on("newMessage", (message) => {
+      setMessages(prev => [...prev, message]);
+    });
+    
+    const userJoinedHandler = chatRoom.on("userJoined", (username) => {
+      setUsers(prev => [...prev, username]);
+    });
+    
+    const userLeftHandler = chatRoom.on("userLeft", (username) => {
+      setUsers(prev => prev.filter(user => user !== username));
+    });
+    
+    // Cleanup on unmount or when chatRoom changes
+    return () => {
+      messageHandler();
+      userJoinedHandler();
+      userLeftHandler();
+    };
+  }, [chatRoom]);
+  
+  // Send message handler
+  const sendMessage = useCallback(async () => {
+    if (!chatRoom || !inputValue.trim()) return;
+    
+    await chatRoom.sendMessage(inputValue);
+    setInputValue('');
+  }, [chatRoom, inputValue]);
+  
+  if (!chatRoom) return <div>Connecting...</div>;
+  
+  return (
+    <div className="chat-app">
+      <div className="user-list">
+        <h3>Active Users ({users.length})</h3>
+        <ul>
+          {users.map(user => (
+            <li key={user}>{user}</li>
+          ))}
+        </ul>
+      </div>
+      
+      <div className="message-list">
+        {messages.map(msg => (
+          <div key={msg.id} className="message">
+            <strong>{msg.sender}:</strong> {msg.content}
+          </div>
+        ))}
+      </div>
+      
+      <div className="message-input">
+        <input
+          type="text"
+          value={inputValue}
+          onChange={e => setInputValue(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && sendMessage()}
+        />
+        <button onClick={sendMessage}>Send</button>
+      </div>
+    </div>
+  );
+}
+
+export default ChatApp;
+```
+
+## Using React Hooks with ActorCore
+
+```typescript
+import { createClient } from "actor-core/client";
+import { createReactActorCore } from "actor-core/unstable-react";
+import type { App } from "./src/app";
+
+// Create client
+const client = createClient<App>("http://localhost:6420");
+
+// Create React hooks
+const { useActor, useActorEvent } = createReactActorCore(client);
+
+// React component using hooks
+function StockTracker() {
+  // Connect to actor and keep reference updated
+  const [stockTracker] = useActor('stockTracker');
+  
+  // Local state for stock prices
+  const [stocks, setStocks] = useState({});
+  
+  // Subscribe to price update events
+  useActorEvent({
+    actor: stockTracker,
+    event: 'priceUpdated',
+    handler: (update) => {
+      setStocks(prev => ({
+        ...prev,
+        [update.symbol]: {
+          price: update.price,
+          change: update.change,
+          changePercent: update.changePercent
+        }
+      }));
+    }
+  });
+  
+  // Load initial data
+  useEffect(() => {
+    if (stockTracker) {
+      stockTracker.getPrices().then(setStocks);
+    }
+  }, [stockTracker]);
+  
+  if (!stockTracker) return <div>Loading...</div>;
+  
+  return (
+    <div className="stock-tracker">
+      <h2>Live Stock Prices</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(stocks).map(([symbol, data]) => (
+            <tr key={symbol}>
+              <td>{symbol}</td>
+              <td>${data.price.toFixed(2)}</td>
+              <td className={data.change >= 0 ? 'positive' : 'negative'}>
+                {data.change >= 0 ? '+' : ''}{data.change.toFixed(2)} 
+                ({data.changePercent.toFixed(2)}%)
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+## One-Time Event Handling
+
+Sometimes you only need to handle an event once:
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+async function waitForGameStart() {
+  const client = createClient<App>("http://localhost:6420");
+  
+  const gameRoom = await client.gameRoom.get({
+    params: { username: "Player1" }
+  });
+  
+  console.log("Waiting for game to start...");
+  
+  // Use once() to handle an event only a single time
+  return new Promise(resolve => {
+    gameRoom.once("gameStarted", (gameState) => {
+      console.log("Game has started!", gameState);
+      resolve(gameState);
+    });
+  });
+}
+
+// Usage
+const gameState = await waitForGameStart();
+startGameUI(gameState);
+```
+
+## Event Filtering with TypeScript
+
+Use TypeScript to ensure type safety with events:
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+// Define interface for message data
+interface Message {
+  id: string;
+  sender: string;
+  content: string;
+  timestamp: number;
+  type: 'text' | 'image' | 'file';
+}
+
+async function setupAdvancedChat() {
+  const client = createClient<App>("http://localhost:6420");
+  
+  const chatRoom = await client.chatRoom.get({
+    params: { username: "TypeScriptUser" }
+  });
+  
+  // Type-safe event handlers
+  chatRoom.on<[Message]>("newMessage", (message) => {
+    // TypeScript knows message has the Message interface
+    switch (message.type) {
+      case 'text':
+        console.log(`${message.sender}: ${message.content}`);
+        break;
+      case 'image':
+        console.log(`${message.sender} shared an image: ${message.content}`);
+        break;
+      case 'file':
+        console.log(`${message.sender} shared a file: ${message.content}`);
+        break;
+    }
+  });
+  
+  // Type-safe user events
+  chatRoom.on<[string, string]>("userStatus", (username, status) => {
+    // username and status are typed as strings
+    console.log(`${username} is now ${status}`);
+  });
+  
+  return chatRoom;
+}
+```
+
+## Best Practices
+
+1. **Always clean up**: Remove event listeners when they're no longer needed
+2. **Use typed events**: Define TypeScript interfaces for event data
+3. **Organize handlers**: Keep event handlers focused and organized
+4. **Consider UI frameworks**: Use framework-specific patterns for integrating events
+5. **Error handling**: Add error handling to event callbacks
+6. **Don't subscribe twice**: Avoid duplicate event subscriptions
+7. **Memory management**: Be mindful of closures in event handlers
+
+Following these patterns will help you build robust client applications that react properly to events from your actors while maintaining good performance and resource management.

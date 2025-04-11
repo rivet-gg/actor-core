@@ -1,0 +1,1659 @@
+---
+title: Authentication and Authorization
+description: Implement secure authentication and authorization in ActorCore applications
+---
+
+# Authentication and Authorization
+
+Security is a critical aspect of any application. ActorCore provides flexible patterns for implementing authentication (verifying who users are) and authorization (controlling what they can do). This guide demonstrates effective approaches for securing your actors.
+
+## Basic Connection Authentication
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const secureChat = actor({
+  state: {
+    messages: [] as Array<{
+      id: string,
+      userId: string,
+      username: string,
+      text: string,
+      timestamp: number
+    }>,
+    users: {} as Record<string, {
+      id: string,
+      username: string,
+      passwordHash: string,
+      lastActive: number
+    }>
+  },
+  
+  // Store authentication state in connection
+  createConnState: (c, { params }) => {
+    // Require authentication params
+    if (!params.auth) {
+      throw new UserError("Authentication required");
+    }
+    
+    const { username, password } = params.auth;
+    
+    // Find user
+    const user = Object.values(c.state.users).find(
+      u => u.username === username
+    );
+    
+    if (!user || !validatePassword(password, user.passwordHash)) {
+      throw new UserError("Invalid username or password");
+    }
+    
+    // Authentication successful - set connection state
+    return {
+      authenticated: true,
+      userId: user.id,
+      username: user.username,
+      connectedAt: Date.now()
+    };
+  },
+  
+  // Allow registered users to connect
+  onCreate: (c) => {
+    // Add some sample users
+    const users = [
+      { username: "alice", password: "secure123" },
+      { username: "bob", password: "password456" }
+    ];
+    
+    for (const user of users) {
+      const userId = crypto.randomUUID();
+      c.state.users[userId] = {
+        id: userId,
+        username: user.username,
+        passwordHash: hashPassword(user.password),
+        lastActive: Date.now()
+      };
+    }
+  },
+  
+  actions: {
+    // Register a new user
+    register: (c, username: string, password: string) => {
+      // Validate input
+      if (!username || username.length < 3) {
+        throw new UserError("Username must be at least 3 characters");
+      }
+      
+      if (!password || password.length < 8) {
+        throw new UserError("Password must be at least 8 characters");
+      }
+      
+      // Check if username exists
+      if (Object.values(c.state.users).some(u => u.username === username)) {
+        throw new UserError("Username already exists");
+      }
+      
+      // Create new user
+      const userId = crypto.randomUUID();
+      c.state.users[userId] = {
+        id: userId,
+        username,
+        passwordHash: hashPassword(password),
+        lastActive: Date.now()
+      };
+      
+      return { 
+        success: true, 
+        userId,
+        message: "Registration successful. You can now connect with your credentials."
+      };
+    },
+    
+    // Send a message (requires authentication)
+    sendMessage: (c, text: string) => {
+      // Connection state contains authentication info
+      if (!c.conn.state.authenticated) {
+        throw new UserError("Not authenticated");
+      }
+      
+      // Create message
+      const messageId = crypto.randomUUID();
+      const message = {
+        id: messageId,
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: Date.now()
+      };
+      
+      // Save message
+      c.state.messages.push(message);
+      
+      // Update user's last active time
+      c.state.users[c.conn.state.userId].lastActive = message.timestamp;
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", message);
+      
+      return { messageId };
+    },
+    
+    // Get chat history
+    getHistory: (c) => {
+      // Ensure user is authenticated
+      if (!c.conn.state.authenticated) {
+        throw new UserError("Not authenticated");
+      }
+      
+      // Return last 50 messages
+      return c.state.messages.slice(-50);
+    }
+  }
+});
+
+// Helper functions
+function hashPassword(password: string): string {
+  // In a real app, use a proper hashing library like bcrypt
+  // This is a simplified example
+  return `hashed:${password}`;
+}
+
+function validatePassword(password: string, hash: string): boolean {
+  // In a real app, use proper password verification
+  return hash === `hashed:${password}`;
+}
+```
+
+## Token-Based Authentication
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const authService = actor({
+  state: {
+    users: {} as Record<string, {
+      id: string,
+      username: string,
+      passwordHash: string,
+      email: string,
+      role: "user" | "admin" | "moderator"
+    }>,
+    tokens: {} as Record<string, {
+      token: string,
+      userId: string,
+      issued: number,
+      expires: number
+    }>
+  },
+  
+  onCreate: (c) => {
+    // Add sample users
+    const sampleUsers = [
+      { username: "admin", password: "admin123", email: "admin@example.com", role: "admin" },
+      { username: "moderator", password: "mod123", email: "mod@example.com", role: "moderator" },
+      { username: "user", password: "user123", email: "user@example.com", role: "user" }
+    ];
+    
+    for (const user of sampleUsers) {
+      const userId = crypto.randomUUID();
+      c.state.users[userId] = {
+        id: userId,
+        username: user.username,
+        passwordHash: hashPassword(user.password),
+        email: user.email,
+        role: user.role as "user" | "admin" | "moderator"
+      };
+    }
+  },
+  
+  actions: {
+    // Login and get authentication token
+    login: (c, username: string, password: string) => {
+      // Find user
+      const user = Object.values(c.state.users).find(
+        u => u.username === username
+      );
+      
+      if (!user || !validatePassword(password, user.passwordHash)) {
+        throw new UserError("Invalid username or password");
+      }
+      
+      // Generate token
+      const token = generateToken();
+      const now = Date.now();
+      const expires = now + (24 * 60 * 60 * 1000); // 24 hours
+      
+      // Store token
+      c.state.tokens[token] = {
+        token,
+        userId: user.id,
+        issued: now,
+        expires
+      };
+      
+      return {
+        token,
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        expiresAt: new Date(expires).toISOString()
+      };
+    },
+    
+    // Validate token
+    validateToken: (c, token: string) => {
+      const tokenData = c.state.tokens[token];
+      
+      if (!tokenData) {
+        return { valid: false, reason: "Token not found" };
+      }
+      
+      if (tokenData.expires <= Date.now()) {
+        return { valid: false, reason: "Token expired" };
+      }
+      
+      const user = c.state.users[tokenData.userId];
+      
+      if (!user) {
+        return { valid: false, reason: "User not found" };
+      }
+      
+      return {
+        valid: true,
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        expiresAt: new Date(tokenData.expires).toISOString()
+      };
+    },
+    
+    // Logout (invalidate token)
+    logout: (c, token: string) => {
+      if (!c.state.tokens[token]) {
+        return { success: false, reason: "Token not found" };
+      }
+      
+      // Remove token
+      delete c.state.tokens[token];
+      
+      return { success: true };
+    },
+    
+    // Change password
+    changePassword: (c, token: string, currentPassword: string, newPassword: string) => {
+      // Validate token
+      const validation = c.validateToken(token);
+      
+      if (!validation.valid) {
+        throw new UserError("Invalid token");
+      }
+      
+      // Get user
+      const user = c.state.users[validation.userId];
+      
+      // Verify current password
+      if (!validatePassword(currentPassword, user.passwordHash)) {
+        throw new UserError("Current password is incorrect");
+      }
+      
+      // Update password
+      user.passwordHash = hashPassword(newPassword);
+      
+      // Invalidate all existing tokens for this user
+      for (const [tokenKey, tokenData] of Object.entries(c.state.tokens)) {
+        if (tokenData.userId === user.id) {
+          delete c.state.tokens[tokenKey];
+        }
+      }
+      
+      // Issue new token
+      const newToken = generateToken();
+      const now = Date.now();
+      const expires = now + (24 * 60 * 60 * 1000);
+      
+      c.state.tokens[newToken] = {
+        token: newToken,
+        userId: user.id,
+        issued: now,
+        expires
+      };
+      
+      return {
+        success: true,
+        newToken,
+        expiresAt: new Date(expires).toISOString()
+      };
+    }
+  }
+});
+
+// Secured resource actor that uses the auth service
+const securedResource = actor({
+  state: {
+    resources: {} as Record<string, {
+      id: string,
+      name: string,
+      content: string,
+      ownerId: string,
+      createdAt: number,
+      accessLevel: "public" | "private" | "shared"
+    }>
+  },
+  
+  // Create sample resources
+  onCreate: (c) => {
+    const resources = [
+      { name: "Public Document", content: "This is public content", ownerId: "", accessLevel: "public" },
+      { name: "Private Admin Doc", content: "Confidential admin info", ownerId: "", accessLevel: "private" },
+      { name: "Shared Resource", content: "Shared content for authorized users", ownerId: "", accessLevel: "shared" }
+    ];
+    
+    // Get admin user ID (in a real app, would use a more reliable method)
+    c.client.authService.get().then(async (auth) => {
+      const adminInfo = await auth.login("admin", "admin123");
+      const adminId = adminInfo.userId;
+      
+      // Create resources
+      for (const resource of resources) {
+        const resourceId = crypto.randomUUID();
+        c.state.resources[resourceId] = {
+          id: resourceId,
+          name: resource.name,
+          content: resource.content,
+          ownerId: adminId,
+          createdAt: Date.now(),
+          accessLevel: resource.accessLevel as "public" | "private" | "shared"
+        };
+      }
+    }).catch(err => {
+      c.log.error("Failed to initialize resources", { error: err });
+    });
+  },
+  
+  actions: {
+    // Get a resource with authentication
+    getResource: async (c, resourceId: string, token: string) => {
+      // Check if resource exists
+      const resource = c.state.resources[resourceId];
+      if (!resource) {
+        throw new UserError("Resource not found");
+      }
+      
+      // Public resources don't need authentication
+      if (resource.accessLevel === "public") {
+        return {
+          id: resource.id,
+          name: resource.name,
+          content: resource.content,
+          accessLevel: resource.accessLevel,
+          createdAt: resource.createdAt
+        };
+      }
+      
+      // For private or shared resources, validate token
+      try {
+        const authService = await c.client.authService.get();
+        const validation = await authService.validateToken(token);
+        
+        if (!validation.valid) {
+          throw new UserError("Authentication required");
+        }
+        
+        // For private resources, only owner or admin can access
+        if (resource.accessLevel === "private") {
+          if (resource.ownerId !== validation.userId && validation.role !== "admin") {
+            throw new UserError("Not authorized to access this resource");
+          }
+        }
+        
+        // For shared resources, any authenticated user except regular users can access
+        if (resource.accessLevel === "shared" && validation.role === "user") {
+          throw new UserError("This resource requires elevated permissions");
+        }
+        
+        // Access granted
+        return {
+          id: resource.id,
+          name: resource.name,
+          content: resource.content,
+          accessLevel: resource.accessLevel,
+          createdAt: resource.createdAt,
+          ownerId: resource.ownerId
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Authentication error", { error });
+        throw new UserError("Authentication failed");
+      }
+    },
+    
+    // Create a resource (requires authentication)
+    createResource: async (c, resource: {
+      name: string,
+      content: string,
+      accessLevel: "public" | "private" | "shared"
+    }, token: string) => {
+      // Validate token
+      try {
+        const authService = await c.client.authService.get();
+        const validation = await authService.validateToken(token);
+        
+        if (!validation.valid) {
+          throw new UserError("Authentication required");
+        }
+        
+        // Create resource
+        const resourceId = crypto.randomUUID();
+        c.state.resources[resourceId] = {
+          id: resourceId,
+          name: resource.name,
+          content: resource.content,
+          ownerId: validation.userId,
+          createdAt: Date.now(),
+          accessLevel: resource.accessLevel
+        };
+        
+        return {
+          success: true,
+          resourceId,
+          name: resource.name,
+          accessLevel: resource.accessLevel
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Authentication error", { error });
+        throw new UserError("Authentication failed");
+      }
+    }
+  }
+});
+
+// Helper functions
+function hashPassword(password: string): string {
+  // In a real app, use a proper hashing library like bcrypt
+  return `hashed:${password}`;
+}
+
+function validatePassword(password: string, hash: string): boolean {
+  return hash === `hashed:${password}`;
+}
+
+function generateToken(): string {
+  // In a real app, use a more secure token generation method
+  return crypto.randomUUID();
+}
+```
+
+## Role-Based Access Control (RBAC)
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Define types for RBAC
+type Role = "user" | "editor" | "moderator" | "admin";
+
+interface Permission {
+  action: string;
+  resource: string;
+  conditions?: Record<string, any>;
+}
+
+const rbacSystem = actor({
+  state: {
+    users: {} as Record<string, {
+      id: string,
+      username: string,
+      passwordHash: string,
+      email: string,
+      roles: Role[],
+      createdAt: number
+    }>,
+    sessions: {} as Record<string, {
+      sessionId: string,
+      userId: string,
+      createdAt: number,
+      expiresAt: number,
+      lastActive: number
+    }>,
+    rolePermissions: {
+      user: [
+        { action: "read", resource: "post" },
+        { action: "create", resource: "comment" },
+        { action: "read", resource: "comment" },
+        { action: "update", resource: "comment", conditions: { isOwner: true } },
+        { action: "delete", resource: "comment", conditions: { isOwner: true } }
+      ],
+      editor: [
+        { action: "read", resource: "post" },
+        { action: "create", resource: "post" },
+        { action: "update", resource: "post" },
+        { action: "read", resource: "comment" },
+        { action: "create", resource: "comment" },
+        { action: "update", resource: "comment" },
+        { action: "delete", resource: "comment" }
+      ],
+      moderator: [
+        { action: "read", resource: "post" },
+        { action: "read", resource: "comment" },
+        { action: "update", resource: "comment" },
+        { action: "delete", resource: "comment" },
+        { action: "ban", resource: "user", conditions: { temporary: true } }
+      ],
+      admin: [
+        { action: "read", resource: "*" },
+        { action: "create", resource: "*" },
+        { action: "update", resource: "*" },
+        { action: "delete", resource: "*" },
+        { action: "ban", resource: "user" },
+        { action: "assign", resource: "role" }
+      ]
+    } as Record<Role, Permission[]>
+  },
+  
+  createVars: () => ({
+    // Track failed login attempts
+    loginAttempts: new Map<string, {
+      count: number,
+      lastAttempt: number
+    }>()
+  }),
+  
+  onCreate: (c) => {
+    // Add sample users with different roles
+    const sampleUsers = [
+      { 
+        username: "admin",
+        password: "admin123",
+        email: "admin@example.com",
+        roles: ["admin"]
+      },
+      { 
+        username: "moderator",
+        password: "mod123",
+        email: "mod@example.com",
+        roles: ["moderator"]
+      },
+      { 
+        username: "editor",
+        password: "editor123",
+        email: "editor@example.com",
+        roles: ["editor", "user"]
+      },
+      { 
+        username: "user",
+        password: "user123",
+        email: "user@example.com",
+        roles: ["user"]
+      }
+    ];
+    
+    for (const user of sampleUsers) {
+      const userId = crypto.randomUUID();
+      c.state.users[userId] = {
+        id: userId,
+        username: user.username,
+        passwordHash: hashPassword(user.password),
+        email: user.email,
+        roles: user.roles as Role[],
+        createdAt: Date.now()
+      };
+    }
+  },
+  
+  actions: {
+    // Login and create session
+    login: (c, username: string, password: string) => {
+      // Check for brute force attempts
+      const key = `login:${username}`;
+      const attemptData = c.vars.loginAttempts.get(key) || { count: 0, lastAttempt: 0 };
+      const now = Date.now();
+      
+      // Reset count if more than 30 minutes have passed
+      if (now - attemptData.lastAttempt > 30 * 60 * 1000) {
+        attemptData.count = 0;
+      }
+      
+      // Check if too many attempts
+      if (attemptData.count >= 5) {
+        // Calculate lockout time remaining
+        const lockoutTime = attemptData.lastAttempt + 30 * 60 * 1000;
+        const waitSeconds = Math.ceil((lockoutTime - now) / 1000);
+        
+        throw new UserError("Too many failed login attempts", {
+          retryAfter: waitSeconds
+        });
+      }
+      
+      // Find user
+      const user = Object.values(c.state.users).find(
+        u => u.username === username
+      );
+      
+      // Update attempt count if user not found or password invalid
+      if (!user || !validatePassword(password, user.passwordHash)) {
+        attemptData.count++;
+        attemptData.lastAttempt = now;
+        c.vars.loginAttempts.set(key, attemptData);
+        
+        throw new UserError("Invalid username or password");
+      }
+      
+      // Reset attempt count on successful login
+      c.vars.loginAttempts.delete(key);
+      
+      // Create session
+      const sessionId = generateId();
+      const expiresAt = now + (24 * 60 * 60 * 1000); // 24 hours
+      
+      c.state.sessions[sessionId] = {
+        sessionId,
+        userId: user.id,
+        createdAt: now,
+        expiresAt,
+        lastActive: now
+      };
+      
+      return {
+        sessionId,
+        userId: user.id,
+        username: user.username,
+        roles: user.roles,
+        expiresAt: new Date(expiresAt).toISOString()
+      };
+    },
+    
+    // Logout (delete session)
+    logout: (c, sessionId: string) => {
+      if (!c.state.sessions[sessionId]) {
+        return { success: false, reason: "Session not found" };
+      }
+      
+      delete c.state.sessions[sessionId];
+      
+      return { success: true };
+    },
+    
+    // Check if user has permission
+    checkPermission: (c, sessionId: string, action: string, resource: string, context: any = {}) => {
+      // Validate session
+      const session = c.state.sessions[sessionId];
+      if (!session) {
+        return { allowed: false, reason: "Invalid session" };
+      }
+      
+      // Check if session expired
+      if (session.expiresAt <= Date.now()) {
+        return { allowed: false, reason: "Session expired" };
+      }
+      
+      // Update last active
+      session.lastActive = Date.now();
+      
+      // Get user
+      const user = c.state.users[session.userId];
+      if (!user) {
+        return { allowed: false, reason: "User not found" };
+      }
+      
+      // Check permissions for each role
+      let allowed = false;
+      
+      for (const role of user.roles) {
+        const permissions = c.state.rolePermissions[role] || [];
+        
+        for (const permission of permissions) {
+          // Check if permission matches action and resource
+          if (
+            (permission.action === action || permission.action === "*") &&
+            (permission.resource === resource || permission.resource === "*")
+          ) {
+            // Check conditions if any
+            if (permission.conditions) {
+              let conditionsMet = true;
+              
+              for (const [key, value] of Object.entries(permission.conditions)) {
+                // Special condition: isOwner
+                if (key === "isOwner" && value === true) {
+                  if (context.ownerId !== user.id) {
+                    conditionsMet = false;
+                    break;
+                  }
+                }
+                // Other conditions
+                else if (context[key] !== value) {
+                  conditionsMet = false;
+                  break;
+                }
+              }
+              
+              if (!conditionsMet) {
+                continue; // Skip this permission if conditions not met
+              }
+            }
+            
+            // Permission granted
+            allowed = true;
+            break;
+          }
+        }
+        
+        if (allowed) break;
+      }
+      
+      return {
+        allowed,
+        userId: user.id,
+        username: user.username,
+        roles: user.roles,
+        action,
+        resource
+      };
+    },
+    
+    // Assign role to user (admin only)
+    assignRole: async (c, sessionId: string, targetUserId: string, role: Role) => {
+      // Check admin permission
+      const permissionCheck = await c.checkPermission(sessionId, "assign", "role");
+      
+      if (!permissionCheck.allowed) {
+        throw new UserError("Not authorized to assign roles");
+      }
+      
+      // Check if user exists
+      if (!c.state.users[targetUserId]) {
+        throw new UserError("User not found");
+      }
+      
+      // Check if role exists
+      if (!Object.keys(c.state.rolePermissions).includes(role)) {
+        throw new UserError("Invalid role");
+      }
+      
+      // Add role if not already assigned
+      if (!c.state.users[targetUserId].roles.includes(role)) {
+        c.state.users[targetUserId].roles.push(role);
+      }
+      
+      return {
+        success: true,
+        userId: targetUserId,
+        roles: c.state.users[targetUserId].roles
+      };
+    },
+    
+    // Remove role from user (admin only)
+    removeRole: async (c, sessionId: string, targetUserId: string, role: Role) => {
+      // Check admin permission
+      const permissionCheck = await c.checkPermission(sessionId, "assign", "role");
+      
+      if (!permissionCheck.allowed) {
+        throw new UserError("Not authorized to manage roles");
+      }
+      
+      // Check if user exists
+      if (!c.state.users[targetUserId]) {
+        throw new UserError("User not found");
+      }
+      
+      // Remove role
+      c.state.users[targetUserId].roles = c.state.users[targetUserId].roles
+        .filter(r => r !== role);
+      
+      // Ensure user has at least the basic user role
+      if (c.state.users[targetUserId].roles.length === 0) {
+        c.state.users[targetUserId].roles.push("user");
+      }
+      
+      return {
+        success: true,
+        userId: targetUserId,
+        roles: c.state.users[targetUserId].roles
+      };
+    },
+    
+    // Get available permissions for a role
+    getRolePermissions: (c, role: Role) => {
+      if (!Object.keys(c.state.rolePermissions).includes(role)) {
+        throw new UserError("Invalid role");
+      }
+      
+      return {
+        role,
+        permissions: c.state.rolePermissions[role]
+      };
+    }
+  }
+});
+
+// Content management system using RBAC
+const contentSystem = actor({
+  state: {
+    posts: {} as Record<string, {
+      id: string,
+      title: string,
+      content: string,
+      authorId: string,
+      authorName: string,
+      createdAt: number,
+      updatedAt: number,
+      published: boolean
+    }>,
+    comments: {} as Record<string, {
+      id: string,
+      postId: string,
+      authorId: string,
+      authorName: string,
+      content: string,
+      createdAt: number,
+      updatedAt: number,
+      approved: boolean
+    }>
+  },
+  
+  actions: {
+    // Create a post
+    createPost: async (c, sessionId: string, post: {
+      title: string,
+      content: string,
+      published?: boolean
+    }) => {
+      try {
+        // Get auth service
+        const rbac = await c.client.rbacSystem.get();
+        
+        // Check permission
+        const permissionCheck = await rbac.checkPermission(
+          sessionId, "create", "post"
+        );
+        
+        if (!permissionCheck.allowed) {
+          throw new UserError("Not authorized to create posts");
+        }
+        
+        // Create post
+        const postId = generateId();
+        const now = Date.now();
+        
+        c.state.posts[postId] = {
+          id: postId,
+          title: post.title,
+          content: post.content,
+          authorId: permissionCheck.userId,
+          authorName: permissionCheck.username,
+          createdAt: now,
+          updatedAt: now,
+          published: post.published === true
+        };
+        
+        return {
+          success: true,
+          postId,
+          title: post.title,
+          published: c.state.posts[postId].published
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error creating post", { error });
+        throw new UserError("Failed to create post");
+      }
+    },
+    
+    // Update a post
+    updatePost: async (c, sessionId: string, postId: string, updates: {
+      title?: string,
+      content?: string,
+      published?: boolean
+    }) => {
+      try {
+        // Check if post exists
+        const post = c.state.posts[postId];
+        if (!post) {
+          throw new UserError("Post not found");
+        }
+        
+        // Get auth service
+        const rbac = await c.client.rbacSystem.get();
+        
+        // Check permission (with ownership context)
+        const permissionCheck = await rbac.checkPermission(
+          sessionId, "update", "post", { ownerId: post.authorId }
+        );
+        
+        if (!permissionCheck.allowed) {
+          throw new UserError("Not authorized to update this post");
+        }
+        
+        // Apply updates
+        if (updates.title) post.title = updates.title;
+        if (updates.content) post.content = updates.content;
+        if (updates.published !== undefined) post.published = updates.published;
+        
+        post.updatedAt = Date.now();
+        
+        return {
+          success: true,
+          postId,
+          title: post.title,
+          published: post.published
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error updating post", { error });
+        throw new UserError("Failed to update post");
+      }
+    },
+    
+    // Delete a post
+    deletePost: async (c, sessionId: string, postId: string) => {
+      try {
+        // Check if post exists
+        const post = c.state.posts[postId];
+        if (!post) {
+          throw new UserError("Post not found");
+        }
+        
+        // Get auth service
+        const rbac = await c.client.rbacSystem.get();
+        
+        // Check permission (with ownership context)
+        const permissionCheck = await rbac.checkPermission(
+          sessionId, "delete", "post", { ownerId: post.authorId }
+        );
+        
+        if (!permissionCheck.allowed) {
+          throw new UserError("Not authorized to delete this post");
+        }
+        
+        // Delete post
+        delete c.state.posts[postId];
+        
+        // Delete associated comments
+        for (const [commentId, comment] of Object.entries(c.state.comments)) {
+          if (comment.postId === postId) {
+            delete c.state.comments[commentId];
+          }
+        }
+        
+        return {
+          success: true,
+          message: "Post and associated comments deleted"
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error deleting post", { error });
+        throw new UserError("Failed to delete post");
+      }
+    },
+    
+    // Add a comment
+    addComment: async (c, sessionId: string, postId: string, content: string) => {
+      try {
+        // Check if post exists
+        const post = c.state.posts[postId];
+        if (!post) {
+          throw new UserError("Post not found");
+        }
+        
+        // Check if post is published
+        if (!post.published) {
+          throw new UserError("Cannot comment on unpublished posts");
+        }
+        
+        // Get auth service
+        const rbac = await c.client.rbacSystem.get();
+        
+        // Check permission
+        const permissionCheck = await rbac.checkPermission(
+          sessionId, "create", "comment"
+        );
+        
+        if (!permissionCheck.allowed) {
+          throw new UserError("Not authorized to add comments");
+        }
+        
+        // Create comment
+        const commentId = generateId();
+        const now = Date.now();
+        
+        c.state.comments[commentId] = {
+          id: commentId,
+          postId,
+          authorId: permissionCheck.userId,
+          authorName: permissionCheck.username,
+          content,
+          createdAt: now,
+          updatedAt: now,
+          approved: permissionCheck.roles.includes("moderator") || 
+                   permissionCheck.roles.includes("admin") ||
+                   permissionCheck.userId === post.authorId
+        };
+        
+        return {
+          success: true,
+          commentId,
+          approved: c.state.comments[commentId].approved
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error adding comment", { error });
+        throw new UserError("Failed to add comment");
+      }
+    },
+    
+    // Moderate a comment
+    moderateComment: async (c, sessionId: string, commentId: string, approved: boolean) => {
+      try {
+        // Check if comment exists
+        const comment = c.state.comments[commentId];
+        if (!comment) {
+          throw new UserError("Comment not found");
+        }
+        
+        // Get auth service
+        const rbac = await c.client.rbacSystem.get();
+        
+        // Check permission
+        const permissionCheck = await rbac.checkPermission(
+          sessionId, "update", "comment"
+        );
+        
+        if (!permissionCheck.allowed) {
+          throw new UserError("Not authorized to moderate comments");
+        }
+        
+        // Update approval status
+        comment.approved = approved;
+        comment.updatedAt = Date.now();
+        
+        return {
+          success: true,
+          commentId,
+          approved: comment.approved
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error moderating comment", { error });
+        throw new UserError("Failed to moderate comment");
+      }
+    },
+    
+    // Get post with comments
+    getPost: async (c, sessionId: string | null, postId: string) => {
+      try {
+        // Check if post exists
+        const post = c.state.posts[postId];
+        if (!post) {
+          throw new UserError("Post not found");
+        }
+        
+        // If post is not published, require permission check
+        if (!post.published) {
+          // Skip check if no session (return not found)
+          if (!sessionId) {
+            throw new UserError("Post not found");
+          }
+          
+          // Get auth service
+          const rbac = await c.client.rbacSystem.get();
+          
+          // Check read permission with ownership context
+          const permissionCheck = await rbac.checkPermission(
+            sessionId, "read", "post", { ownerId: post.authorId }
+          );
+          
+          if (!permissionCheck.allowed) {
+            throw new UserError("Post not found");
+          }
+        }
+        
+        // Get comments for post
+        let comments = Object.values(c.state.comments)
+          .filter(c => c.postId === postId);
+        
+        // If not authenticated, only show approved comments
+        if (!sessionId) {
+          comments = comments.filter(c => c.approved);
+        } else {
+          // If authenticated, check if can see unapproved comments
+          const rbac = await c.client.rbacSystem.get();
+          const permissionCheck = await rbac.checkPermission(
+            sessionId, "read", "comment"
+          );
+          
+          if (!permissionCheck.allowed || 
+              (!permissionCheck.roles.includes("moderator") && 
+               !permissionCheck.roles.includes("admin") &&
+               permissionCheck.userId !== post.authorId)) {
+            comments = comments.filter(c => c.approved);
+          }
+        }
+        
+        return {
+          post: {
+            id: post.id,
+            title: post.title,
+            content: post.content,
+            authorId: post.authorId,
+            authorName: post.authorName,
+            createdAt: post.createdAt,
+            published: post.published
+          },
+          comments: comments.map(c => ({
+            id: c.id,
+            authorId: c.authorId,
+            authorName: c.authorName,
+            content: c.content,
+            createdAt: c.createdAt,
+            approved: c.approved
+          }))
+        };
+      } catch (error) {
+        if (error instanceof UserError) {
+          throw error;
+        }
+        
+        c.log.error("Error retrieving post", { error });
+        throw new UserError("Failed to retrieve post");
+      }
+    }
+  }
+});
+
+// Helper functions
+function hashPassword(password: string): string {
+  // In a real app, use a proper hashing library like bcrypt
+  return `hashed:${password}`;
+}
+
+function validatePassword(password: string, hash: string): boolean {
+  return hash === `hashed:${password}`;
+}
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
+```
+
+## OAuth Integration
+
+This example demonstrates how to integrate with an OAuth provider for authentication. Note that this is a simplified example, and actual OAuth integration would require additional setup with a real OAuth provider.
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// OAuth configuration (in a real app, this would be environment variables)
+const oauthConfig = {
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret",
+  redirectUri: "https://yourapp.com/oauth/callback",
+  authorizationEndpoint: "https://oauth-provider.com/authorize",
+  tokenEndpoint: "https://oauth-provider.com/token",
+  userInfoEndpoint: "https://oauth-provider.com/userinfo",
+  scope: "openid profile email"
+};
+
+const oauthService = actor({
+  state: {
+    users: {} as Record<string, {
+      id: string,
+      providerId: string,
+      provider: string,
+      email: string,
+      displayName: string,
+      profileData: any,
+      createdAt: number,
+      lastLogin: number
+    }>,
+    sessions: {} as Record<string, {
+      id: string,
+      userId: string,
+      createdAt: number,
+      expiresAt: number
+    }>,
+    pendingAuthFlows: {} as Record<string, {
+      state: string,
+      codeVerifier: string,
+      redirectUri: string,
+      createdAt: number
+    }>
+  },
+  
+  actions: {
+    // Initialize OAuth flow
+    initializeAuthFlow: (c, redirectUri?: string) => {
+      // Generate state value for CSRF protection
+      const state = generateRandomString(32);
+      
+      // Generate PKCE code verifier and challenge (simplified)
+      const codeVerifier = generateRandomString(64);
+      
+      // Store auth flow data
+      c.state.pendingAuthFlows[state] = {
+        state,
+        codeVerifier,
+        redirectUri: redirectUri || oauthConfig.redirectUri,
+        createdAt: Date.now()
+      };
+      
+      // Cleanup - remove old pending flows (older than 10 minutes)
+      const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+      for (const [key, flow] of Object.entries(c.state.pendingAuthFlows)) {
+        if (flow.createdAt < tenMinutesAgo) {
+          delete c.state.pendingAuthFlows[key];
+        }
+      }
+      
+      // Build authorization URL (this would be redirected to in a real app)
+      const authUrl = new URL(oauthConfig.authorizationEndpoint);
+      authUrl.searchParams.append("client_id", oauthConfig.clientId);
+      authUrl.searchParams.append("redirect_uri", redirectUri || oauthConfig.redirectUri);
+      authUrl.searchParams.append("response_type", "code");
+      authUrl.searchParams.append("scope", oauthConfig.scope);
+      authUrl.searchParams.append("state", state);
+      
+      return {
+        authUrl: authUrl.toString(),
+        state
+      };
+    },
+    
+    // Handle OAuth callback (exchange code for token)
+    handleCallback: (c, code: string, state: string) => {
+      // Verify state
+      const pendingFlow = c.state.pendingAuthFlows[state];
+      if (!pendingFlow) {
+        throw new UserError("Invalid state parameter");
+      }
+      
+      // In a real implementation, this would make an HTTP request to the token endpoint
+      // using the authorization code, client credentials, and code verifier
+      
+      // For this example, we'll simulate a successful token exchange and user info fetch
+      const simulatedTokenResponse = {
+        access_token: "simulated-access-token",
+        id_token: "simulated-id-token",
+        expires_in: 3600
+      };
+      
+      // Simulate fetching user info with the access token
+      const simulatedUserInfo = {
+        sub: "12345", // Provider's user ID
+        email: "user@example.com",
+        name: "Example User",
+        picture: "https://example.com/profile.jpg"
+      };
+      
+      // Find existing user or create new one
+      let user = Object.values(c.state.users).find(
+        u => u.providerId === simulatedUserInfo.sub && u.provider === "oauth-provider"
+      );
+      
+      const now = Date.now();
+      
+      if (!user) {
+        // Create new user
+        const userId = generateId();
+        c.state.users[userId] = {
+          id: userId,
+          providerId: simulatedUserInfo.sub,
+          provider: "oauth-provider",
+          email: simulatedUserInfo.email,
+          displayName: simulatedUserInfo.name,
+          profileData: simulatedUserInfo,
+          createdAt: now,
+          lastLogin: now
+        };
+        
+        user = c.state.users[userId];
+      } else {
+        // Update existing user
+        user.lastLogin = now;
+        user.email = simulatedUserInfo.email;
+        user.displayName = simulatedUserInfo.name;
+        user.profileData = simulatedUserInfo;
+      }
+      
+      // Create session
+      const sessionId = generateId();
+      const expiresAt = now + (24 * 60 * 60 * 1000); // 24 hours
+      
+      c.state.sessions[sessionId] = {
+        id: sessionId,
+        userId: user.id,
+        createdAt: now,
+        expiresAt
+      };
+      
+      // Clean up pending flow
+      delete c.state.pendingAuthFlows[state];
+      
+      return {
+        sessionId,
+        userId: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        expiresAt: new Date(expiresAt).toISOString()
+      };
+    },
+    
+    // Validate session
+    validateSession: (c, sessionId: string) => {
+      const session = c.state.sessions[sessionId];
+      
+      if (!session) {
+        return { valid: false, reason: "Session not found" };
+      }
+      
+      if (session.expiresAt <= Date.now()) {
+        return { valid: false, reason: "Session expired" };
+      }
+      
+      const user = c.state.users[session.userId];
+      
+      if (!user) {
+        return { valid: false, reason: "User not found" };
+      }
+      
+      return {
+        valid: true,
+        userId: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        provider: user.provider,
+        expiresAt: new Date(session.expiresAt).toISOString()
+      };
+    },
+    
+    // End session (logout)
+    endSession: (c, sessionId: string) => {
+      if (!c.state.sessions[sessionId]) {
+        return { success: false, reason: "Session not found" };
+      }
+      
+      delete c.state.sessions[sessionId];
+      
+      return { success: true };
+    },
+    
+    // Get user profile
+    getUserProfile: async (c, sessionId: string) => {
+      const validation = await c.validateSession(sessionId);
+      
+      if (!validation.valid) {
+        throw new UserError("Invalid session");
+      }
+      
+      const user = c.state.users[validation.userId];
+      
+      return {
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        provider: user.provider,
+        picture: user.profileData.picture,
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin
+      };
+    }
+  }
+});
+
+// Helper functions
+function generateRandomString(length: number): string {
+  // In a real app, use a proper secure random generator
+  return Array.from(
+    { length }, 
+    () => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[
+      Math.floor(Math.random() * 62)
+    ]
+  ).join("");
+}
+
+function generateId(): string {
+  return crypto.randomUUID();
+}
+```
+
+## Client-Side Authentication
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const secureApi = actor({
+  state: {
+    apiKeys: {} as Record<string, {
+      key: string,
+      name: string,
+      origins: string[],
+      createdAt: number,
+      lastUsed: number
+    }>,
+    resources: {} as Record<string, any>
+  },
+  
+  // Connection state to track authentication
+  createConnState: (c, { params }) => {
+    // Get API key from params or headers
+    const apiKey = params.apiKey || params.headers?.["x-api-key"];
+    
+    if (!apiKey) {
+      return {
+        authenticated: false,
+        error: "API key required"
+      };
+    }
+    
+    // Validate API key
+    const keyData = c.state.apiKeys[apiKey];
+    if (!keyData) {
+      return {
+        authenticated: false,
+        error: "Invalid API key"
+      };
+    }
+    
+    // Check origin if available
+    const origin = params.headers?.["origin"];
+    if (origin && keyData.origins.length > 0) {
+      // Check if origin is allowed
+      const isAllowedOrigin = keyData.origins.some(allowedOrigin => {
+        if (allowedOrigin === "*") return true;
+        if (allowedOrigin === origin) return true;
+        
+        // Support wildcard domains
+        if (allowedOrigin.startsWith("*.")) {
+          const domain = allowedOrigin.slice(2);
+          return origin.endsWith(domain);
+        }
+        
+        return false;
+      });
+      
+      if (!isAllowedOrigin) {
+        return {
+          authenticated: false,
+          error: "Origin not allowed"
+        };
+      }
+    }
+    
+    // Authentication successful
+    return {
+      authenticated: true,
+      apiKey,
+      origin: origin || "unknown"
+    };
+  },
+  
+  onCreate: (c) => {
+    // Add sample API keys
+    const sampleKeys = [
+      {
+        key: "public-dev-123",
+        name: "Development API Key",
+        origins: ["http://localhost:3000", "http://localhost:8080"]
+      },
+      {
+        key: "prod-web-456",
+        name: "Production Web API Key",
+        origins: ["https://example.com", "https://*.example.com"]
+      },
+      {
+        key: "server-789",
+        name: "Server API Key",
+        origins: [] // No origin restriction for server-to-server
+      }
+    ];
+    
+    for (const key of sampleKeys) {
+      c.state.apiKeys[key.key] = {
+        ...key,
+        createdAt: Date.now(),
+        lastUsed: Date.now()
+      };
+    }
+    
+    // Add sample resources
+    c.state.resources = {
+      posts: [
+        { id: "1", title: "Public Post 1", content: "This is a public post" },
+        { id: "2", title: "Public Post 2", content: "Another public post" }
+      ],
+      users: [
+        { id: "u1", name: "John Doe", email: "john@example.com" },
+        { id: "u2", name: "Jane Smith", email: "jane@example.com" }
+      ]
+    };
+  },
+  
+  actions: {
+    // Get public resources (authentication optional)
+    getPublicResources: (c) => {
+      // Update API key usage if authenticated
+      if (c.conn.state.authenticated) {
+        const apiKey = c.conn.state.apiKey;
+        c.state.apiKeys[apiKey].lastUsed = Date.now();
+      }
+      
+      // Return public data
+      return {
+        posts: c.state.resources.posts.map(post => ({
+          id: post.id,
+          title: post.title
+        }))
+      };
+    },
+    
+    // Get protected resource (requires authentication)
+    getResource: (c, resourceType: string, resourceId: string) => {
+      // Check authentication
+      if (!c.conn.state.authenticated) {
+        throw new UserError("Authentication required");
+      }
+      
+      // Update API key usage
+      const apiKey = c.conn.state.apiKey;
+      c.state.apiKeys[apiKey].lastUsed = Date.now();
+      
+      // Check if resource type exists
+      if (!c.state.resources[resourceType]) {
+        throw new UserError("Resource type not found");
+      }
+      
+      // Find resource
+      const resource = c.state.resources[resourceType].find(
+        (r: any) => r.id === resourceId
+      );
+      
+      if (!resource) {
+        throw new UserError("Resource not found");
+      }
+      
+      return {
+        resourceType,
+        resource
+      };
+    },
+    
+    // Create new API key
+    createApiKey: (c, name: string, origins: string[] = []) => {
+      // This would typically be an admin-only action with additional auth
+      // For simplicity, we're not adding that check here
+      
+      const apiKey = `key-${generateRandomString(16)}`;
+      
+      c.state.apiKeys[apiKey] = {
+        key: apiKey,
+        name,
+        origins,
+        createdAt: Date.now(),
+        lastUsed: Date.now()
+      };
+      
+      return {
+        apiKey,
+        name,
+        origins
+      };
+    }
+  }
+});
+
+function generateRandomString(length: number): string {
+  // In a real app, use a secure random generator
+  return Array.from(
+    { length }, 
+    () => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[
+      Math.floor(Math.random() * 62)
+    ]
+  ).join("");
+}
+```
+
+## Best Practices
+
+1. **Layer Security**: Implement multiple layers of security, including authentication, authorization, and input validation.
+
+2. **Secure Passwords**: Use proper password hashing libraries (like bcrypt) in production, not the simplified examples shown here.
+
+3. **Token Management**: Set appropriate expirations for authentication tokens and implement token refresh mechanisms.
+
+4. **RBAC for Flexibility**: Use role-based access control for more flexible permission management.
+
+5. **Validate on Every Request**: Don't assume that a previously authenticated user is still valid; verify authentication on each sensitive action.
+
+6. **Store Minimal Data**: Store only the necessary authentication data in actor state.
+
+7. **Secure Connection Context**: Use connection state to track authentication status for WebSocket connections.
+
+8. **Defense in Depth**: Implement multiple checks, from connection validation to action-specific permissions.
+
+9. **Rate Limiting**: Combine authentication with rate limiting to prevent abuse.
+
+10. **Secure Configuration**: Keep secrets and credentials out of your code; use environment variables or secure storage.
+
+11. **Implement Brute Force Protection**: Add mechanisms to prevent brute force attacks, such as login attempt limits.
+
+12. **Cross-Actor Authentication**: For multi-actor systems, implement secure token validation methods between actors.
+
+By following these patterns and best practices, you can build secure ActorCore applications that protect user data and resources from unauthorized access.

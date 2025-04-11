@@ -1,0 +1,574 @@
+---
+title: Sending to Specific Connections
+description: Target events to specific clients based on criteria
+---
+
+# Sending to Specific Connections
+
+While broadcasting sends events to all connected clients, many applications need to target specific clients. ActorCore makes it easy to send events to individual connections or groups based on custom criteria.
+
+## Sending to a Single Connection
+
+```typescript
+import { actor } from "actor-core";
+
+const notificationService = actor({
+  state: {
+    notifications: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    if (!params.userId) {
+      throw new Error("User ID required");
+    }
+    
+    return {
+      userId: params.userId,
+      lastActive: Date.now()
+    };
+  },
+  
+  actions: {
+    // Send notification to a specific user
+    sendNotification: (c, targetUserId, message, type = "info") => {
+      // Create notification
+      const notification = {
+        id: crypto.randomUUID(),
+        message,
+        type,
+        timestamp: Date.now(),
+        read: false
+      };
+      
+      // Store notification
+      if (!c.state.notifications[targetUserId]) {
+        c.state.notifications[targetUserId] = [];
+      }
+      c.state.notifications[targetUserId].push(notification);
+      
+      // Find the target user's connection(s)
+      const targetConn = c.conns.find(conn => conn.state.userId === targetUserId);
+      
+      // Send notification if user is connected
+      if (targetConn) {
+        targetConn.send("notification", notification);
+        return { sent: true, id: notification.id };
+      }
+      
+      // User not connected
+      return { sent: false, id: notification.id };
+    },
+    
+    // Get my notifications
+    getMyNotifications: (c) => {
+      return c.state.notifications[c.conn.state.userId] || [];
+    },
+    
+    // Mark notification as read
+    markAsRead: (c, notificationId) => {
+      const userNotifications = c.state.notifications[c.conn.state.userId] || [];
+      const notification = userNotifications.find(n => n.id === notificationId);
+      
+      if (notification) {
+        notification.read = true;
+        return true;
+      }
+      
+      return false;
+    }
+  }
+});
+```
+
+## Finding Connections by Criteria
+
+```typescript
+import { actor } from "actor-core";
+
+const chatRoom = actor({
+  state: {
+    messages: [],
+    users: {},
+    rooms: {
+      "general": { name: "General Chat", description: "Public discussion" },
+      "support": { name: "Support", description: "Get help here" }
+    }
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      currentRoom: "general"
+    };
+  },
+  
+  actions: {
+    // Change room
+    joinRoom: (c, roomId) => {
+      // Validate room exists
+      if (!c.state.rooms[roomId]) {
+        throw new Error("Room not found");
+      }
+      
+      // Store previous room to notify others
+      const previousRoom = c.conn.state.currentRoom;
+      
+      // Update connection state
+      c.conn.state.currentRoom = roomId;
+      
+      // Notify users in previous room that user left
+      sendToRoom(c, previousRoom, "userLeft", {
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        room: previousRoom
+      });
+      
+      // Notify users in new room that user joined
+      sendToRoom(c, roomId, "userJoined", {
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        room: roomId
+      });
+      
+      return { roomId, name: c.state.rooms[roomId].name };
+    },
+    
+    // Send message to current room
+    sendMessage: (c, message) => {
+      const roomId = c.conn.state.currentRoom;
+      
+      // Create message object
+      const messageObj = {
+        id: crypto.randomUUID(),
+        sender: c.conn.state.userId,
+        username: c.conn.state.username,
+        room: roomId,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Store message
+      c.state.messages.push(messageObj);
+      
+      // Send to all users in the current room
+      sendToRoom(c, roomId, "newMessage", messageObj);
+      
+      return messageObj.id;
+    },
+    
+    // Send direct message to specific user
+    sendDirectMessage: (c, targetUserId, message) => {
+      // Find target user's connection
+      const targetConn = c.conns.find(conn => conn.state.userId === targetUserId);
+      
+      if (!targetConn) {
+        return { sent: false, reason: "User not online" };
+      }
+      
+      // Create direct message
+      const dm = {
+        id: crypto.randomUUID(),
+        sender: c.conn.state.userId,
+        senderName: c.conn.state.username,
+        recipient: targetUserId,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Send to recipient
+      targetConn.send("directMessage", dm);
+      
+      // Also send a copy to sender (so they see it in their chat)
+      c.conn.send("directMessage", dm);
+      
+      return { sent: true, id: dm.id };
+    },
+    
+    // Get list of users in a room
+    getUsersInRoom: (c, roomId) => {
+      // Default to current room if not specified
+      const room = roomId || c.conn.state.currentRoom;
+      
+      // Find connections in the room
+      const users = c.conns
+        .filter(conn => conn.state.currentRoom === room)
+        .map(conn => ({
+          userId: conn.state.userId,
+          username: conn.state.username
+        }));
+      
+      return users;
+    }
+  }
+});
+
+// Helper function to send message to all users in a room
+function sendToRoom(c, roomId, eventName, data) {
+  for (const conn of c.conns) {
+    if (conn.state.currentRoom === roomId) {
+      conn.send(eventName, data);
+    }
+  }
+}
+```
+
+## Multi-User Game Example
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const gameRoom = actor({
+  state: {
+    status: "waiting", // waiting, playing, finished
+    players: {},
+    spectators: [],
+    currentTurn: null,
+    gameData: {},
+    startTime: null,
+    endTime: null
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      role: "spectator" // spectator or player
+    };
+  },
+  
+  actions: {
+    // Join as player
+    joinAsPlayer: (c) => {
+      // Check if game is joinable
+      if (c.state.status !== "waiting") {
+        throw new UserError("Game already in progress");
+      }
+      
+      // Check if we're already at max players
+      if (Object.keys(c.state.players).length >= 4) {
+        throw new UserError("Game is full");
+      }
+      
+      // Update connection state
+      c.conn.state.role = "player";
+      
+      // Add to players list
+      c.state.players[c.conn.state.userId] = {
+        username: c.conn.state.username,
+        score: 0,
+        ready: false,
+        joinedAt: Date.now()
+      };
+      
+      // Remove from spectators if needed
+      c.state.spectators = c.state.spectators.filter(id => id !== c.conn.state.userId);
+      
+      // Notify all connections
+      c.broadcast("playerJoined", {
+        userId: c.conn.state.userId,
+        username: c.conn.state.username
+      });
+      
+      return { success: true, playerId: c.conn.state.userId };
+    },
+    
+    // Mark player as ready
+    setReady: (c, ready = true) => {
+      // Check if user is a player
+      if (c.conn.state.role !== "player") {
+        throw new UserError("Only players can set ready status");
+      }
+      
+      // Update ready status
+      c.state.players[c.conn.state.userId].ready = ready;
+      
+      // Notify all connections
+      c.broadcast("playerReady", {
+        userId: c.conn.state.userId,
+        ready
+      });
+      
+      // Check if all players are ready
+      const allPlayersReady = Object.values(c.state.players)
+        .every(player => player.ready);
+      
+      // Start game if all ready and at least 2 players
+      if (allPlayersReady && Object.keys(c.state.players).length >= 2) {
+        startGame(c);
+      }
+      
+      return { success: true };
+    },
+    
+    // Make a move in the game
+    makeMove: (c, move) => {
+      // Check if game is in progress
+      if (c.state.status !== "playing") {
+        throw new UserError("Game not in progress");
+      }
+      
+      // Check if it's this player's turn
+      if (c.state.currentTurn !== c.conn.state.userId) {
+        throw new UserError("Not your turn");
+      }
+      
+      // Validate move (game-specific logic)
+      if (!isValidMove(c.state.gameData, move)) {
+        throw new UserError("Invalid move");
+      }
+      
+      // Apply move to game state
+      applyMove(c.state.gameData, c.conn.state.userId, move);
+      
+      // Check if game should end
+      if (isGameOver(c.state.gameData)) {
+        endGame(c);
+        return { success: true, gameOver: true };
+      }
+      
+      // Move to next player's turn
+      c.state.currentTurn = getNextPlayer(c.state.players, c.state.currentTurn);
+      
+      // Notify everyone about the move
+      c.broadcast("moveMade", {
+        playerId: c.conn.state.userId,
+        move,
+        nextTurn: c.state.currentTurn
+      });
+      
+      // Send specific data to the next player
+      const nextPlayerConn = c.conns.find(conn => 
+        conn.state.userId === c.state.currentTurn
+      );
+      
+      if (nextPlayerConn) {
+        nextPlayerConn.send("yourTurn", {
+          availableMoves: getAvailableMoves(c.state.gameData, c.state.currentTurn)
+        });
+      }
+      
+      return { success: true };
+    },
+    
+    // Send chat message (players or spectators)
+    sendChatMessage: (c, message) => {
+      // Create message object
+      const chatMessage = {
+        sender: c.conn.state.username,
+        role: c.conn.state.role,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Send to everyone
+      c.broadcast("chatMessage", chatMessage);
+      
+      return { success: true };
+    },
+    
+    // Send private hint to a specific player (admin only)
+    sendHint: (c, playerId, hint) => {
+      // Check if sender is admin
+      if (!c.conn.state.isAdmin) {
+        throw new UserError("Unauthorized");
+      }
+      
+      // Find player connection
+      const playerConn = c.conns.find(conn => conn.state.userId === playerId);
+      
+      if (!playerConn) {
+        return { success: false, reason: "Player not connected" };
+      }
+      
+      // Send hint only to that player
+      playerConn.send("hint", {
+        hint,
+        from: "GameMaster"
+      });
+      
+      return { success: true };
+    }
+  }
+});
+
+// Helper functions (implementation depends on game rules)
+function startGame(c) {
+  c.state.status = "playing";
+  c.state.startTime = Date.now();
+  c.state.currentTurn = getFirstPlayer(c.state.players);
+  c.state.gameData = initializeGameData(c.state.players);
+  
+  // Notify all players game started
+  c.broadcast("gameStarted", {
+    startTime: c.state.startTime,
+    players: c.state.players,
+    currentTurn: c.state.currentTurn
+  });
+  
+  // Send specific data to first player
+  const firstPlayerConn = c.conns.find(conn => 
+    conn.state.userId === c.state.currentTurn
+  );
+  
+  if (firstPlayerConn) {
+    firstPlayerConn.send("yourTurn", {
+      availableMoves: getAvailableMoves(c.state.gameData, c.state.currentTurn)
+    });
+  }
+}
+
+function endGame(c) {
+  c.state.status = "finished";
+  c.state.endTime = Date.now();
+  c.state.currentTurn = null;
+  
+  // Calculate final scores and determine winner
+  const results = calculateResults(c.state.players, c.state.gameData);
+  
+  // Update player scores
+  for (const [playerId, score] of Object.entries(results.scores)) {
+    c.state.players[playerId].score = score;
+  }
+  
+  // Notify everyone game ended
+  c.broadcast("gameEnded", {
+    winner: results.winner,
+    scores: results.scores,
+    duration: c.state.endTime - c.state.startTime
+  });
+}
+
+// Game logic stubs (would be implemented based on specific game)
+function isValidMove(gameData, move) { return true; }
+function applyMove(gameData, playerId, move) { }
+function isGameOver(gameData) { return false; }
+function getNextPlayer(players, currentTurn) { return Object.keys(players)[0]; }
+function getFirstPlayer(players) { return Object.keys(players)[0]; }
+function initializeGameData(players) { return {}; }
+function getAvailableMoves(gameData, playerId) { return []; }
+function calculateResults(players, gameData) { 
+  return { winner: Object.keys(players)[0], scores: {} };
+}
+```
+
+## Filtering Connections by Properties
+
+```typescript
+import { actor } from "actor-core";
+
+const adminPanel = actor({
+  state: {
+    announcements: []
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      role: params.role || "user", // user, mod, admin
+      permissions: params.permissions || []
+    };
+  },
+  
+  actions: {
+    // Send message to users with specific role
+    broadcastToRole: (c, role, message) => {
+      // Verify sender has permission
+      if (c.conn.state.role !== "admin") {
+        throw new Error("Unauthorized");
+      }
+      
+      // Create announcement
+      const announcement = {
+        id: crypto.randomUUID(),
+        sender: c.conn.state.userId,
+        message,
+        targetRole: role,
+        timestamp: Date.now()
+      };
+      
+      // Store announcement
+      c.state.announcements.push(announcement);
+      
+      // Count of recipients
+      let sent = 0;
+      
+      // Send to all connections with matching role
+      for (const conn of c.conns) {
+        if (conn.state.role === role) {
+          conn.send("announcement", announcement);
+          sent++;
+        }
+      }
+      
+      return { sent, announcementId: announcement.id };
+    },
+    
+    // Send message to users with specific permission
+    alertWithPermission: (c, permission, message) => {
+      // Verify sender has permission
+      if (c.conn.state.role !== "admin") {
+        throw new Error("Unauthorized");
+      }
+      
+      // Create alert
+      const alert = {
+        id: crypto.randomUUID(),
+        sender: c.conn.state.userId,
+        message,
+        permission,
+        timestamp: Date.now()
+      };
+      
+      // Count of recipients
+      let sent = 0;
+      
+      // Send to all connections with matching permission
+      for (const conn of c.conns) {
+        if (conn.state.permissions.includes(permission)) {
+          conn.send("alert", alert);
+          sent++;
+        }
+      }
+      
+      return { sent, alertId: alert.id };
+    },
+    
+    // Broadcast to everyone with a specific client version
+    announceToVersion: (c, clientVersion, message) => {
+      // Verify sender has permission
+      if (c.conn.state.role !== "admin") {
+        throw new Error("Unauthorized");
+      }
+      
+      // Count of recipients
+      let sent = 0;
+      
+      // Send to all matching connections
+      for (const conn of c.conns) {
+        if (conn.state.clientVersion === clientVersion) {
+          conn.send("versionAnnouncement", {
+            message,
+            timestamp: Date.now()
+          });
+          sent++;
+        }
+      }
+      
+      return { sent };
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Filter efficiently**: Use connection properties to find target audiences
+2. **Store connection metadata**: Keep useful info in connection state for targeting
+3. **Handle offline cases**: Have fallbacks when targeted users aren't connected
+4. **Optimize lookups**: Use indexes or maps for more efficient connection finding
+5. **Consider privacy**: Be careful not to leak sensitive information when sending targeted messages
+6. **Return feedback**: Let senders know if their message was delivered 
+7. **Cache common filters**: If you frequently filter connections the same way, cache the results
+
+By effectively targeting specific connections, you can create more personalized and efficient real-time experiences in your ActorCore applications.

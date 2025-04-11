@@ -1,0 +1,120 @@
+---
+title: Setting Up an App
+description: Learn how to create an ActorCore app with multiple actors
+---
+
+# Setting Up an App
+
+An ActorCore app brings together multiple actors into a cohesive system. This guide shows how to set up a complete app with multiple actors and serve it.
+
+## Basic App Setup
+
+```typescript
+import { setup, serve } from "actor-core";
+
+// Import your actor definitions
+import chatRoom from "./actors/chat-room";
+import userProfile from "./actors/user-profile";
+import gameServer from "./actors/game-server";
+
+// Create the app with multiple actors
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile,
+    gameServer
+  }
+});
+
+// Export the app type for client type-safety
+export type App = typeof app;
+
+// Serve the app (if running directly)
+if (import.meta.main) {
+  serve(app);
+}
+```
+
+## Configuration Options
+
+You can customize your app with configuration options:
+
+```typescript
+import { setup, serve } from "actor-core";
+import { memoryDriver } from "actor-core/drivers/memory";
+
+export const app = setup({
+  // Actor definitions
+  actors: { /* your actors */ },
+  
+  // Optional configuration
+  config: {
+    // Set a custom port (default: 6420)
+    port: 8080,
+    
+    // Set a custom host (default: localhost)
+    host: "0.0.0.0",
+    
+    // Configure CORS (default: localhost origins only)
+    cors: {
+      allowedOrigins: ["https://example.com"]
+    },
+    
+    // Set custom topology (default: standalone)
+    topology: "standalone",
+    
+    // Set driver (default: memory)
+    driver: memoryDriver()
+  }
+});
+```
+
+## Running in Different Environments
+
+### Development Environment
+
+```typescript
+// dev.ts
+import { app } from "./app";
+import { serve } from "actor-core";
+
+// Enable development features
+serve(app, {
+  dev: true,
+  verbose: true
+});
+```
+
+### Production Environment
+
+```typescript
+// server.ts
+import { app } from "./app";
+import { serve } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+// Use production-ready driver
+serve(app, {
+  driver: redisDriver({
+    url: process.env.REDIS_URL
+  }),
+  topology: "partition" // For horizontal scaling
+});
+```
+
+## Importing from Another File
+
+```typescript
+// client.ts
+import { createClient } from "actor-core/client";
+import type { App } from "./app";
+
+export const client = createClient<App>(
+  process.env.API_URL || "http://localhost:6420"
+);
+
+// Now you can use the client to get actor handles
+const chatRoom = await client.chatRoom.get();
+```
+
+This pattern allows you to create modular applications with multiple actors while maintaining strong typing throughout your codebase.

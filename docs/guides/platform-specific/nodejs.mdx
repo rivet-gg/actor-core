@@ -1,0 +1,961 @@
+---
+title: Node.js Development
+description: Learn how to develop, test, and deploy ActorCore applications on Node.js
+---
+
+# Node.js Development
+
+Node.js is the primary development environment for ActorCore applications. This guide covers how to set up, develop, test, and deploy ActorCore applications in a Node.js environment.
+
+## Setting Up a Node.js Environment for ActorCore
+
+### Prerequisites
+
+- Node.js 16.x or later
+- npm or yarn package manager
+
+### Creating a New ActorCore Project
+
+The simplest way to create a new ActorCore project is to use the `create-actor` command:
+
+```bash
+# Using npx
+npx create-actor my-actor-app
+
+# Using yarn
+yarn create actor my-actor-app
+```
+
+This creates a new directory with a basic ActorCore project structure:
+
+```
+my-actor-app/
+├── node_modules/
+├── src/
+│   ├── actors/
+│   │   └── app.ts
+│   ├── client.ts
+│   └── index.ts
+├── tests/
+│   └── basic.test.ts
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+### Manual Setup
+
+Alternatively, you can set up a project manually:
+
+1. Create a new directory:
+
+```bash
+mkdir my-actor-app
+cd my-actor-app
+```
+
+2. Initialize a new npm/yarn project:
+
+```bash
+npm init -y
+# or
+yarn init -y
+```
+
+3. Install required dependencies:
+
+```bash
+npm install actor-core typescript tsx vitest
+# or
+yarn add actor-core typescript tsx vitest
+```
+
+4. Create a `tsconfig.json` file:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src", "tests"],
+  "exclude": ["node_modules"]
+}
+```
+
+5. Create basic project structure:
+
+```bash
+mkdir -p src/actors tests
+```
+
+## Project Structure for Node.js Development
+
+A well-organized ActorCore project for Node.js typically follows this structure:
+
+```
+project-root/
+├── node_modules/
+├── src/
+│   ├── actors/             # Actor definitions
+│   │   ├── counter.ts
+│   │   ├── user.ts
+│   │   └── chat-room.ts
+│   ├── app.ts              # Main application setup
+│   ├── client.ts           # Client setup for testing
+│   ├── config.ts           # Configuration
+│   ├── index.ts            # Entry point
+│   └── types.ts            # Type definitions
+├── tests/
+│   ├── unit/               # Unit tests
+│   │   ├── counter.test.ts
+│   │   └── chat-room.test.ts
+│   └── integration/        # Integration tests
+│       └── chat-flow.test.ts
+├── scripts/                # Utility scripts
+│   ├── dev.ts
+│   └── deploy.ts
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+## Creating Your First Actor
+
+Let's create a simple counter actor:
+
+```typescript
+// src/actors/counter.ts
+import { actor } from "actor-core";
+
+export const counter = actor({
+  // Initial state
+  state: { count: 0 },
+  
+  // Actor actions
+  actions: {
+    increment: (c, amount = 1) => {
+      c.state.count += amount;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    },
+    
+    decrement: (c, amount = 1) => {
+      c.state.count -= amount;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    },
+    
+    getCount: (c) => {
+      return c.state.count;
+    },
+    
+    reset: (c) => {
+      const previousCount = c.state.count;
+      c.state.count = 0;
+      c.broadcast("countUpdated", c.state.count);
+      return { previous: previousCount, current: 0 };
+    }
+  }
+});
+```
+
+## Setting Up the Application
+
+Create the main application setup:
+
+```typescript
+// src/app.ts
+import { setup } from "actor-core";
+import { counter } from "./actors/counter";
+
+// Set up the application
+export const app = setup({
+  actors: {
+    counter
+  }
+});
+
+// Export the app type for client usage
+export type App = typeof app;
+```
+
+## Creating an Entry Point
+
+Create an entry point for running the server:
+
+```typescript
+// src/index.ts
+import { app } from "./app";
+
+// Get port from environment variable or use default
+const port = parseInt(process.env.PORT || "3000", 10);
+
+// Start the ActorCore server
+const server = app.listen({ port });
+
+// Log when server starts
+server.on("listening", () => {
+  console.log(`ActorCore server listening on port ${port}`);
+});
+
+// Handle server errors
+server.on("error", (error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});
+```
+
+## Setting Up Scripts in package.json
+
+Configure useful scripts in your `package.json`:
+
+```json
+{
+  "name": "my-actor-app",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "actor-core": "^0.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^3.12.7",
+    "vitest": "^0.32.0"
+  }
+}
+```
+
+## Developing with Node.js
+
+### Running in Development Mode
+
+Use `tsx` to run the TypeScript code directly:
+
+```bash
+npm run dev
+# or
+yarn dev
+```
+
+This will start your ActorCore server in development mode with hot reloading.
+
+### Type Checking
+
+Run the TypeScript compiler to check for type errors:
+
+```bash
+npm run typecheck
+# or
+yarn typecheck
+```
+
+## Testing ActorCore Applications in Node.js
+
+ActorCore provides testing utilities to make testing actors easy.
+
+### Writing Unit Tests
+
+Create a test for the counter actor:
+
+```typescript
+// tests/unit/counter.test.ts
+import { test, expect } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../../src/app";
+
+test("counter should increment correctly", async () => {
+  // Setup test environment
+  const { client } = await setupTest(app);
+  
+  // Get counter actor
+  const counter = await client.counter.get();
+  
+  // Initial count should be 0
+  const initialCount = await counter.getCount();
+  expect(initialCount).toBe(0);
+  
+  // Increment by 1
+  const newCount = await counter.increment();
+  expect(newCount).toBe(1);
+  
+  // Increment by 5
+  const countAfterFive = await counter.increment(5);
+  expect(countAfterFive).toBe(6);
+});
+
+test("counter should decrement correctly", async () => {
+  const { client } = await setupTest(app);
+  const counter = await client.counter.get();
+  
+  // Set up initial count
+  await counter.increment(10);
+  
+  // Decrement by 1
+  const newCount = await counter.decrement();
+  expect(newCount).toBe(9);
+  
+  // Decrement by 3
+  const countAfterThree = await counter.decrement(3);
+  expect(countAfterThree).toBe(6);
+});
+
+test("counter should reset correctly", async () => {
+  const { client } = await setupTest(app);
+  const counter = await client.counter.get();
+  
+  // Set up initial count
+  await counter.increment(10);
+  
+  // Reset counter
+  const result = await counter.reset();
+  expect(result.previous).toBe(10);
+  expect(result.current).toBe(0);
+  
+  // Check count after reset
+  const count = await counter.getCount();
+  expect(count).toBe(0);
+});
+
+test("counter should broadcast updates", async () => {
+  const { client } = await setupTest(app);
+  const counter = await client.counter.get();
+  
+  // Set up event listener
+  const events: number[] = [];
+  const unsubscribe = counter.on("countUpdated", (count) => {
+    events.push(count);
+  });
+  
+  // Perform actions
+  await counter.increment(3);
+  await counter.decrement(1);
+  await counter.reset();
+  
+  // Clean up event listener
+  unsubscribe();
+  
+  // Check captured events
+  expect(events).toEqual([3, 2, 0]);
+});
+```
+
+### Running Tests
+
+Run the tests with Vitest:
+
+```bash
+npm test
+# or
+yarn test
+```
+
+For watch mode during development:
+
+```bash
+npm run test:watch
+# or
+yarn test:watch
+```
+
+## Node.js Deployment Strategies
+
+### Basic Production Deployment
+
+1. Build the TypeScript code:
+
+```bash
+npm run build
+# or
+yarn build
+```
+
+2. Start the production server:
+
+```bash
+npm start
+# or
+yarn start
+```
+
+### Docker Deployment
+
+Create a `Dockerfile`:
+
+```dockerfile
+# Use Node.js LTS image
+FROM node:18-alpine
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy built app
+COPY dist ./dist
+
+# Set environment variables
+ENV PORT=3000
+ENV NODE_ENV=production
+
+# Expose port
+EXPOSE 3000
+
+# Start the server
+CMD ["node", "dist/index.js"]
+```
+
+Create a `.dockerignore` file:
+
+```
+node_modules
+npm-debug.log
+src
+tests
+.git
+.gitignore
+```
+
+Build and run the Docker image:
+
+```bash
+# Build
+docker build -t my-actor-app .
+
+# Run
+docker run -p 3000:3000 my-actor-app
+```
+
+### PM2 Deployment
+
+PM2 is a popular process manager for Node.js applications.
+
+1. Install PM2:
+
+```bash
+npm install -g pm2
+```
+
+2. Create a `ecosystem.config.js` file:
+
+```javascript
+module.exports = {
+  apps: [{
+    name: "actor-app",
+    script: "dist/index.js",
+    instances: "max",
+    exec_mode: "cluster",
+    env: {
+      NODE_ENV: "production",
+      PORT: 3000
+    }
+  }]
+}
+```
+
+3. Deploy with PM2:
+
+```bash
+pm2 start ecosystem.config.js
+```
+
+## Advanced Node.js Development
+
+### Environment Configuration
+
+Create a configuration system:
+
+```typescript
+// src/config.ts
+import dotenv from "dotenv";
+
+// Load environment variables from .env file
+dotenv.config();
+
+export const config = {
+  server: {
+    port: parseInt(process.env.PORT || "3000", 10),
+    host: process.env.HOST || "0.0.0.0",
+    cors: {
+      enabled: process.env.CORS_ENABLED === "true",
+      origin: process.env.CORS_ORIGIN || "*"
+    }
+  },
+  storage: {
+    type: process.env.STORAGE_TYPE || "memory",
+    redis: {
+      url: process.env.REDIS_URL || "redis://localhost:6379"
+    }
+  },
+  auth: {
+    jwtSecret: process.env.JWT_SECRET || "your-secret-key"
+  },
+  logging: {
+    level: process.env.LOG_LEVEL || "info"
+  }
+};
+```
+
+Use the configuration in your app setup:
+
+```typescript
+// src/app.ts
+import { setup, partitionTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+import { memoryDriver } from "actor-core/drivers/memory";
+import { counter } from "./actors/counter";
+import { chatRoom } from "./actors/chat-room";
+import { config } from "./config";
+
+// Configure driver based on config
+function getDriver() {
+  if (config.storage.type === "redis") {
+    return redisDriver({
+      url: config.storage.redis.url
+    });
+  }
+  
+  return memoryDriver();
+}
+
+// Set up the application
+export const app = setup({
+  actors: {
+    counter,
+    chatRoom
+  },
+  topology: partitionTopology({
+    driver: getDriver()
+  })
+});
+
+export type App = typeof app;
+```
+
+### Graceful Shutdown
+
+Implement graceful shutdown:
+
+```typescript
+// src/index.ts
+import { app } from "./app";
+import { config } from "./config";
+
+// Start the ActorCore server
+const server = app.listen({
+  port: config.server.port,
+  host: config.server.host
+});
+
+// Log when server starts
+server.on("listening", () => {
+  console.log(`ActorCore server listening on ${config.server.host}:${config.server.port}`);
+});
+
+// Handle server errors
+server.on("error", (error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});
+
+// Handle process signals for graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down gracefully");
+  
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+  
+  // Force close after timeout
+  setTimeout(() => {
+    console.error("Could not close connections in time, forcefully shutting down");
+    process.exit(1);
+  }, 10000);
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received, shutting down gracefully");
+  
+  server.close(() => {
+    console.log("Server closed");
+    process.exit(0);
+  });
+  
+  // Force close after timeout
+  setTimeout(() => {
+    console.error("Could not close connections in time, forcefully shutting down");
+    process.exit(1);
+  }, 10000);
+});
+```
+
+### Using with Express
+
+Combine ActorCore with Express:
+
+```typescript
+// src/index.ts
+import express from "express";
+import cors from "cors";
+import { app } from "./app";
+import { config } from "./config";
+
+// Create Express app
+const expressApp = express();
+const port = config.server.port;
+
+// Configure middleware
+expressApp.use(cors());
+expressApp.use(express.json());
+
+// Create ActorCore server
+const actorServer = app.listen({
+  port: port + 1 // Run on a different port
+});
+
+// Define API routes
+expressApp.get("/api/counter", async (req, res) => {
+  try {
+    // Create a client
+    const client = app.createClient();
+    
+    // Get counter actor
+    const counter = await client.counter.get();
+    
+    // Get current count
+    const count = await counter.getCount();
+    
+    res.json({ count });
+  } catch (error) {
+    console.error("Error fetching count:", error);
+    res.status(500).json({ error: "Failed to fetch count" });
+  }
+});
+
+// Start the Express server
+expressApp.listen(port, () => {
+  console.log(`Express server running on port ${port}`);
+  console.log(`ActorCore server running on port ${port + 1}`);
+});
+```
+
+## Debugging in Node.js
+
+### Using Inspector
+
+You can use the Node.js inspector for debugging:
+
+```bash
+# Start with inspector
+node --inspect dist/index.js
+
+# Or with tsx for TypeScript
+node --inspect node_modules/.bin/tsx src/index.ts
+```
+
+Then connect with Chrome DevTools by navigating to `chrome://inspect`.
+
+### Logging with Pino
+
+Implement advanced logging with Pino:
+
+```typescript
+// src/utils/logger.ts
+import pino from "pino";
+import { config } from "../config";
+
+export const logger = pino({
+  level: config.logging.level,
+  transport: {
+    target: "pino-pretty",
+    options: {
+      colorize: true
+    }
+  },
+  base: undefined
+});
+```
+
+Use the logger throughout your application:
+
+```typescript
+// src/index.ts
+import { app } from "./app";
+import { config } from "./config";
+import { logger } from "./utils/logger";
+
+// Start the ActorCore server
+const server = app.listen({
+  port: config.server.port,
+  host: config.server.host
+});
+
+// Log when server starts
+server.on("listening", () => {
+  logger.info(`ActorCore server listening on ${config.server.host}:${config.server.port}`);
+});
+
+// Handle server errors
+server.on("error", (error) => {
+  logger.error({ err: error }, "Server error");
+  process.exit(1);
+});
+```
+
+## Complete Node.js Example
+
+Here's a complete chat application example:
+
+```typescript
+// src/actors/chat-room.ts
+import { actor, UserError } from "actor-core";
+
+export const chatRoom = actor({
+  state: {
+    messages: [] as Array<{
+      id: string;
+      userId: string;
+      username: string;
+      text: string;
+      timestamp: number;
+    }>,
+    users: {} as Record<string, {
+      userId: string;
+      username: string;
+      lastActive: number;
+    }>
+  },
+  
+  // Connection params validation and processing
+  createConnState: (c, { params }) => {
+    // Validate params
+    if (!params.userId || !params.username) {
+      throw new UserError("User ID and username are required");
+    }
+    
+    // Add to users list
+    c.state.users[params.userId] = {
+      userId: params.userId,
+      username: params.username,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast user joined
+    c.broadcast("userJoined", {
+      userId: params.userId,
+      username: params.username,
+      timestamp: Date.now()
+    });
+    
+    // Return connection state
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // Send a message
+    sendMessage: (c, text: string) => {
+      // Validate message
+      if (!text || !text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      // Create message
+      const message = {
+        id: crypto.randomUUID(),
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text: text.trim(),
+        timestamp: Date.now()
+      };
+      
+      // Add to message history
+      c.state.messages.push(message);
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = message.timestamp;
+      
+      // Limit history (keep last 100 messages)
+      if (c.state.messages.length > 100) {
+        c.state.messages = c.state.messages.slice(-100);
+      }
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", message);
+      
+      return { messageId: message.id };
+    },
+    
+    // Get message history
+    getMessages: (c, limit = 50) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return limited history
+      return c.state.messages.slice(-Math.min(limit, 100));
+    },
+    
+    // Get active users
+    getUsers: (c) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return all users
+      return Object.values(c.state.users);
+    },
+    
+    // Disconnect (user leaving)
+    disconnect: (c) => {
+      const userId = c.conn.state.userId;
+      
+      // Remove from users list
+      delete c.state.users[userId];
+      
+      // Broadcast user left
+      c.broadcast("userLeft", {
+        userId,
+        timestamp: Date.now()
+      });
+      
+      return { success: true };
+    }
+  }
+});
+
+// src/app.ts
+import { setup } from "actor-core";
+import { chatRoom } from "./actors/chat-room";
+
+export const app = setup({
+  actors: {
+    chatRoom
+  }
+});
+
+export type App = typeof app;
+
+// src/index.ts
+import { app } from "./app";
+
+const port = parseInt(process.env.PORT || "3000", 10);
+
+console.log(`Starting ActorCore chat server on port ${port}...`);
+
+const server = app.listen({ port });
+
+server.on("listening", () => {
+  console.log(`ActorCore chat server is running on port ${port}`);
+});
+
+server.on("error", (error) => {
+  console.error("Server error:", error);
+  process.exit(1);
+});
+
+// Handle process signals for graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down gracefully");
+  server.close();
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received, shutting down gracefully");
+  server.close();
+});
+
+// src/client.ts (for testing/examples)
+import { app } from "./app";
+
+async function example() {
+  try {
+    // Create a client
+    const client = app.createClient();
+    
+    // Connect to the chat room
+    const chatRoom = await client.chatRoom.get({
+      params: {
+        userId: "user123",
+        username: "Alice"
+      }
+    });
+    
+    // Get existing messages
+    const messages = await chatRoom.getMessages();
+    console.log("Messages:", messages);
+    
+    // Subscribe to new messages
+    chatRoom.on("newMessage", (message) => {
+      console.log("New message:", message);
+    });
+    
+    // Subscribe to user events
+    chatRoom.on("userJoined", (data) => {
+      console.log(`${data.username} joined the chat`);
+    });
+    
+    chatRoom.on("userLeft", (data) => {
+      console.log(`User ${data.userId} left the chat`);
+    });
+    
+    // Send a message
+    await chatRoom.sendMessage("Hello, everyone!");
+    
+    // Get users
+    const users = await chatRoom.getUsers();
+    console.log("Active users:", users);
+    
+  } catch (error) {
+    console.error("Error:", error);
+  }
+}
+
+// Only run if executed directly
+if (require.main === module) {
+  example();
+}
+```
+
+## Best Practices for Node.js Development
+
+1. **Use TypeScript**: TypeScript provides type safety and better tooling.
+
+2. **Environment Configuration**: Use environment variables for configuration.
+
+3. **Error Handling**: Implement proper error handling throughout your application.
+
+4. **Testing**: Write comprehensive tests for your actors and actions.
+
+5. **Monitoring**: Implement logging and monitoring for production.
+
+6. **CI/CD**: Set up continuous integration and deployment pipelines.
+
+7. **Documentation**: Document your code and APIs.
+
+8. **Resource Management**: Properly manage resources like database connections.
+
+9. **Security**: Follow security best practices, especially for authentication and authorization.
+
+10. **Performance**: Monitor and optimize performance for production.
+
+By following these best practices, you can build robust, maintainable, and scalable ActorCore applications in Node.js.

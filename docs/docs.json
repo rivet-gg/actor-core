@@ -137,6 +137,110 @@
             ]
           }
         ]
+      },
+      {
+        "tab": "Guides",
+        "pages": [
+          "guides/overview",
+          {
+            "group": "Basic Setup",
+            "pages": [
+              "guides/basic-setup/creating-simple-actor",
+              "guides/basic-setup/setting-up-app",
+              "guides/basic-setup/creating-client",
+              "guides/basic-setup/typescript-types"
+            ]
+          },
+          {
+            "group": "State Management",
+            "pages": [
+              "guides/state-management/initializing-state",
+              "guides/state-management/complex-state",
+              "guides/state-management/ephemeral-vars",
+              "guides/state-management/state-change-hooks"
+            ]
+          },
+          {
+            "group": "Connection Handling",
+            "pages": [
+              "guides/connection-handling/connection-authentication",
+              "guides/connection-handling/broadcasting-connections",
+              "guides/connection-handling/specific-connections",
+              "guides/connection-handling/connection-lifecycle"
+            ]
+          },
+          {
+            "group": "Events",
+            "pages": [
+              "guides/events/event-broadcasting",
+              "guides/events/client-subscription",
+              "guides/events/one-time-events",
+              "guides/events/typed-events"
+            ]
+          },
+          {
+            "group": "Scheduling",
+            "pages": [
+              "guides/scheduling/delayed-actions",
+              "guides/scheduling/specific-times",
+              "guides/scheduling/recurring-tasks",
+              "guides/scheduling/managing-schedules"
+            ]
+          },
+          {
+            "group": "Error Handling",
+            "pages": [
+              "guides/error-handling/user-errors",
+              "guides/error-handling/client-error-handling",
+              "guides/error-handling/error-boundaries"
+            ]
+          },
+          {
+            "group": "Testing",
+            "pages": [
+              "guides/testing/basic-testing",
+              "guides/testing/testing-events",
+              "guides/testing/testing-scheduled-actions",
+              "guides/testing/testing-with-state"
+            ]
+          },
+          {
+            "group": "Advanced Patterns",
+            "pages": [
+              "guides/advanced-patterns/actor-lifecycle",
+              "guides/advanced-patterns/action-context",
+              "guides/advanced-patterns/actor-to-actor",
+              "guides/advanced-patterns/input-validation",
+              "guides/advanced-patterns/rate-limiting",
+              "guides/advanced-patterns/auth-authz",
+              "guides/advanced-patterns/external-services"
+            ]
+          },
+          {
+            "group": "Topologies",
+            "pages": [
+              "guides/topologies/standalone",
+              "guides/topologies/partition",
+              "guides/topologies/coordinate"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "guides/framework-integrations/react",
+              "guides/framework-integrations/nextjs",
+              "guides/framework-integrations/express-hono"
+            ]
+          },
+          {
+            "group": "Platform-Specific",
+            "pages": [
+              "guides/platform-specific/nodejs",
+              "guides/platform-specific/cloudflare",
+              "guides/platform-specific/rivet"
+            ]
+          }
+        ]
       }
     ]
   },

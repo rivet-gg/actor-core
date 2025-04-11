@@ -1,0 +1,457 @@
+---
+title: Typed Events
+description: Use TypeScript for type-safe event definitions
+---
+
+# Typed Events
+
+Type safety is one of ActorCore's strengths, and it extends to events. Using TypeScript to define your event types provides better developer experience, reduces runtime errors, and improves code maintainability.
+
+## Basic Event Type Definitions
+
+```typescript
+import { actor } from "actor-core";
+
+// Define event types using a TypeScript interface
+type ChatEvents = {
+  "messageReceived": [message: string, sender: string, timestamp: number];
+  "userJoined": [username: string];
+  "userLeft": [username: string];
+  "isTyping": [username: string, isTyping: boolean];
+};
+
+const chatRoom = actor({
+  state: { messages: [] },
+  
+  actions: {
+    sendMessage: (c, text: string) => {
+      const message = {
+        id: crypto.randomUUID(),
+        text,
+        sender: c.conn.state.username,
+        timestamp: Date.now()
+      };
+      
+      c.state.messages.push(message);
+      
+      // Type-safe broadcast with correctly ordered parameters
+      c.broadcast<ChatEvents["messageReceived"]>(
+        "messageReceived", 
+        message.text, 
+        message.sender, 
+        message.timestamp
+      );
+      
+      return message.id;
+    },
+    
+    setTyping: (c, isTyping: boolean) => {
+      // Type-safe broadcast
+      c.broadcast<ChatEvents["isTyping"]>(
+        "isTyping", 
+        c.conn.state.username, 
+        isTyping
+      );
+      
+      return true;
+    }
+  },
+  
+  onConnect: (c) => {
+    // Type-safe broadcast
+    c.broadcast<ChatEvents["userJoined"]>("userJoined", c.conn.state.username);
+  },
+  
+  onDisconnect: (c) => {
+    // Type-safe broadcast
+    c.broadcast<ChatEvents["userLeft"]>("userLeft", c.conn.state.username);
+  }
+});
+```
+
+## Comprehensive Type Definitions
+
+For more complex applications with structured event data:
+
+```typescript
+import { actor } from "actor-core";
+
+// Define structured event payload types
+interface Message {
+  id: string;
+  content: string;
+  sender: string;
+  timestamp: number;
+}
+
+interface User {
+  id: string;
+  username: string;
+  avatar?: string;
+  status: "online" | "offline" | "away";
+}
+
+interface ReactionData {
+  messageId: string;
+  reaction: string;
+  userId: string;
+  username: string;
+}
+
+// Define event types with structured data
+type ChatEventMap = {
+  // Events with single structured data
+  "messageReceived": [message: Message];
+  "userUpdated": [user: User];
+  
+  // Events with multiple parameters
+  "reactionAdded": [data: ReactionData];
+  "messagePinned": [messageId: string, pinnedBy: string];
+  
+  // Events with primitive data
+  "roomNameChanged": [newName: string, changedBy: string];
+  "messageDeleted": [messageId: string];
+};
+
+const advancedChatRoom = actor({
+  state: {
+    messages: [] as Message[],
+    users: {} as Record<string, User>,
+    pinnedMessages: [] as string[],
+    roomName: "General Chat"
+  },
+  
+  actions: {
+    // Send message with type-safe broadcast
+    sendMessage: (c, content: string) => {
+      const message: Message = {
+        id: crypto.randomUUID(),
+        content,
+        sender: c.conn.state.userId,
+        timestamp: Date.now()
+      };
+      
+      // Add to state
+      c.state.messages.push(message);
+      
+      // Type-safe broadcast
+      c.broadcast<ChatEventMap["messageReceived"]>("messageReceived", message);
+      
+      return message.id;
+    },
+    
+    // Add reaction with type-safe broadcast
+    addReaction: (c, messageId: string, reaction: string) => {
+      // Verify message exists
+      const message = c.state.messages.find(m => m.id === messageId);
+      if (!message) {
+        throw new Error("Message not found");
+      }
+      
+      // Create reaction data
+      const reactionData: ReactionData = {
+        messageId,
+        reaction,
+        userId: c.conn.state.userId,
+        username: c.conn.state.username
+      };
+      
+      // Type-safe broadcast
+      c.broadcast<ChatEventMap["reactionAdded"]>("reactionAdded", reactionData);
+      
+      return true;
+    },
+    
+    // Pin message with type-safe broadcast
+    pinMessage: (c, messageId: string) => {
+      // Verify message exists
+      const message = c.state.messages.find(m => m.id === messageId);
+      if (!message) {
+        throw new Error("Message not found");
+      }
+      
+      // Add to pinned messages if not already pinned
+      if (!c.state.pinnedMessages.includes(messageId)) {
+        c.state.pinnedMessages.push(messageId);
+      }
+      
+      // Type-safe broadcast
+      c.broadcast<ChatEventMap["messagePinned"]>(
+        "messagePinned", 
+        messageId, 
+        c.conn.state.username
+      );
+      
+      return true;
+    },
+    
+    // Change room name with type-safe broadcast
+    changeRoomName: (c, newName: string) => {
+      // Update state
+      c.state.roomName = newName;
+      
+      // Type-safe broadcast
+      c.broadcast<ChatEventMap["roomNameChanged"]>(
+        "roomNameChanged", 
+        newName, 
+        c.conn.state.username
+      );
+      
+      return true;
+    }
+  }
+});
+```
+
+## Type-Safe Event Subscriptions on the Client Side
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+// Define the same event types on the client side
+interface Message {
+  id: string;
+  content: string;
+  sender: string;
+  timestamp: number;
+}
+
+interface User {
+  id: string;
+  username: string;
+  avatar?: string;
+  status: "online" | "offline" | "away";
+}
+
+interface ReactionData {
+  messageId: string;
+  reaction: string;
+  userId: string;
+  username: string;
+}
+
+type ChatEventMap = {
+  "messageReceived": [message: Message];
+  "userUpdated": [user: User];
+  "reactionAdded": [data: ReactionData];
+  "messagePinned": [messageId: string, pinnedBy: string];
+  "roomNameChanged": [newName: string, changedBy: string];
+  "messageDeleted": [messageId: string];
+};
+
+// Type-safe client code
+async function connectToChat() {
+  const client = createClient<App>("http://localhost:6420");
+  const chatRoom = await client.advancedChatRoom.get();
+  
+  // Type-safe event handling for structured data
+  chatRoom.on<ChatEventMap["messageReceived"]>("messageReceived", (message) => {
+    // TypeScript knows message has the Message interface
+    console.log(`${message.sender}: ${message.content}`);
+    addMessageToUI(message);
+  });
+  
+  // Type-safe event handling for multiple parameters
+  chatRoom.on<ChatEventMap["messagePinned"]>("messagePinned", (messageId, pinnedBy) => {
+    // TypeScript knows the parameter types
+    console.log(`Message ${messageId} pinned by ${pinnedBy}`);
+    highlightPinnedMessage(messageId, pinnedBy);
+  });
+  
+  // Type-safe event handling for primitive types
+  chatRoom.on<ChatEventMap["roomNameChanged"]>("roomNameChanged", (newName, changedBy) => {
+    // TypeScript knows these are strings
+    console.log(`Room name changed to "${newName}" by ${changedBy}`);
+    updateRoomName(newName);
+  });
+  
+  return chatRoom;
+}
+
+// UI helper functions (implementation depends on your UI framework)
+function addMessageToUI(message: Message) { /* ... */ }
+function highlightPinnedMessage(messageId: string, pinnedBy: string) { /* ... */ }
+function updateRoomName(newName: string) { /* ... */ }
+```
+
+## Event Type Definition in Shared Code
+
+For even better type safety, define event types in a shared file:
+
+```typescript
+// shared-types.ts - Used by both client and server
+export interface Message {
+  id: string;
+  content: string;
+  sender: string;
+  timestamp: number;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  avatar?: string;
+  status: "online" | "offline" | "away";
+}
+
+export type GameStatus = "waiting" | "playing" | "finished";
+
+export interface GameState {
+  id: string;
+  players: Record<string, {
+    name: string;
+    score: number;
+    position: { x: number; y: number };
+  }>;
+  status: GameStatus;
+  currentTurn: string | null;
+  startTime: number | null;
+  endTime: number | null;
+}
+
+// Define all event types in one map
+export type GameEvents = {
+  // Game lifecycle events
+  "gameCreated": [gameId: string];
+  "gameStarted": [state: GameState];
+  "gameEnded": [result: { winner: string | null; scores: Record<string, number> }];
+  
+  // Player events
+  "playerJoined": [playerId: string, playerName: string];
+  "playerLeft": [playerId: string];
+  "playerReady": [playerId: string, isReady: boolean];
+  
+  // Game action events
+  "moveMade": [playerId: string, position: { x: number; y: number }];
+  "scoreUpdated": [playerId: string, newScore: number];
+  "turnChanged": [currentPlayerId: string];
+  
+  // Chat events
+  "chatMessage": [message: Message];
+};
+```
+
+Then use in both client and server code:
+
+```typescript
+// Server code
+import { actor } from "actor-core";
+import type { GameEvents, GameState } from "./shared-types";
+
+const gameRoom = actor({
+  // ... actor definition
+  
+  actions: {
+    makeMove: (c, x: number, y: number) => {
+      // ... implementation
+      
+      // Type-safe event
+      c.broadcast<GameEvents["moveMade"]>(
+        "moveMade",
+        c.conn.state.playerId,
+        { x, y }
+      );
+    }
+  }
+});
+
+// Client code
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+import type { GameEvents } from "./shared-types";
+
+async function joinGame() {
+  const client = createClient<App>("http://localhost:6420");
+  const game = await client.gameRoom.get();
+  
+  // Type-safe event subscription
+  game.on<GameEvents["moveMade"]>("moveMade", (playerId, position) => {
+    updatePlayerPosition(playerId, position);
+  });
+}
+```
+
+## Type-Safe Single Connection Events
+
+Using types for specific connection events:
+
+```typescript
+import { actor } from "actor-core";
+
+// Define connection-specific events
+type PrivateEvents = {
+  "privateMessage": [message: string, from: string];
+  "friendRequest": [from: string, message: string];
+  "gameInvite": [gameId: string, from: string];
+};
+
+const socialHub = actor({
+  state: { /* ... */ },
+  
+  actions: {
+    sendPrivateMessage: (c, targetUserId: string, message: string) => {
+      // Find target user connection
+      const targetConn = c.conns.find(conn => conn.state.userId === targetUserId);
+      
+      if (!targetConn) {
+        return { sent: false, reason: "User not online" };
+      }
+      
+      // Send type-safe event to specific connection
+      targetConn.send<PrivateEvents["privateMessage"]>(
+        "privateMessage", 
+        message,
+        c.conn.state.username
+      );
+      
+      return { sent: true };
+    },
+    
+    sendFriendRequest: (c, targetUserId: string, message: string) => {
+      // Find target user connection
+      const targetConn = c.conns.find(conn => conn.state.userId === targetUserId);
+      
+      if (!targetConn) {
+        // Store for later if user not online
+        storePendingFriendRequest(targetUserId, c.conn.state.userId, message);
+        return { sent: false, stored: true };
+      }
+      
+      // Send type-safe event to specific connection
+      targetConn.send<PrivateEvents["friendRequest"]>(
+        "friendRequest", 
+        c.conn.state.username,
+        message
+      );
+      
+      return { sent: true };
+    }
+  }
+});
+
+// Utility function to store pending requests
+function storePendingFriendRequest(targetId: string, fromId: string, message: string) {
+  // Implementation depends on your storage strategy
+}
+```
+
+## Best Practices
+
+1. **Define event types early**: Create type definitions for events early in development
+2. **Use tuple types**: Define events as tuples with named parameters for clarity
+3. **Share types**: Consider a shared types file for both client and server
+4. **Be consistent**: Use the same naming and structure throughout your app
+5. **Document events**: Add comments describing when events are triggered
+6. **Group related events**: Organize events in logical groups
+7. **Be specific**: Create specific event types rather than generic ones
+8. **Use descriptive names**: Make event names clear and descriptive
+
+Using TypeScript to define your event types provides many benefits:
+- Compile-time checking prevents sending the wrong data
+- Better IDE support with autocomplete and parameter hints
+- Easier refactoring when event parameters change
+- Self-documenting code that shows what data events contain
+- Fewer runtime errors due to mismatched data structures
+
+By leveraging TypeScript's type system for your events, you can create more robust and maintainable real-time applications.

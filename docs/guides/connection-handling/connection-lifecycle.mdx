@@ -1,0 +1,884 @@
+---
+title: Connection Lifecycle Management
+description: Handle connection events and cleanup with proper hooks
+---
+
+# Connection Lifecycle Management
+
+Managing the lifecycle of client connections is crucial for building robust real-time applications. ActorCore provides several hooks to manage connections from their initial creation to their eventual disconnection, allowing you to properly handle authentication, setup, and cleanup.
+
+## Connection Lifecycle Hooks
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const presenceTracker = actor({
+  state: {
+    users: {},
+    roomInfo: {
+      name: "General Chat",
+      topic: "General discussion",
+      createdAt: Date.now()
+    }
+  },
+  
+  // 1. Validate connection before it's established
+  onBeforeConnect: (c, { params }) => {
+    // Check for required connection parameters
+    if (!params.userId || !params.username) {
+      throw new UserError("User ID and username are required");
+    }
+    
+    // Check if user already exists in another connection
+    const existingUserConnections = Object.values(c.state.users)
+      .filter(user => user.userId === params.userId && user.online);
+    
+    if (existingUserConnections.length > 0) {
+      // Option 1: Prevent duplicate connections
+      // throw new UserError("User is already connected");
+      
+      // Option 2: Allow the connection but log it
+      console.log(`User ${params.userId} is connecting from a new session`);
+    }
+    
+    // Allowed to connect, can return data to use in createConnState
+    return {
+      verified: true,
+      connectionTime: Date.now()
+    };
+  },
+  
+  // 2. Initialize connection state
+  createConnState: (c, { params, authData }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      connectionTime: authData.connectionTime,
+      lastActivity: Date.now(),
+      clientInfo: params.clientInfo || {}
+    };
+  },
+  
+  // 3. Handle new connection
+  onConnect: (c) => {
+    const userId = c.conn.state.userId;
+    
+    // Add or update user in state
+    c.state.users[userId] = {
+      userId,
+      username: c.conn.state.username,
+      online: true,
+      lastSeen: Date.now(),
+      connectionCount: (c.state.users[userId]?.connectionCount || 0) + 1
+    };
+    
+    // Broadcast user presence
+    c.broadcast("userJoined", {
+      userId,
+      username: c.conn.state.username,
+      timestamp: Date.now()
+    });
+    
+    // Send room info to the new connection
+    c.conn.send("roomInfo", c.state.roomInfo);
+    
+    // Send list of online users to the new connection
+    const onlineUsers = Object.values(c.state.users)
+      .filter(user => user.online)
+      .map(user => ({
+        userId: user.userId,
+        username: user.username
+      }));
+    
+    c.conn.send("onlineUsers", onlineUsers);
+    
+    console.log(`User ${c.conn.state.username} (${userId}) connected`);
+  },
+  
+  // 4. Handle disconnection
+  onDisconnect: (c) => {
+    const userId = c.conn.state.userId;
+    
+    // Update user status
+    if (c.state.users[userId]) {
+      c.state.users[userId].online = false;
+      c.state.users[userId].lastSeen = Date.now();
+    }
+    
+    // Broadcast user left
+    c.broadcast("userLeft", {
+      userId,
+      username: c.conn.state.username,
+      timestamp: Date.now()
+    });
+    
+    console.log(`User ${c.conn.state.username} (${userId}) disconnected`);
+    
+    // Clean up any user-specific resources
+    cleanupUserResources(userId);
+  },
+  
+  actions: {
+    // Update user activity
+    updateActivity: (c) => {
+      // Update last activity time
+      c.conn.state.lastActivity = Date.now();
+      
+      // Update user record
+      if (c.state.users[c.conn.state.userId]) {
+        c.state.users[c.conn.state.userId].lastSeen = Date.now();
+      }
+      
+      return true;
+    },
+    
+    // Get current connection info
+    getConnectionInfo: (c) => {
+      return {
+        connectionId: c.conn.id,
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        connectionTime: c.conn.state.connectionTime,
+        connectionDuration: Date.now() - c.conn.state.connectionTime,
+        lastActivity: c.conn.state.lastActivity
+      };
+    },
+    
+    // Manually disconnect a user
+    disconnectUser: (c, userId, reason = "Admin disconnection") => {
+      // Admin check (simplified)
+      if (!c.conn.state.isAdmin) {
+        throw new UserError("Not authorized");
+      }
+      
+      // Find connections for this user
+      const userConns = c.conns.filter(conn => conn.state.userId === userId);
+      
+      if (userConns.length === 0) {
+        return { success: false, reason: "User not connected" };
+      }
+      
+      // Disconnect all connections for this user
+      for (const conn of userConns) {
+        conn.disconnect(reason);
+      }
+      
+      return { success: true, count: userConns.length };
+    },
+    
+    // Get active connection count
+    getActiveConnections: (c) => {
+      return {
+        total: c.conns.length,
+        byUser: Object.entries(c.state.users)
+          .filter(([_, user]) => user.online)
+          .reduce((acc, [userId, user]) => {
+            acc[userId] = {
+              username: user.username,
+              connectionCount: user.connectionCount
+            };
+            return acc;
+          }, {})
+      };
+    }
+  }
+});
+
+// Helper function for cleanup
+function cleanupUserResources(userId: string) {
+  // Implementation depends on what resources need cleaning
+  // e.g., cancel pending operations, release locks, etc.
+}
+```
+
+## Handling Client Information
+
+```typescript
+import { actor } from "actor-core";
+
+const deviceTracker = actor({
+  state: {
+    devices: {},
+    sessions: []
+  },
+  
+  createConnState: (c, { params }) => {
+    // Capture detailed client information
+    return {
+      userId: params.userId,
+      deviceId: params.deviceId,
+      clientInfo: {
+        type: params.deviceType || "unknown", // mobile, desktop, tablet
+        browser: params.browser || "unknown",
+        os: params.os || "unknown",
+        version: params.appVersion || "unknown",
+        language: params.language || "en-US",
+        timezone: params.timezone || "UTC"
+      },
+      location: params.location,
+      connectionTime: Date.now(),
+      lastActivity: Date.now()
+    };
+  },
+  
+  onConnect: (c) => {
+    const { userId, deviceId, clientInfo } = c.conn.state;
+    
+    // Register device
+    if (deviceId) {
+      c.state.devices[deviceId] = {
+        userId,
+        info: clientInfo,
+        lastConnected: Date.now(),
+        status: "online"
+      };
+    }
+    
+    // Create session record
+    const sessionId = crypto.randomUUID();
+    c.conn.state.sessionId = sessionId;
+    
+    c.state.sessions.push({
+      id: sessionId,
+      userId,
+      deviceId,
+      clientInfo,
+      startTime: Date.now(),
+      endTime: null,
+      active: true
+    });
+    
+    // Notify other sessions of this user about the new connection
+    notifyUserSessions(c, userId, sessionId, "new_session");
+  },
+  
+  onDisconnect: (c) => {
+    const { userId, deviceId, sessionId } = c.conn.state;
+    
+    // Update device status
+    if (deviceId && c.state.devices[deviceId]) {
+      c.state.devices[deviceId].status = "offline";
+      c.state.devices[deviceId].lastDisconnect = Date.now();
+    }
+    
+    // Update session record
+    const sessionIndex = c.state.sessions.findIndex(s => s.id === sessionId);
+    if (sessionIndex >= 0) {
+      c.state.sessions[sessionIndex].endTime = Date.now();
+      c.state.sessions[sessionIndex].active = false;
+      c.state.sessions[sessionIndex].duration = 
+        c.state.sessions[sessionIndex].endTime - 
+        c.state.sessions[sessionIndex].startTime;
+    }
+    
+    // Notify other sessions of this user about the disconnection
+    notifyUserSessions(c, userId, sessionId, "session_ended");
+  },
+  
+  actions: {
+    updateClientStatus: (c, status) => {
+      // Update activity timestamp
+      c.conn.state.lastActivity = Date.now();
+      
+      // Update client status
+      if (c.conn.state.deviceId && c.state.devices[c.conn.state.deviceId]) {
+        c.state.devices[c.conn.state.deviceId].status = status;
+      }
+      
+      return true;
+    },
+    
+    getUserSessions: (c, userId) => {
+      // Admin check or self check (simplified)
+      if (c.conn.state.userId !== userId && !c.conn.state.isAdmin) {
+        throw new Error("Not authorized");
+      }
+      
+      // Get active sessions for this user
+      const activeSessions = c.state.sessions
+        .filter(s => s.userId === userId && s.active)
+        .map(s => ({
+          id: s.id,
+          deviceType: s.clientInfo.type,
+          browser: s.clientInfo.browser,
+          startTime: s.startTime,
+          current: s.id === c.conn.state.sessionId
+        }));
+      
+      return activeSessions;
+    },
+    
+    disconnectSession: (c, sessionId) => {
+      // Find the connection associated with this session
+      const targetConn = c.conns.find(conn => conn.state.sessionId === sessionId);
+      
+      // Verify authorization (self or admin)
+      if (
+        targetConn && 
+        targetConn.state.userId !== c.conn.state.userId && 
+        !c.conn.state.isAdmin
+      ) {
+        throw new Error("Not authorized to disconnect this session");
+      }
+      
+      if (targetConn) {
+        targetConn.disconnect("Session terminated by user");
+        return { success: true };
+      }
+      
+      return { success: false, reason: "Session not found" };
+    }
+  }
+});
+
+// Helper to notify other sessions of the same user
+function notifyUserSessions(c, userId, currentSessionId, eventType) {
+  for (const conn of c.conns) {
+    if (
+      conn.state.userId === userId && 
+      conn.state.sessionId !== currentSessionId
+    ) {
+      conn.send("sessionUpdate", {
+        type: eventType,
+        timestamp: Date.now(),
+        sessionCount: c.state.sessions
+          .filter(s => s.userId === userId && s.active)
+          .length
+      });
+    }
+  }
+}
+```
+
+## Connection Heartbeats and Timeout
+
+```typescript
+import { actor } from "actor-core";
+
+const heartbeatActor = actor({
+  state: {
+    clients: {}
+  },
+  
+  // Configuration stored in vars
+  createVars: () => ({
+    heartbeatInterval: 30000, // 30 seconds
+    heartbeatTimeout: 90000,  // 90 seconds (3 missed heartbeats)
+    checkInterval: 15000      // Check every 15 seconds
+  }),
+  
+  createConnState: (c, { params }) => {
+    const clientId = params.clientId || crypto.randomUUID();
+    
+    return {
+      clientId,
+      lastHeartbeat: Date.now(),
+      metadata: params.metadata || {}
+    };
+  },
+  
+  onConnect: (c) => {
+    // Register client
+    c.state.clients[c.conn.state.clientId] = {
+      connectionId: c.conn.id,
+      lastHeartbeat: Date.now(),
+      status: "connected",
+      metadata: c.conn.state.metadata
+    };
+    
+    // Start heartbeat checking if not already started
+    if (!c.vars.heartbeatCheckScheduled) {
+      c.schedule.after(c.vars.checkInterval, "checkHeartbeats");
+      c.vars.heartbeatCheckScheduled = true;
+    }
+    
+    // Send welcome with heartbeat configuration
+    c.conn.send("welcome", {
+      clientId: c.conn.state.clientId,
+      heartbeatInterval: c.vars.heartbeatInterval,
+      serverTime: Date.now()
+    });
+  },
+  
+  onDisconnect: (c) => {
+    // Update client status
+    if (c.state.clients[c.conn.state.clientId]) {
+      c.state.clients[c.conn.state.clientId].status = "disconnected";
+      c.state.clients[c.conn.state.clientId].disconnectedAt = Date.now();
+    }
+  },
+  
+  actions: {
+    // Client heartbeat
+    heartbeat: (c) => {
+      // Update heartbeat timestamp
+      c.conn.state.lastHeartbeat = Date.now();
+      
+      // Update client record
+      if (c.state.clients[c.conn.state.clientId]) {
+        c.state.clients[c.conn.state.clientId].lastHeartbeat = Date.now();
+        c.state.clients[c.conn.state.clientId].status = "connected";
+      }
+      
+      // Return server time for client clock sync
+      return { serverTime: Date.now() };
+    },
+    
+    // Periodic check for stale connections
+    checkHeartbeats: (c) => {
+      const now = Date.now();
+      const timeout = c.vars.heartbeatTimeout;
+      
+      // Check for connections that haven't sent a heartbeat
+      for (const conn of c.conns) {
+        if (now - conn.state.lastHeartbeat > timeout) {
+          console.log(`Client ${conn.state.clientId} timed out, disconnecting`);
+          
+          // Disconnect the stale connection
+          conn.disconnect("Heartbeat timeout");
+        }
+      }
+      
+      // Schedule next check
+      c.schedule.after(c.vars.checkInterval, "checkHeartbeats");
+    },
+    
+    // Change heartbeat configuration
+    updateHeartbeatConfig: (c, interval, timeout) => {
+      // Admin check (simplified)
+      if (!c.conn.state.isAdmin) {
+        throw new Error("Not authorized");
+      }
+      
+      // Update configuration
+      if (interval) {
+        c.vars.heartbeatInterval = interval;
+      }
+      
+      if (timeout) {
+        c.vars.heartbeatTimeout = timeout;
+      }
+      
+      // Notify all clients about configuration change
+      c.broadcast("configUpdate", {
+        heartbeatInterval: c.vars.heartbeatInterval,
+        serverTime: Date.now()
+      });
+      
+      return {
+        heartbeatInterval: c.vars.heartbeatInterval,
+        heartbeatTimeout: c.vars.heartbeatTimeout,
+        checkInterval: c.vars.checkInterval
+      };
+    }
+  }
+});
+```
+
+## Graceful Connection Cleanup
+
+```typescript
+import { actor } from "actor-core";
+
+const resourceManager = actor({
+  state: {
+    resources: {},
+    locks: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      resources: [],       // Resources created by this connection
+      locks: []            // Resources locked by this connection
+    };
+  },
+  
+  onConnect: (c) => {
+    console.log(`User ${c.conn.state.username} connected`);
+  },
+  
+  onDisconnect: (c) => {
+    console.log(`User ${c.conn.state.username} disconnected, cleaning up resources...`);
+    
+    // Release all locks held by this connection
+    for (const resourceId of c.conn.state.locks) {
+      releaseLock(c, resourceId);
+    }
+    
+    // Decide what to do with resources created by this connection
+    for (const resourceId of c.conn.state.resources) {
+      const resource = c.state.resources[resourceId];
+      
+      if (resource) {
+        if (resource.temporary) {
+          // Delete temporary resources
+          delete c.state.resources[resourceId];
+          console.log(`Deleted temporary resource ${resourceId}`);
+        } else {
+          // Mark persistent resources as abandoned
+          resource.status = "abandoned";
+          resource.lastModified = Date.now();
+          console.log(`Marked resource ${resourceId} as abandoned`);
+        }
+      }
+    }
+    
+    // Broadcast resource status changes
+    c.broadcast("resourcesUpdated", {
+      updatedBy: "system",
+      reason: "User disconnected",
+      timestamp: Date.now()
+    });
+  },
+  
+  actions: {
+    // Create a resource
+    createResource: (c, name, data, options = {}) => {
+      const resourceId = crypto.randomUUID();
+      
+      // Create the resource
+      c.state.resources[resourceId] = {
+        id: resourceId,
+        name,
+        data,
+        createdBy: c.conn.state.userId,
+        createdAt: Date.now(),
+        lastModified: Date.now(),
+        status: "active",
+        temporary: options.temporary || false
+      };
+      
+      // Track that this connection created the resource
+      c.conn.state.resources.push(resourceId);
+      
+      // Broadcast resource created
+      c.broadcast("resourceCreated", {
+        resourceId,
+        name,
+        createdBy: c.conn.state.username,
+        timestamp: Date.now()
+      });
+      
+      return resourceId;
+    },
+    
+    // Lock a resource for exclusive access
+    lockResource: (c, resourceId) => {
+      // Check if resource exists
+      if (!c.state.resources[resourceId]) {
+        throw new Error("Resource not found");
+      }
+      
+      // Check if resource is already locked
+      if (c.state.locks[resourceId]) {
+        // Check if locked by this connection
+        if (c.state.locks[resourceId].connectionId === c.conn.id) {
+          return { success: true, alreadyLocked: true };
+        }
+        
+        throw new Error("Resource is locked by another user");
+      }
+      
+      // Create lock
+      c.state.locks[resourceId] = {
+        connectionId: c.conn.id,
+        userId: c.conn.state.userId,
+        lockedAt: Date.now()
+      };
+      
+      // Track that this connection holds the lock
+      c.conn.state.locks.push(resourceId);
+      
+      // Broadcast lock acquired
+      c.broadcast("resourceLocked", {
+        resourceId,
+        lockedBy: c.conn.state.username,
+        timestamp: Date.now()
+      });
+      
+      return { success: true };
+    },
+    
+    // Explicitly release a lock
+    releaseLock: (c, resourceId) => {
+      return releaseLock(c, resourceId) ? 
+        { success: true } : 
+        { success: false, reason: "Lock not found or not owned by you" };
+    }
+  }
+});
+
+// Helper function to release a lock
+function releaseLock(c, resourceId) {
+  // Check if resource is locked
+  if (!c.state.locks[resourceId]) {
+    return false;
+  }
+  
+  // Check if locked by this connection
+  if (c.state.locks[resourceId].connectionId !== c.conn.id) {
+    // Only allow the lock owner or an admin to release
+    if (!c.conn.state.isAdmin) {
+      return false;
+    }
+  }
+  
+  // Release the lock
+  delete c.state.locks[resourceId];
+  
+  // Remove from connection's locks
+  c.conn.state.locks = c.conn.state.locks.filter(id => id !== resourceId);
+  
+  // Broadcast lock released
+  c.broadcast("resourceUnlocked", {
+    resourceId,
+    unlockedBy: c.conn.state.username,
+    timestamp: Date.now()
+  });
+  
+  return true;
+}
+```
+
+## Handling Reconnections on the Client Side
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./src/app";
+
+class ConnectionManager {
+  #client;
+  #connected = false;
+  #actorHandle;
+  #sessionId = null;
+  #listeners = {};
+  
+  constructor(endpoint) {
+    // Create client
+    this.#client = createClient<App>(endpoint, {
+      reconnect: true,
+      backoff: {
+        initialDelay: 1000,  // 1 second
+        maxDelay: 30000,     // 30 seconds
+        factor: 1.5          // Exponential factor
+      }
+    });
+    
+    // Set up connection event listeners
+    this.#client.on("connected", () => {
+      this.#connected = true;
+      this.#notifyListeners("connected");
+    });
+    
+    this.#client.on("disconnected", () => {
+      this.#connected = false;
+      this.#notifyListeners("disconnected");
+    });
+    
+    this.#client.on("reconnecting", (attempt) => {
+      this.#notifyListeners("reconnecting", { attempt });
+    });
+    
+    this.#client.on("error", (error) => {
+      this.#notifyListeners("error", { error });
+    });
+  }
+  
+  // Connect to actor
+  async connect(userId, username, metadata = {}) {
+    try {
+      // Connect to heartbeat actor
+      this.#actorHandle = await this.#client.heartbeatActor.get({
+        params: {
+          userId,
+          username,
+          clientId: this.#sessionId,  // Re-use session ID if reconnecting
+          metadata: {
+            ...metadata,
+            userAgent: navigator.userAgent,
+            language: navigator.language,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          }
+        }
+      });
+      
+      // Start listening for welcome to get session ID
+      this.#actorHandle.once("welcome", (data) => {
+        this.#sessionId = data.clientId;
+        
+        // Start heartbeat
+        this.#startHeartbeat(data.heartbeatInterval);
+        
+        this.#notifyListeners("ready", { 
+          sessionId: this.#sessionId,
+          serverTime: data.serverTime
+        });
+      });
+      
+      // Listen for config updates
+      this.#actorHandle.on("configUpdate", (data) => {
+        // Update heartbeat interval
+        this.#startHeartbeat(data.heartbeatInterval);
+      });
+      
+      return true;
+    } catch (error) {
+      this.#notifyListeners("error", { error });
+      throw error;
+    }
+  }
+  
+  // Start sending heartbeats
+  #heartbeatInterval = null;
+  #startHeartbeat(interval) {
+    // Clear existing interval if any
+    if (this.#heartbeatInterval) {
+      clearInterval(this.#heartbeatInterval);
+    }
+    
+    // Start new interval
+    this.#heartbeatInterval = setInterval(() => {
+      this.#sendHeartbeat();
+    }, interval);
+  }
+  
+  // Send a heartbeat
+  async #sendHeartbeat() {
+    if (!this.#connected || !this.#actorHandle) return;
+    
+    try {
+      await this.#actorHandle.heartbeat();
+    } catch (error) {
+      console.error("Heartbeat failed:", error);
+    }
+  }
+  
+  // Add event listener
+  on(event, callback) {
+    this.#listeners[event] = this.#listeners[event] || [];
+    this.#listeners[event].push(callback);
+    
+    // Return a function to remove the listener
+    return () => {
+      this.#listeners[event] = this.#listeners[event].filter(cb => cb !== callback);
+    };
+  }
+  
+  // Notify listeners
+  #notifyListeners(event, data = {}) {
+    const callbacks = this.#listeners[event] || [];
+    callbacks.forEach(callback => callback(data));
+  }
+  
+  // Disconnect
+  disconnect() {
+    // Clear heartbeat interval
+    if (this.#heartbeatInterval) {
+      clearInterval(this.#heartbeatInterval);
+      this.#heartbeatInterval = null;
+    }
+    
+    // Dispose actor handle and client
+    if (this.#actorHandle) {
+      this.#actorHandle.dispose();
+      this.#actorHandle = null;
+    }
+    
+    if (this.#client) {
+      this.#client.dispose();
+      this.#client = null;
+    }
+    
+    this.#connected = false;
+    this.#notifyListeners("disconnected");
+  }
+  
+  // Get connection status
+  isConnected() {
+    return this.#connected;
+  }
+  
+  // Get session ID
+  getSessionId() {
+    return this.#sessionId;
+  }
+}
+
+// Usage example
+async function setupConnection() {
+  const connectionManager = new ConnectionManager("http://localhost:6420");
+  
+  // Listen for connection events
+  connectionManager.on("connected", () => {
+    showStatus("Connected");
+  });
+  
+  connectionManager.on("disconnected", () => {
+    showStatus("Disconnected");
+  });
+  
+  connectionManager.on("reconnecting", (data) => {
+    showStatus(`Reconnecting (Attempt ${data.attempt})`);
+  });
+  
+  connectionManager.on("error", (data) => {
+    showError(`Connection error: ${data.error.message}`);
+  });
+  
+  connectionManager.on("ready", (data) => {
+    showStatus(`Connected with session ID ${data.sessionId}`);
+  });
+  
+  // Connect
+  try {
+    await connectionManager.connect("user123", "JohnDoe", {
+      appVersion: "1.0.0",
+      deviceType: detectDeviceType()
+    });
+  } catch (error) {
+    showError(`Failed to connect: ${error.message}`);
+  }
+  
+  return connectionManager;
+}
+
+// Helper functions
+function showStatus(status) {
+  const statusElement = document.getElementById("connection-status");
+  if (statusElement) {
+    statusElement.textContent = status;
+  }
+}
+
+function showError(message) {
+  const errorElement = document.getElementById("error-message");
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.style.display = "block";
+  }
+}
+
+function detectDeviceType() {
+  const ua = navigator.userAgent;
+  if (/mobile/i.test(ua)) return "mobile";
+  if (/tablet/i.test(ua)) return "tablet";
+  return "desktop";
+}
+```
+
+## Best Practices
+
+1. **Validate early**: Use `onBeforeConnect` to validate connection parameters before accepting
+2. **Store connection context**: Keep relevant user info in connection state
+3. **Welcome messages**: Send initial data when a client connects
+4. **Graceful disconnection**: Clean up resources when clients disconnect
+5. **Track connection metadata**: Store info about clients for debugging and analytics
+6. **Implement heartbeats**: Use heartbeats to detect stale connections
+7. **Handle reconnections**: Design for clients that may disconnect and reconnect
+8. **Session management**: Track and manage multiple sessions for the same user
+9. **Resource cleanup**: Release locks and clean up resources on disconnect
+10. **Error handling**: Provide clear error messages for connection issues
+
+By properly managing the lifecycle of connections in your ActorCore applications, you can build robust systems that handle the realities of network communication while providing a seamless experience for users.

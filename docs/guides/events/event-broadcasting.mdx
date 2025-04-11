@@ -1,0 +1,519 @@
+---
+title: Event Broadcasting
+description: Send events to all connected clients efficiently
+---
+
+# Event Broadcasting
+
+Events are the primary way actors communicate with clients in real-time. ActorCore makes it easy to broadcast events to all connected clients or target specific ones.
+
+## Basic Event Broadcasting
+
+```typescript
+import { actor } from "actor-core";
+
+const stockTracker = actor({
+  state: {
+    stocks: {
+      "AAPL": { price: 150.25, lastUpdated: 1649289600000 },
+      "MSFT": { price: 290.10, lastUpdated: 1649289600000 },
+      "GOOGL": { price: 2730.50, lastUpdated: 1649289600000 }
+    }
+  },
+  
+  actions: {
+    updatePrice: (c, symbol, newPrice) => {
+      // Update stock price
+      if (!c.state.stocks[symbol]) {
+        c.state.stocks[symbol] = { price: 0, lastUpdated: 0 };
+      }
+      
+      // Calculate change percentage
+      const oldPrice = c.state.stocks[symbol].price;
+      const priceChange = newPrice - oldPrice;
+      const changePercent = oldPrice ? (priceChange / oldPrice) * 100 : 0;
+      
+      // Update state
+      c.state.stocks[symbol] = { 
+        price: newPrice,
+        lastUpdated: Date.now()
+      };
+      
+      // Broadcast the update to all connected clients
+      c.broadcast("priceUpdated", {
+        symbol,
+        price: newPrice,
+        change: priceChange,
+        changePercent,
+        timestamp: Date.now()
+      });
+      
+      return true;
+    },
+    
+    // Get current prices
+    getPrices: (c) => {
+      return c.state.stocks;
+    }
+  },
+  
+  // Auto-update prices periodically (simulation)
+  onStart: (c) => {
+    c.schedule.after(5000, "simulateMarketActivity");
+  },
+  
+  actions: {
+    simulateMarketActivity: (c) => {
+      // Simulate price changes for all stocks
+      for (const [symbol, data] of Object.entries(c.state.stocks)) {
+        // Random price movement (-3% to +3%)
+        const changePercent = (Math.random() * 6) - 3;
+        const newPrice = data.price * (1 + changePercent / 100);
+        
+        // Update price and broadcast
+        c.updatePrice(symbol, parseFloat(newPrice.toFixed(2)));
+      }
+      
+      // Schedule next update
+      c.schedule.after(5000, "simulateMarketActivity");
+    }
+  }
+});
+```
+
+## Typed Events with TypeScript
+
+```typescript
+import { actor } from "actor-core";
+
+// Define event types for better type checking
+type ChatEvents = {
+  "messageReceived": [message: string, sender: string, timestamp: number];
+  "userJoined": [username: string];
+  "userLeft": [username: string];
+  "isTyping": [username: string, isTyping: boolean];
+};
+
+const chatRoom = actor({
+  state: {
+    messages: [],
+    users: {}
+  },
+  
+  createConnState: (c, { params }) => {
+    if (!params.username) {
+      throw new Error("Username is required");
+    }
+    
+    return {
+      username: params.username,
+      joinedAt: Date.now(),
+      isTyping: false
+    };
+  },
+  
+  onConnect: (c) => {
+    // Add user
+    c.state.users[c.conn.state.username] = {
+      connectionId: c.conn.id,
+      joinedAt: c.conn.state.joinedAt
+    };
+    
+    // Broadcast user joined with type safety
+    c.broadcast<ChatEvents["userJoined"]>("userJoined", c.conn.state.username);
+  },
+  
+  onDisconnect: (c) => {
+    // Remove user
+    delete c.state.users[c.conn.state.username];
+    
+    // Broadcast user left
+    c.broadcast<ChatEvents["userLeft"]>("userLeft", c.conn.state.username);
+  },
+  
+  actions: {
+    sendMessage: (c, text) => {
+      // Create message
+      const message = {
+        id: crypto.randomUUID(),
+        text,
+        sender: c.conn.state.username,
+        timestamp: Date.now()
+      };
+      
+      // Store message
+      c.state.messages.push(message);
+      
+      // Reset typing state
+      if (c.conn.state.isTyping) {
+        c.conn.state.isTyping = false;
+        c.broadcast<ChatEvents["isTyping"]>("isTyping", c.conn.state.username, false);
+      }
+      
+      // Broadcast message
+      c.broadcast<ChatEvents["messageReceived"]>(
+        "messageReceived", 
+        message.text, 
+        message.sender, 
+        message.timestamp
+      );
+      
+      return message.id;
+    },
+    
+    setTyping: (c, isTyping) => {
+      // Only broadcast changes
+      if (c.conn.state.isTyping !== isTyping) {
+        c.conn.state.isTyping = isTyping;
+        
+        // Broadcast typing status
+        c.broadcast<ChatEvents["isTyping"]>("isTyping", c.conn.state.username, isTyping);
+      }
+      
+      return true;
+    },
+    
+    getHistory: (c) => {
+      return c.state.messages;
+    },
+    
+    getActiveUsers: (c) => {
+      return Object.keys(c.state.users);
+    }
+  }
+});
+```
+
+## Filtered Broadcasting
+
+Send events based on receiver criteria:
+
+```typescript
+import { actor } from "actor-core";
+
+// Game lobby with team-based communication
+const gameLobby = actor({
+  state: {
+    players: {},
+    teams: {
+      "red": { name: "Red Team", players: [] },
+      "blue": { name: "Blue Team", players: [] }
+    },
+    gameStatus: "waiting" // waiting, playing, finished
+  },
+  
+  createConnState: (c, { params }) => {
+    return {
+      playerId: params.playerId,
+      playerName: params.playerName,
+      team: null // assigned later
+    };
+  },
+  
+  actions: {
+    // Join a team
+    joinTeam: (c, teamId) => {
+      // Validate team exists
+      if (!c.state.teams[teamId]) {
+        throw new Error("Team not found");
+      }
+      
+      // Remove from current team if any
+      if (c.conn.state.team) {
+        c.state.teams[c.conn.state.team].players = 
+          c.state.teams[c.conn.state.team].players.filter(
+            id => id !== c.conn.state.playerId
+          );
+      }
+      
+      // Add to new team
+      c.state.teams[teamId].players.push(c.conn.state.playerId);
+      
+      // Update connection state
+      c.conn.state.team = teamId;
+      
+      // Update player record
+      c.state.players[c.conn.state.playerId] = {
+        name: c.conn.state.playerName,
+        team: teamId
+      };
+      
+      // Broadcast to everyone
+      c.broadcast("playerJoinedTeam", {
+        playerId: c.conn.state.playerId,
+        playerName: c.conn.state.playerName,
+        team: teamId
+      });
+      
+      return { success: true };
+    },
+    
+    // Send message to team
+    sendTeamMessage: (c, message) => {
+      // Ensure player is on a team
+      if (!c.conn.state.team) {
+        throw new Error("You are not on a team");
+      }
+      
+      const teamMessage = {
+        sender: c.conn.state.playerName,
+        team: c.conn.state.team,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Send only to connections on the same team
+      for (const conn of c.conns) {
+        if (conn.state.team === c.conn.state.team) {
+          conn.send("teamMessage", teamMessage);
+        }
+      }
+      
+      return { sent: true };
+    },
+    
+    // Send message to all players
+    sendGlobalMessage: (c, message) => {
+      const globalMessage = {
+        sender: c.conn.state.playerName,
+        message,
+        timestamp: Date.now()
+      };
+      
+      // Broadcast to everyone
+      c.broadcast("globalMessage", globalMessage);
+      
+      return { sent: true };
+    },
+    
+    // Start the game (only when teams are balanced)
+    startGame: (c) => {
+      // Check if teams are balanced
+      const redCount = c.state.teams.red.players.length;
+      const blueCount = c.state.teams.blue.players.length;
+      
+      if (redCount !== blueCount) {
+        throw new Error("Teams must have the same number of players");
+      }
+      
+      if (redCount === 0 || blueCount === 0) {
+        throw new Error("Each team must have at least one player");
+      }
+      
+      // Update game status
+      c.state.gameStatus = "playing";
+      
+      // Broadcast to all players
+      c.broadcast("gameStarted", {
+        teams: c.state.teams,
+        startTime: Date.now()
+      });
+      
+      // Send special messages to each team
+      broadcastToTeam(c, "red", "teamStrategy", {
+        strategy: "Focus on defending point A and attacking through the middle",
+        secret: "red-team-special-code"
+      });
+      
+      broadcastToTeam(c, "blue", "teamStrategy", {
+        strategy: "Attack from the flanks and control point B",
+        secret: "blue-team-special-code"
+      });
+      
+      return { started: true };
+    }
+  }
+});
+
+// Helper function to broadcast to a specific team
+function broadcastToTeam(c, teamId, eventName, data) {
+  for (const conn of c.conns) {
+    if (conn.state.team === teamId) {
+      conn.send(eventName, data);
+    }
+  }
+}
+```
+
+## Event Broadcasting with Throttling
+
+For high-frequency updates, implement throttling:
+
+```typescript
+import { actor } from "actor-core";
+
+const liveCursors = actor({
+  state: {
+    users: {}
+  },
+  
+  createVars: () => ({
+    // Track last broadcast time
+    lastBroadcast: 0,
+    // Store pending position updates
+    pendingUpdates: {},
+    // Throttle interval in ms (50ms = 20 updates per second max)
+    throttleInterval: 50
+  }),
+  
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId,
+      username: params.username,
+      color: params.color || getRandomColor(),
+      position: { x: 0, y: 0 }
+    };
+  },
+  
+  onConnect: (c) => {
+    // Add user to state
+    c.state.users[c.conn.state.userId] = {
+      username: c.conn.state.username,
+      color: c.conn.state.color,
+      position: c.conn.state.position,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast new user to everyone else
+    c.broadcast("userJoined", {
+      userId: c.conn.state.userId,
+      username: c.conn.state.username,
+      color: c.conn.state.color,
+      position: c.conn.state.position
+    });
+    
+    // Send current users to the new connection
+    c.conn.send("initialUsers", c.state.users);
+  },
+  
+  onDisconnect: (c) => {
+    // Remove user from state
+    delete c.state.users[c.conn.state.userId];
+    
+    // Broadcast user left
+    c.broadcast("userLeft", {
+      userId: c.conn.state.userId
+    });
+  },
+  
+  onStart: (c) => {
+    // Set up throttled broadcast interval
+    c.schedule.after(c.vars.throttleInterval, "processPendingUpdates");
+  },
+  
+  actions: {
+    // Update cursor position
+    updatePosition: (c, x, y) => {
+      // Update connection state
+      c.conn.state.position = { x, y };
+      
+      // Update user record
+      c.state.users[c.conn.state.userId].position = { x, y };
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Add to pending updates for throttled broadcast
+      c.vars.pendingUpdates[c.conn.state.userId] = { x, y };
+      
+      return true;
+    },
+    
+    // Throttled broadcast of pending updates
+    processPendingUpdates: (c) => {
+      const now = Date.now();
+      const timeSinceLastBroadcast = now - c.vars.lastBroadcast;
+      
+      // Only broadcast if we have updates and enough time has passed
+      if (
+        Object.keys(c.vars.pendingUpdates).length > 0 && 
+        timeSinceLastBroadcast >= c.vars.throttleInterval
+      ) {
+        // Prepare batch update
+        const updates = {};
+        for (const [userId, position] of Object.entries(c.vars.pendingUpdates)) {
+          updates[userId] = position;
+        }
+        
+        // Broadcast batch update
+        c.broadcast("positionsUpdated", updates);
+        
+        // Reset pending updates
+        c.vars.pendingUpdates = {};
+        c.vars.lastBroadcast = now;
+      }
+      
+      // Schedule next check
+      c.schedule.after(c.vars.throttleInterval, "processPendingUpdates");
+    }
+  }
+});
+
+// Helper to generate random colors
+function getRandomColor() {
+  const colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff"];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+```
+
+## State Change Broadcasts
+
+Broadcast automatically when state changes:
+
+```typescript
+import { actor } from "actor-core";
+
+const todoList = actor({
+  state: {
+    todos: []
+  },
+  
+  // Called whenever state changes
+  onStateChange: (c) => {
+    // Broadcast the entire todos list
+    c.broadcast("todosUpdated", c.state.todos);
+  },
+  
+  actions: {
+    addTodo: (c, text) => {
+      const todo = {
+        id: crypto.randomUUID(),
+        text,
+        completed: false,
+        createdAt: Date.now()
+      };
+      
+      c.state.todos.push(todo);
+      
+      // No need to manually broadcast - onStateChange will handle it
+      return todo.id;
+    },
+    
+    toggleTodo: (c, id) => {
+      const todo = c.state.todos.find(t => t.id === id);
+      if (todo) {
+        todo.completed = !todo.completed;
+        return true;
+      }
+      return false;
+    },
+    
+    deleteTodo: (c, id) => {
+      const initialLength = c.state.todos.length;
+      c.state.todos = c.state.todos.filter(t => t.id !== id);
+      return c.state.todos.length !== initialLength;
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Name events clearly**: Use descriptive event names that indicate what happened
+2. **Structure event data**: Keep event payloads organized and consistent
+3. **Include timestamps**: Add timestamps to events for proper ordering and debugging
+4. **Use TypeScript**: Define event type interfaces for better type checking
+5. **Throttle frequent updates**: For high-frequency events, implement throttling
+6. **Be selective**: Only broadcast what's needed, not entire state objects
+7. **Consider payload size**: Large broadcasts can impact performance
+8. **Use onStateChange**: For simple cases, automate broadcasts with onStateChange
+
+Events are essential for creating real-time applications with ActorCore. By following these patterns, you can build responsive, efficient applications that keep clients up-to-date with changes.

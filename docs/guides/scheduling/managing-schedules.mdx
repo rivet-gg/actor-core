@@ -1,0 +1,1452 @@
+---
+title: Managing Scheduled Tasks
+description: Update or cancel previously scheduled tasks
+---
+
+# Managing Scheduled Tasks
+
+In real-world applications, you often need to not just schedule tasks, but also manage them: updating their timing, canceling them, or tracking their execution. ActorCore provides patterns to effectively manage scheduled tasks throughout their lifecycle.
+
+## Tracking Scheduled Tasks
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const taskManager = actor({
+  state: {
+    scheduledTasks: {}, // Store scheduled task information
+    taskHistory: []     // Track execution history
+  },
+  
+  onStart: (c) => {
+    console.log("Task manager started");
+    
+    // Check for orphaned tasks that may have been scheduled before restart
+    for (const [taskId, task] of Object.entries(c.state.scheduledTasks)) {
+      if (task.status === "scheduled" && task.scheduledFor <= Date.now()) {
+        // Task should have run but probably missed due to restart
+        console.log(`Task ${taskId} missed execution due to restart, rescheduling`);
+        
+        // Record missed execution
+        recordTaskOutcome(c, taskId, "missed", "Actor restart caused task to be missed");
+        
+        // Reschedule if it's a reschedule-on-miss task
+        if (task.rescheduleOnMiss) {
+          rescheduleTask(c, taskId);
+        }
+      }
+    }
+  },
+  
+  actions: {
+    // Schedule a one-time task
+    scheduleTask: (c, taskName, delay, params = {}, options = {}) => {
+      // Generate task ID
+      const taskId = crypto.randomUUID();
+      
+      // Calculate execution time
+      const now = Date.now();
+      const scheduledFor = now + delay;
+      
+      // Store task information
+      c.state.scheduledTasks[taskId] = {
+        id: taskId,
+        name: taskName,
+        params,
+        createdAt: now,
+        scheduledFor,
+        status: "scheduled",
+        createdBy: c.conn?.state?.userId || "system",
+        options: {
+          // Default options
+          priority: options.priority || "normal",
+          rescheduleOnMiss: options.rescheduleOnMiss || false,
+          retryOnFailure: options.retryOnFailure || false,
+          maxRetries: options.maxRetries || 0,
+          tags: options.tags || []
+        }
+      };
+      
+      // Schedule the actual task execution
+      c.schedule.at(scheduledFor, "executeTask", taskId);
+      
+      console.log(`Task ${taskName} (${taskId}) scheduled for ${new Date(scheduledFor).toISOString()}`);
+      
+      // Notify about new scheduled task
+      c.broadcast("taskScheduled", {
+        taskId,
+        name: taskName,
+        scheduledFor
+      });
+      
+      return {
+        taskId,
+        scheduledFor
+      };
+    },
+    
+    // Execute a scheduled task
+    executeTask: async (c, taskId) => {
+      // Get task details
+      const task = c.state.scheduledTasks[taskId];
+      
+      // If task doesn't exist or is already completed/canceled
+      if (!task || task.status !== "scheduled") {
+        return;
+      }
+      
+      // Update task status
+      task.status = "running";
+      task.startedAt = Date.now();
+      
+      console.log(`Executing task ${task.name} (${taskId})`);
+      
+      try {
+        // Execute the task based on its name
+        let result;
+        
+        switch (task.name) {
+          case "sendNotification":
+            result = await sendNotification(task.params);
+            break;
+          case "processData":
+            result = await processData(task.params);
+            break;
+          case "generateReport":
+            result = await generateReport(task.params);
+            break;
+          default:
+            throw new Error(`Unknown task type: ${task.name}`);
+        }
+        
+        // Mark task as completed
+        task.status = "completed";
+        task.completedAt = Date.now();
+        task.result = result;
+        
+        // Record successful execution
+        recordTaskOutcome(c, taskId, "success", result);
+        
+        // Broadcast completion
+        c.broadcast("taskCompleted", {
+          taskId,
+          name: task.name,
+          result
+        });
+        
+        return result;
+      } catch (error) {
+        console.error(`Task ${taskId} execution failed:`, error);
+        
+        // Handle retry logic if enabled
+        if (task.options.retryOnFailure && 
+            (!task.retryCount || task.retryCount < task.options.maxRetries)) {
+          
+          // Increment retry count
+          task.retryCount = (task.retryCount || 0) + 1;
+          
+          // Calculate backoff (exponential backoff with jitter)
+          const baseDelay = 1000; // 1 second
+          const maxDelay = 60000; // 1 minute
+          const exponentialPart = Math.min(maxDelay, baseDelay * Math.pow(2, task.retryCount - 1));
+          const jitter = 0.5 * exponentialPart * Math.random();
+          const delay = exponentialPart + jitter;
+          
+          // Schedule retry
+          task.status = "retry-scheduled";
+          task.nextRetryAt = Date.now() + delay;
+          
+          // Record retry attempt
+          recordTaskOutcome(c, taskId, "retry-scheduled", {
+            error: error.message,
+            retry: task.retryCount,
+            nextRetryAt: task.nextRetryAt
+          });
+          
+          // Schedule retry
+          c.schedule.after(delay, "executeTask", taskId);
+          
+          // Broadcast retry scheduled
+          c.broadcast("taskRetryScheduled", {
+            taskId,
+            name: task.name,
+            retryCount: task.retryCount,
+            nextRetryAt: task.nextRetryAt
+          });
+        } else {
+          // Mark task as failed
+          task.status = "failed";
+          task.failedAt = Date.now();
+          task.error = error.message;
+          
+          // Record failure
+          recordTaskOutcome(c, taskId, "failed", {
+            error: error.message,
+            retryCount: task.retryCount || 0
+          });
+          
+          // Broadcast failure
+          c.broadcast("taskFailed", {
+            taskId,
+            name: task.name,
+            error: error.message
+          });
+        }
+        
+        throw error;
+      }
+    },
+    
+    // Cancel a scheduled task
+    cancelTask: (c, taskId, reason = "User canceled") => {
+      const task = c.state.scheduledTasks[taskId];
+      
+      if (!task) {
+        throw new UserError("Task not found");
+      }
+      
+      // Only scheduled or retry-scheduled tasks can be canceled
+      if (task.status !== "scheduled" && task.status !== "retry-scheduled") {
+        throw new UserError(`Task cannot be canceled in ${task.status} status`);
+      }
+      
+      // Update task status
+      task.status = "canceled";
+      task.canceledAt = Date.now();
+      task.cancelReason = reason;
+      
+      // Record cancellation
+      recordTaskOutcome(c, taskId, "canceled", {
+        reason,
+        canceledBy: c.conn?.state?.userId || "system"
+      });
+      
+      // Broadcast cancellation
+      c.broadcast("taskCanceled", {
+        taskId,
+        name: task.name,
+        reason
+      });
+      
+      return { success: true };
+    },
+    
+    // Reschedule a task
+    rescheduleTask: (c, taskId, newDelay) => {
+      const task = c.state.scheduledTasks[taskId];
+      
+      if (!task) {
+        throw new UserError("Task not found");
+      }
+      
+      // Task must be in a schedulable state
+      const validStates = ["scheduled", "retry-scheduled", "completed", "failed", "canceled", "missed"];
+      if (!validStates.includes(task.status)) {
+        throw new UserError(`Task cannot be rescheduled in ${task.status} status`);
+      }
+      
+      // Calculate new scheduled time
+      const now = Date.now();
+      const scheduledFor = now + newDelay;
+      
+      // Update task
+      task.status = "scheduled";
+      task.scheduledFor = scheduledFor;
+      task.rescheduledAt = now;
+      task.rescheduledBy = c.conn?.state?.userId || "system";
+      
+      // Reset execution-specific fields
+      delete task.startedAt;
+      delete task.completedAt;
+      delete task.failedAt;
+      delete task.canceledAt;
+      delete task.result;
+      delete task.error;
+      delete task.retryCount;
+      
+      // Schedule the actual task
+      c.schedule.at(scheduledFor, "executeTask", taskId);
+      
+      // Record rescheduling
+      recordTaskOutcome(c, taskId, "rescheduled", {
+        scheduledFor,
+        rescheduledBy: task.rescheduledBy
+      });
+      
+      // Broadcast rescheduling
+      c.broadcast("taskRescheduled", {
+        taskId,
+        name: task.name,
+        scheduledFor
+      });
+      
+      return {
+        taskId,
+        scheduledFor
+      };
+    },
+    
+    // Get task information
+    getTask: (c, taskId) => {
+      const task = c.state.scheduledTasks[taskId];
+      
+      if (!task) {
+        throw new UserError("Task not found");
+      }
+      
+      // Get task history
+      const history = c.state.taskHistory
+        .filter(entry => entry.taskId === taskId)
+        .sort((a, b) => b.timestamp - a.timestamp);
+      
+      return {
+        ...task,
+        history
+      };
+    },
+    
+    // List all tasks with filtering options
+    listTasks: (c, filters = {}) => {
+      let tasks = Object.values(c.state.scheduledTasks);
+      
+      // Apply filters
+      if (filters.status) {
+        tasks = tasks.filter(task => task.status === filters.status);
+      }
+      
+      if (filters.name) {
+        tasks = tasks.filter(task => task.name === filters.name);
+      }
+      
+      if (filters.tag) {
+        tasks = tasks.filter(task => task.options.tags.includes(filters.tag));
+      }
+      
+      if (filters.createdBy) {
+        tasks = tasks.filter(task => task.createdBy === filters.createdBy);
+      }
+      
+      if (filters.before) {
+        tasks = tasks.filter(task => task.scheduledFor < filters.before);
+      }
+      
+      if (filters.after) {
+        tasks = tasks.filter(task => task.scheduledFor > filters.after);
+      }
+      
+      // Sort by scheduled time
+      tasks.sort((a, b) => a.scheduledFor - b.scheduledFor);
+      
+      return tasks;
+    },
+    
+    // Clean up old completed/failed/canceled tasks
+    cleanupTasks: (c, olderThan = 7 * 24 * 60 * 60 * 1000) => { // Default: 7 days
+      const cutoffTime = Date.now() - olderThan;
+      const tasksToDelete = [];
+      
+      for (const [taskId, task] of Object.entries(c.state.scheduledTasks)) {
+        // Only clean up completed, failed, or canceled tasks
+        if (
+          ["completed", "failed", "canceled"].includes(task.status) && 
+          task.createdAt < cutoffTime
+        ) {
+          tasksToDelete.push(taskId);
+        }
+      }
+      
+      // Delete tasks
+      for (const taskId of tasksToDelete) {
+        delete c.state.scheduledTasks[taskId];
+      }
+      
+      // Also clean up old history entries
+      c.state.taskHistory = c.state.taskHistory.filter(
+        entry => entry.timestamp >= cutoffTime
+      );
+      
+      return { deleted: tasksToDelete.length };
+    }
+  }
+});
+
+// Helper function to record task outcomes
+function recordTaskOutcome(c, taskId, outcome, details) {
+  const task = c.state.scheduledTasks[taskId];
+  
+  if (!task) return;
+  
+  const historyEntry = {
+    taskId,
+    taskName: task.name,
+    outcome,
+    details,
+    timestamp: Date.now()
+  };
+  
+  // Add to history
+  c.state.taskHistory.unshift(historyEntry);
+  
+  // Limit history size
+  if (c.state.taskHistory.length > 1000) {
+    c.state.taskHistory = c.state.taskHistory.slice(0, 1000);
+  }
+}
+
+// Helper function to reschedule a task
+function rescheduleTask(c, taskId) {
+  const task = c.state.scheduledTasks[taskId];
+  
+  if (!task) return;
+  
+  // Reschedule for 5 minutes from now
+  const delay = 5 * 60 * 1000;
+  
+  // Update task
+  task.status = "scheduled";
+  task.scheduledFor = Date.now() + delay;
+  task.rescheduledAt = Date.now();
+  task.rescheduledBy = "system";
+  
+  // Schedule the task
+  c.schedule.at(task.scheduledFor, "executeTask", taskId);
+  
+  // Record rescheduling
+  recordTaskOutcome(c, taskId, "rescheduled", {
+    scheduledFor: task.scheduledFor,
+    rescheduledBy: "system",
+    reason: "Automatic rescheduling after miss"
+  });
+  
+  console.log(`Task ${task.name} (${taskId}) rescheduled for ${new Date(task.scheduledFor).toISOString()}`);
+}
+
+// Mock task implementation functions
+async function sendNotification(params) {
+  // Simulate sending a notification
+  console.log(`Sending notification to ${params.recipient}: ${params.message}`);
+  
+  // Simulate API call
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  return { sent: true, recipient: params.recipient };
+}
+
+async function processData(params) {
+  // Simulate data processing
+  console.log(`Processing ${params.dataType} data: ${params.dataId}`);
+  
+  // Simulate processing time
+  await new Promise(resolve => setTimeout(resolve, 200));
+  
+  // Random success/failure for demonstration
+  if (Math.random() < 0.1) {
+    throw new Error("Random processing error");
+  }
+  
+  return { processed: true, dataId: params.dataId };
+}
+
+async function generateReport(params) {
+  // Simulate report generation
+  console.log(`Generating ${params.reportType} report`);
+  
+  // Simulate generation time
+  await new Promise(resolve => setTimeout(resolve, 300));
+  
+  return { 
+    reportId: crypto.randomUUID(),
+    reportType: params.reportType,
+    generatedAt: new Date().toISOString()
+  };
+}
+```
+
+## Priority-Based Task Management
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const priorityTaskManager = actor({
+  state: {
+    tasks: {},
+    taskQueue: {
+      high: [],
+      normal: [],
+      low: []
+    },
+    runningTask: null,
+    processing: false
+  },
+  
+  // Initialize ephemeral variables for task processing
+  createVars: () => ({
+    processingTimeout: null,
+    maxProcessingTime: 30000, // 30 seconds
+    defaultPriority: "normal"
+  }),
+  
+  onStart: (c) => {
+    console.log("Priority task manager started");
+    
+    // Start task processor
+    c.schedule.after(1000, "processNextTask");
+  },
+  
+  actions: {
+    // Add a task to the queue
+    queueTask: (c, taskName, params = {}, options = {}) => {
+      // Validate priority
+      const priority = options.priority || c.vars.defaultPriority;
+      if (!["high", "normal", "low"].includes(priority)) {
+        throw new UserError("Invalid priority. Must be high, normal, or low");
+      }
+      
+      // Generate task ID
+      const taskId = crypto.randomUUID();
+      
+      // Create task
+      const task = {
+        id: taskId,
+        name: taskName,
+        params,
+        priority,
+        createdAt: Date.now(),
+        status: "queued",
+        createdBy: c.conn?.state?.userId || "system",
+        options: {
+          timeout: options.timeout || c.vars.maxProcessingTime,
+          retryOnFailure: options.retryOnFailure || false,
+          maxRetries: options.maxRetries || 0,
+          tags: options.tags || []
+        }
+      };
+      
+      // Store task
+      c.state.tasks[taskId] = task;
+      
+      // Add to appropriate queue
+      c.state.taskQueue[priority].push(taskId);
+      
+      // Broadcast task queued
+      c.broadcast("taskQueued", {
+        taskId,
+        name: taskName,
+        priority
+      });
+      
+      // If processor isn't running, kick it off
+      if (!c.state.processing) {
+        c.schedule.after(0, "processNextTask");
+      }
+      
+      return {
+        taskId,
+        position: c.state.taskQueue[priority].length,
+        priority
+      };
+    },
+    
+    // Process the next task in the queue
+    processNextTask: async (c) => {
+      // If already processing a task, skip
+      if (c.state.processing) {
+        return;
+      }
+      
+      // Get the next task from highest priority queue
+      let taskId = null;
+      let priority = null;
+      
+      if (c.state.taskQueue.high.length > 0) {
+        taskId = c.state.taskQueue.high.shift();
+        priority = "high";
+      } else if (c.state.taskQueue.normal.length > 0) {
+        taskId = c.state.taskQueue.normal.shift();
+        priority = "normal";
+      } else if (c.state.taskQueue.low.length > 0) {
+        taskId = c.state.taskQueue.low.shift();
+        priority = "low";
+      }
+      
+      // If no tasks in queue, check again later
+      if (!taskId) {
+        // Schedule another check in the future
+        c.schedule.after(1000, "processNextTask");
+        return;
+      }
+      
+      const task = c.state.tasks[taskId];
+      
+      // If task doesn't exist or was canceled, process next task
+      if (!task || task.status === "canceled") {
+        c.schedule.after(0, "processNextTask");
+        return;
+      }
+      
+      // Set processing flag and current task
+      c.state.processing = true;
+      c.state.runningTask = taskId;
+      
+      // Update task status
+      task.status = "processing";
+      task.startedAt = Date.now();
+      
+      // Set up timeout to prevent tasks from running too long
+      const timeoutId = setTimeout(() => {
+        handleTaskTimeout(c, taskId);
+      }, task.options.timeout);
+      
+      c.vars.processingTimeout = timeoutId;
+      
+      // Broadcast task started
+      c.broadcast("taskStarted", {
+        taskId,
+        name: task.name,
+        priority
+      });
+      
+      try {
+        console.log(`Processing ${priority} priority task: ${task.name} (${taskId})`);
+        
+        // Execute the task
+        let result;
+        
+        switch (task.name) {
+          case "importData":
+            result = await importData(task.params);
+            break;
+          case "exportData":
+            result = await exportData(task.params);
+            break;
+          case "generateReport":
+            result = await generatePriorityReport(task.params);
+            break;
+          default:
+            throw new Error(`Unknown task type: ${task.name}`);
+        }
+        
+        // Clear timeout
+        clearTimeout(c.vars.processingTimeout);
+        c.vars.processingTimeout = null;
+        
+        // Update task status
+        task.status = "completed";
+        task.completedAt = Date.now();
+        task.result = result;
+        
+        // Broadcast task completed
+        c.broadcast("taskCompleted", {
+          taskId,
+          name: task.name,
+          result
+        });
+      } catch (error) {
+        console.error(`Task ${taskId} execution failed:`, error);
+        
+        // Clear timeout
+        clearTimeout(c.vars.processingTimeout);
+        c.vars.processingTimeout = null;
+        
+        // Handle retry logic
+        if (
+          task.options.retryOnFailure && 
+          (!task.retryCount || task.retryCount < task.options.maxRetries)
+        ) {
+          // Increment retry count
+          task.retryCount = (task.retryCount || 0) + 1;
+          
+          // Re-queue the task at the end of its priority queue
+          task.status = "queued";
+          c.state.taskQueue[task.priority].push(taskId);
+          
+          // Broadcast retry
+          c.broadcast("taskRetryQueued", {
+            taskId,
+            name: task.name,
+            priority: task.priority,
+            retryCount: task.retryCount
+          });
+        } else {
+          // Mark task as failed
+          task.status = "failed";
+          task.failedAt = Date.now();
+          task.error = error.message;
+          
+          // Broadcast failure
+          c.broadcast("taskFailed", {
+            taskId,
+            name: task.name,
+            error: error.message
+          });
+        }
+      } finally {
+        // Reset processing state
+        c.state.processing = false;
+        c.state.runningTask = null;
+        
+        // Schedule next task
+        c.schedule.after(100, "processNextTask");
+      }
+    },
+    
+    // Cancel a queued task
+    cancelTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new UserError("Task not found");
+      }
+      
+      // Only queued tasks can be canceled
+      if (task.status !== "queued") {
+        throw new UserError(`Task cannot be canceled in ${task.status} status`);
+      }
+      
+      // Update task status
+      task.status = "canceled";
+      task.canceledAt = Date.now();
+      task.canceledBy = c.conn?.state?.userId || "system";
+      
+      // Remove from queue
+      const queue = c.state.taskQueue[task.priority];
+      const index = queue.indexOf(taskId);
+      if (index !== -1) {
+        queue.splice(index, 1);
+      }
+      
+      // Broadcast cancellation
+      c.broadcast("taskCanceled", {
+        taskId,
+        name: task.name
+      });
+      
+      return { success: true };
+    },
+    
+    // Change task priority
+    changePriority: (c, taskId, newPriority) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new UserError("Task not found");
+      }
+      
+      // Validate priority
+      if (!["high", "normal", "low"].includes(newPriority)) {
+        throw new UserError("Invalid priority. Must be high, normal, or low");
+      }
+      
+      // Only queued tasks can have priority changed
+      if (task.status !== "queued") {
+        throw new UserError(`Task priority cannot be changed in ${task.status} status`);
+      }
+      
+      // If priority hasn't changed, do nothing
+      if (task.priority === newPriority) {
+        return { success: true, priority: newPriority };
+      }
+      
+      // Remove from current queue
+      const currentQueue = c.state.taskQueue[task.priority];
+      const index = currentQueue.indexOf(taskId);
+      if (index !== -1) {
+        currentQueue.splice(index, 1);
+      }
+      
+      // Update priority
+      task.priority = newPriority;
+      
+      // Add to new queue
+      c.state.taskQueue[newPriority].push(taskId);
+      
+      // Broadcast priority change
+      c.broadcast("taskPriorityChanged", {
+        taskId,
+        name: task.name,
+        priority: newPriority
+      });
+      
+      return {
+        success: true,
+        priority: newPriority,
+        position: c.state.taskQueue[newPriority].length
+      };
+    },
+    
+    // Get queue statistics
+    getQueueStats: (c) => {
+      return {
+        high: c.state.taskQueue.high.length,
+        normal: c.state.taskQueue.normal.length,
+        low: c.state.taskQueue.low.length,
+        processing: c.state.processing,
+        currentTask: c.state.runningTask ? c.state.tasks[c.state.runningTask] : null
+      };
+    },
+    
+    // Get estimated wait time
+    getEstimatedWaitTime: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        throw new UserError("Task not found");
+      }
+      
+      if (task.status !== "queued") {
+        return { waitTime: 0 };
+      }
+      
+      // Calculate position in queue
+      const queue = c.state.taskQueue[task.priority];
+      const position = queue.indexOf(taskId);
+      
+      if (position === -1) {
+        return { waitTime: 0 };
+      }
+      
+      // Calculate tasks ahead in higher priority queues
+      const highPriorityTasks = task.priority === "high" ? 0 : c.state.taskQueue.high.length;
+      const normalPriorityTasks = task.priority === "high" ? 0 : 
+        (task.priority === "normal" ? 0 : c.state.taskQueue.normal.length);
+      
+      // Estimate average task duration based on completed tasks
+      const completedTasks = Object.values(c.state.tasks).filter(
+        t => t.status === "completed" && t.completedAt && t.startedAt
+      );
+      
+      let avgDuration = 1000; // Default: 1 second
+      
+      if (completedTasks.length > 0) {
+        const totalDuration = completedTasks.reduce(
+          (sum, t) => sum + (t.completedAt - t.startedAt), 0
+        );
+        avgDuration = totalDuration / completedTasks.length;
+      }
+      
+      // Calculate total tasks ahead
+      const tasksAhead = position + highPriorityTasks + normalPriorityTasks;
+      
+      // Estimate wait time
+      const estimatedWaitTime = tasksAhead * avgDuration;
+      
+      return {
+        priority: task.priority,
+        position,
+        tasksAhead,
+        avgTaskDuration: avgDuration,
+        estimatedWaitTime
+      };
+    }
+  }
+});
+
+// Handle task timeout
+function handleTaskTimeout(c, taskId) {
+  const task = c.state.tasks[taskId];
+  
+  if (!task || task.status !== "processing") {
+    return;
+  }
+  
+  console.log(`Task ${taskId} timed out`);
+  
+  // Mark task as timed out
+  task.status = "timeout";
+  task.timedOutAt = Date.now();
+  
+  // Broadcast timeout
+  c.broadcast("taskTimeout", {
+    taskId,
+    name: task.name,
+    timeout: task.options.timeout
+  });
+  
+  // Reset processing state
+  c.state.processing = false;
+  c.state.runningTask = null;
+  
+  // Continue processing next task
+  c.schedule.after(0, "processNextTask");
+}
+
+// Mock task implementation functions
+async function importData(params) {
+  // Simulate data import
+  console.log(`Importing ${params.dataType} data`);
+  
+  const processingTime = Math.random() * 2000 + 500;
+  await new Promise(resolve => setTimeout(resolve, processingTime));
+  
+  return { imported: true, count: Math.floor(Math.random() * 1000) };
+}
+
+async function exportData(params) {
+  // Simulate data export
+  console.log(`Exporting ${params.format} data`);
+  
+  const processingTime = Math.random() * 3000 + 1000;
+  await new Promise(resolve => setTimeout(resolve, processingTime));
+  
+  return { exported: true, fileSize: `${Math.floor(Math.random() * 10)}MB` };
+}
+
+async function generatePriorityReport(params) {
+  // Simulate report generation
+  console.log(`Generating ${params.reportType} report`);
+  
+  const processingTime = Math.random() * 1500 + 500;
+  await new Promise(resolve => setTimeout(resolve, processingTime));
+  
+  return { 
+    reportId: crypto.randomUUID(),
+    pages: Math.floor(Math.random() * 20) + 1
+  };
+}
+```
+
+## Dependency-Based Task Scheduling
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const workflowManager = actor({
+  state: {
+    workflows: {},
+    tasks: {},
+    dependencies: {}
+  },
+  
+  onStart: (c) => {
+    console.log("Workflow manager started");
+    
+    // Check for workflows that need continuation
+    for (const [workflowId, workflow] of Object.entries(c.state.workflows)) {
+      if (workflow.status === "running") {
+        // Check for ready tasks
+        checkWorkflowTasks(c, workflowId);
+      }
+    }
+  },
+  
+  actions: {
+    // Create a new workflow
+    createWorkflow: (c, name, tasks) => {
+      // Validate tasks
+      if (!Array.isArray(tasks) || tasks.length === 0) {
+        throw new UserError("Workflow must have at least one task");
+      }
+      
+      // Validate task structure and dependencies
+      const taskIds = tasks.map(task => task.id);
+      const uniqueTaskIds = new Set(taskIds);
+      
+      if (uniqueTaskIds.size !== tasks.length) {
+        throw new UserError("Task IDs must be unique within a workflow");
+      }
+      
+      // Check for circular dependencies
+      for (const task of tasks) {
+        if (task.dependsOn && task.dependsOn.length > 0) {
+          // Ensure all dependencies exist
+          for (const depId of task.dependsOn) {
+            if (!taskIds.includes(depId)) {
+              throw new UserError(`Task ${task.id} depends on unknown task ${depId}`);
+            }
+          }
+          
+          // Simple cycle detection (doesn't catch all cycles but catches direct ones)
+          if (task.dependsOn.includes(task.id)) {
+            throw new UserError(`Task ${task.id} cannot depend on itself`);
+          }
+        }
+      }
+      
+      // Generate workflow ID
+      const workflowId = crypto.randomUUID();
+      
+      // Create workflow
+      c.state.workflows[workflowId] = {
+        id: workflowId,
+        name,
+        createdAt: Date.now(),
+        status: "created",
+        progress: 0,
+        startedAt: null,
+        completedAt: null
+      };
+      
+      // Store tasks and dependencies
+      for (const task of tasks) {
+        // Store task
+        c.state.tasks[task.id] = {
+          id: task.id,
+          workflowId,
+          name: task.name,
+          params: task.params || {},
+          status: "pending",
+          createdAt: Date.now()
+        };
+        
+        // Store dependencies
+        if (task.dependsOn && task.dependsOn.length > 0) {
+          c.state.dependencies[task.id] = task.dependsOn;
+        }
+      }
+      
+      return {
+        workflowId,
+        name,
+        taskCount: tasks.length
+      };
+    },
+    
+    // Start a workflow
+    startWorkflow: (c, workflowId) => {
+      const workflow = c.state.workflows[workflowId];
+      
+      if (!workflow) {
+        throw new UserError("Workflow not found");
+      }
+      
+      if (workflow.status !== "created") {
+        throw new UserError(`Workflow cannot be started in ${workflow.status} status`);
+      }
+      
+      // Update workflow status
+      workflow.status = "running";
+      workflow.startedAt = Date.now();
+      
+      // Broadcast workflow started
+      c.broadcast("workflowStarted", {
+        workflowId,
+        name: workflow.name,
+        startedAt: workflow.startedAt
+      });
+      
+      // Find tasks that can be started (no dependencies)
+      const workflowTasks = Object.values(c.state.tasks)
+        .filter(task => task.workflowId === workflowId);
+      
+      const startableTasks = workflowTasks.filter(task => 
+        !c.state.dependencies[task.id] || c.state.dependencies[task.id].length === 0
+      );
+      
+      // Start initial tasks
+      for (const task of startableTasks) {
+        scheduleTask(c, task.id);
+      }
+      
+      return {
+        workflowId,
+        startedAt: workflow.startedAt,
+        initialTasks: startableTasks.map(t => t.id)
+      };
+    },
+    
+    // Execute a workflow task
+    executeTask: async (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      
+      if (!task) {
+        console.log(`Task ${taskId} not found`);
+        return;
+      }
+      
+      const workflow = c.state.workflows[task.workflowId];
+      
+      if (!workflow || workflow.status !== "running") {
+        console.log(`Workflow ${task.workflowId} not running`);
+        return;
+      }
+      
+      // Update task status
+      task.status = "running";
+      task.startedAt = Date.now();
+      
+      // Broadcast task started
+      c.broadcast("taskStarted", {
+        workflowId: task.workflowId,
+        taskId,
+        name: task.name,
+        startedAt: task.startedAt
+      });
+      
+      try {
+        console.log(`Executing workflow task: ${task.name} (${taskId})`);
+        
+        // Execute the task based on its name
+        let result;
+        
+        switch (task.name) {
+          case "fetchData":
+            result = await fetchData(task.params);
+            break;
+          case "processData":
+            result = await processData(task.params);
+            break;
+          case "validateResults":
+            result = await validateResults(task.params);
+            break;
+          case "generateOutput":
+            result = await generateOutput(task.params);
+            break;
+          default:
+            throw new Error(`Unknown task type: ${task.name}`);
+        }
+        
+        // Update task status
+        task.status = "completed";
+        task.completedAt = Date.now();
+        task.result = result;
+        
+        // Broadcast task completed
+        c.broadcast("taskCompleted", {
+          workflowId: task.workflowId,
+          taskId,
+          name: task.name,
+          result
+        });
+        
+        // Check for dependent tasks that can now be started
+        checkDependentTasks(c, taskId);
+        
+        // Update workflow progress
+        updateWorkflowProgress(c, task.workflowId);
+        
+        return result;
+      } catch (error) {
+        console.error(`Task ${taskId} execution failed:`, error);
+        
+        // Update task status
+        task.status = "failed";
+        task.failedAt = Date.now();
+        task.error = error.message;
+        
+        // Broadcast task failed
+        c.broadcast("taskFailed", {
+          workflowId: task.workflowId,
+          taskId,
+          name: task.name,
+          error: error.message
+        });
+        
+        // Handle workflow failure if needed
+        handleWorkflowTaskFailure(c, task.workflowId, taskId);
+        
+        throw error;
+      }
+    },
+    
+    // Get workflow details
+    getWorkflow: (c, workflowId) => {
+      const workflow = c.state.workflows[workflowId];
+      
+      if (!workflow) {
+        throw new UserError("Workflow not found");
+      }
+      
+      // Get all tasks for this workflow
+      const tasks = Object.values(c.state.tasks)
+        .filter(task => task.workflowId === workflowId);
+      
+      // Get dependencies
+      const dependencies = {};
+      for (const task of tasks) {
+        if (c.state.dependencies[task.id]) {
+          dependencies[task.id] = c.state.dependencies[task.id];
+        }
+      }
+      
+      return {
+        ...workflow,
+        tasks,
+        dependencies
+      };
+    },
+    
+    // Pause a workflow
+    pauseWorkflow: (c, workflowId) => {
+      const workflow = c.state.workflows[workflowId];
+      
+      if (!workflow) {
+        throw new UserError("Workflow not found");
+      }
+      
+      if (workflow.status !== "running") {
+        throw new UserError(`Workflow cannot be paused in ${workflow.status} status`);
+      }
+      
+      // Update workflow status
+      workflow.status = "paused";
+      workflow.pausedAt = Date.now();
+      
+      // Broadcast workflow paused
+      c.broadcast("workflowPaused", {
+        workflowId,
+        name: workflow.name,
+        pausedAt: workflow.pausedAt
+      });
+      
+      return { success: true };
+    },
+    
+    // Resume a paused workflow
+    resumeWorkflow: (c, workflowId) => {
+      const workflow = c.state.workflows[workflowId];
+      
+      if (!workflow) {
+        throw new UserError("Workflow not found");
+      }
+      
+      if (workflow.status !== "paused") {
+        throw new UserError(`Workflow cannot be resumed in ${workflow.status} status`);
+      }
+      
+      // Update workflow status
+      workflow.status = "running";
+      workflow.resumedAt = Date.now();
+      
+      // Broadcast workflow resumed
+      c.broadcast("workflowResumed", {
+        workflowId,
+        name: workflow.name,
+        resumedAt: workflow.resumedAt
+      });
+      
+      // Check for tasks that can be continued
+      checkWorkflowTasks(c, workflowId);
+      
+      return { success: true };
+    },
+    
+    // Cancel a workflow
+    cancelWorkflow: (c, workflowId, reason = "User canceled") => {
+      const workflow = c.state.workflows[workflowId];
+      
+      if (!workflow) {
+        throw new UserError("Workflow not found");
+      }
+      
+      // Only active workflows can be canceled
+      if (workflow.status !== "running" && workflow.status !== "paused") {
+        throw new UserError(`Workflow cannot be canceled in ${workflow.status} status`);
+      }
+      
+      // Update workflow status
+      workflow.status = "canceled";
+      workflow.canceledAt = Date.now();
+      workflow.cancelReason = reason;
+      
+      // Broadcast workflow canceled
+      c.broadcast("workflowCanceled", {
+        workflowId,
+        name: workflow.name,
+        reason
+      });
+      
+      return { success: true };
+    }
+  }
+});
+
+// Helper function to schedule a task
+function scheduleTask(c, taskId) {
+  const task = c.state.tasks[taskId];
+  
+  if (!task || task.status !== "pending") {
+    return;
+  }
+  
+  // Update task status
+  task.status = "scheduled";
+  task.scheduledAt = Date.now();
+  
+  // Schedule actual execution
+  c.schedule.after(0, "executeTask", taskId);
+  
+  console.log(`Scheduled task ${task.name} (${taskId})`);
+}
+
+// Check for tasks that depend on the completed task
+function checkDependentTasks(c, completedTaskId) {
+  // Find all tasks that depend on this one
+  const dependentTasks = Object.entries(c.state.dependencies)
+    .filter(([_, deps]) => deps.includes(completedTaskId))
+    .map(([taskId]) => taskId);
+  
+  for (const taskId of dependentTasks) {
+    const task = c.state.tasks[taskId];
+    
+    // Skip if task is not pending
+    if (!task || task.status !== "pending") {
+      continue;
+    }
+    
+    // Check if all dependencies are completed
+    const dependencies = c.state.dependencies[taskId] || [];
+    const allDependenciesMet = dependencies.every(depId => {
+      const depTask = c.state.tasks[depId];
+      return depTask && depTask.status === "completed";
+    });
+    
+    // If all dependencies are met, schedule this task
+    if (allDependenciesMet) {
+      scheduleTask(c, taskId);
+    }
+  }
+}
+
+// Handle workflow task failure
+function handleWorkflowTaskFailure(c, workflowId, failedTaskId) {
+  const workflow = c.state.workflows[workflowId];
+  
+  if (!workflow) {
+    return;
+  }
+  
+  // In this implementation, we fail the entire workflow
+  // You could implement more advanced strategies like partial completion
+  workflow.status = "failed";
+  workflow.failedAt = Date.now();
+  workflow.failedTaskId = failedTaskId;
+  
+  // Broadcast workflow failed
+  c.broadcast("workflowFailed", {
+    workflowId,
+    name: workflow.name,
+    failedTask: c.state.tasks[failedTaskId].name
+  });
+}
+
+// Check tasks that can be started in a workflow
+function checkWorkflowTasks(c, workflowId) {
+  const workflow = c.state.workflows[workflowId];
+  
+  if (!workflow || workflow.status !== "running") {
+    return;
+  }
+  
+  // Get all pending tasks for this workflow
+  const pendingTasks = Object.values(c.state.tasks).filter(
+    task => task.workflowId === workflowId && task.status === "pending"
+  );
+  
+  // Check each pending task
+  for (const task of pendingTasks) {
+    const dependencies = c.state.dependencies[task.id] || [];
+    
+    // If no dependencies, can start right away
+    if (dependencies.length === 0) {
+      scheduleTask(c, task.id);
+      continue;
+    }
+    
+    // Check if all dependencies are completed
+    const allDependenciesMet = dependencies.every(depId => {
+      const depTask = c.state.tasks[depId];
+      return depTask && depTask.status === "completed";
+    });
+    
+    // If all dependencies are met, schedule this task
+    if (allDependenciesMet) {
+      scheduleTask(c, task.id);
+    }
+  }
+  
+  // Check if workflow is complete
+  const allTasks = Object.values(c.state.tasks).filter(
+    task => task.workflowId === workflowId
+  );
+  
+  const allCompleted = allTasks.every(task => task.status === "completed");
+  
+  if (allCompleted) {
+    // Mark workflow as completed
+    workflow.status = "completed";
+    workflow.completedAt = Date.now();
+    workflow.progress = 100;
+    
+    // Broadcast workflow completed
+    c.broadcast("workflowCompleted", {
+      workflowId,
+      name: workflow.name,
+      completedAt: workflow.completedAt
+    });
+  }
+}
+
+// Update workflow progress
+function updateWorkflowProgress(c, workflowId) {
+  const workflow = c.state.workflows[workflowId];
+  
+  if (!workflow) {
+    return;
+  }
+  
+  // Get all tasks for this workflow
+  const workflowTasks = Object.values(c.state.tasks).filter(
+    task => task.workflowId === workflowId
+  );
+  
+  // Count completed tasks
+  const completedTasks = workflowTasks.filter(
+    task => task.status === "completed"
+  ).length;
+  
+  // Calculate progress percentage
+  const progress = Math.round((completedTasks / workflowTasks.length) * 100);
+  
+  // Update workflow progress
+  workflow.progress = progress;
+  
+  // Broadcast progress update
+  c.broadcast("workflowProgress", {
+    workflowId,
+    name: workflow.name,
+    progress,
+    completedTasks,
+    totalTasks: workflowTasks.length
+  });
+}
+
+// Mock task implementations
+async function fetchData(params) {
+  console.log(`Fetching data: ${params.source}`);
+  await new Promise(resolve => setTimeout(resolve, 500));
+  return { data: "sample data", size: "1.2MB" };
+}
+
+async function processData(params) {
+  console.log(`Processing data with mode: ${params.mode}`);
+  await new Promise(resolve => setTimeout(resolve, 700));
+  return { processed: true, records: 150 };
+}
+
+async function validateResults(params) {
+  console.log(`Validating results with rules: ${params.rules}`);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  return { valid: true, checks: 5 };
+}
+
+async function generateOutput(params) {
+  console.log(`Generating output in format: ${params.format}`);
+  await new Promise(resolve => setTimeout(resolve, 600));
+  return { outputFile: "result.json", size: "0.8MB" };
+}
+```
+
+## Best Practices
+
+1. **Track scheduled tasks**: Store task information in actor state
+2. **Record task outcomes**: Keep a history of task execution results
+3. **Handle task failures**: Implement retry policies for failed tasks
+4. **Cancelable tasks**: Allow tasks to be canceled before execution
+5. **Prioritize tasks**: Implement priority queues for important tasks
+6. **Progress tracking**: Update and broadcast task progress
+7. **Dependency management**: Support complex task dependencies
+8. **Resource management**: Avoid overloading the system with too many concurrent tasks
+9. **Timeout handling**: Set timeouts to prevent stuck tasks
+10. **Clean up**: Periodically clean up completed task records to manage state size
+
+By implementing these patterns, you can build robust, manageable task scheduling systems in ActorCore that can handle complex workflows, priorities, and failure scenarios.

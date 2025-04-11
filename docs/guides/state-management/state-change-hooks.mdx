@@ -1,0 +1,329 @@
+---
+title: State Change Hooks
+description: React to state changes with lifecycle hooks
+---
+
+# State Change Hooks
+
+ActorCore provides lifecycle hooks that allow you to react to state changes. This is useful for broadcasting updates, validating state, or triggering side effects when state changes.
+
+## Basic onStateChange Example
+
+```typescript
+import { actor } from "actor-core";
+
+const counter = actor({
+  state: { 
+    count: 0,
+    lastUpdated: null 
+  },
+  
+  // Called whenever state changes
+  onStateChange: (c) => {
+    // Broadcast the updated state to all clients
+    c.broadcast("stateUpdated", c.state);
+    
+    console.log(`State updated: count = ${c.state.count}`);
+  },
+  
+  actions: {
+    increment: (c, amount = 1) => {
+      c.state.count += amount;
+      c.state.lastUpdated = Date.now();
+      return c.state.count;
+    },
+    
+    decrement: (c, amount = 1) => {
+      c.state.count -= amount;
+      c.state.lastUpdated = Date.now();
+      return c.state.count;
+    }
+  }
+});
+```
+
+## Detecting Specific Changes
+
+You can detect specific state changes by comparing previous and current state:
+
+```typescript
+import { actor } from "actor-core";
+import { isEqual } from "lodash-es";
+
+interface GameState {
+  status: "waiting" | "playing" | "finished";
+  players: Record<string, { score: number; isActive: boolean }>;
+  currentRound: number;
+  lastAction: { type: string; player: string; timestamp: number } | null;
+}
+
+const gameRoom = actor({
+  state: {
+    status: "waiting",
+    players: {},
+    currentRound: 0,
+    lastAction: null
+  } as GameState,
+  
+  onStateChange: (c, prevState) => {
+    // Check if game status changed
+    if (prevState.status !== c.state.status) {
+      c.broadcast("statusChanged", c.state.status);
+      
+      // If game finished, notify all players
+      if (c.state.status === "finished") {
+        c.broadcast("gameOver", determineWinner(c.state.players));
+      }
+    }
+    
+    // Check if scores changed
+    const prevScores = Object.entries(prevState.players).map(([id, p]) => ({ id, score: p.score }));
+    const currentScores = Object.entries(c.state.players).map(([id, p]) => ({ id, score: p.score }));
+    
+    if (!isEqual(prevScores, currentScores)) {
+      c.broadcast("scoresUpdated", currentScores);
+    }
+    
+    // Check if round changed
+    if (prevState.currentRound !== c.state.currentRound) {
+      c.broadcast("newRound", c.state.currentRound);
+    }
+  },
+  
+  actions: {
+    // Game actions...
+    updateScore: (c, playerId, points) => {
+      if (c.state.players[playerId]) {
+        c.state.players[playerId].score += points;
+        c.state.lastAction = {
+          type: "scoreUpdate",
+          player: playerId,
+          timestamp: Date.now()
+        };
+      }
+    },
+    
+    startGame: (c) => {
+      c.state.status = "playing";
+      c.state.currentRound = 1;
+    },
+    
+    endGame: (c) => {
+      c.state.status = "finished";
+    }
+  }
+});
+
+// Helper function to determine the winner
+function determineWinner(players) {
+  return Object.entries(players)
+    .map(([id, data]) => ({ id, score: data.score }))
+    .sort((a, b) => b.score - a.score)[0];
+}
+```
+
+## Validating State Changes
+
+You can use the `onStateChange` hook to validate state:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const bankAccount = actor({
+  state: {
+    balance: 1000,
+    transactions: [],
+    overdraftLimit: 100
+  },
+  
+  onStateChange: (c, prevState) => {
+    // Validate that balance doesn't go below overdraft limit
+    if (c.state.balance < -c.state.overdraftLimit) {
+      // Revert to previous state
+      c.state.balance = prevState.balance;
+      c.state.transactions = prevState.transactions;
+      
+      // Note: You typically should prevent invalid state in actions,
+      // but this is a backup validation
+      console.error("Invalid state: balance below overdraft limit");
+    }
+    
+    // Notify about low balance
+    if (c.state.balance < 100 && prevState.balance >= 100) {
+      c.broadcast("lowBalanceWarning", c.state.balance);
+    }
+  },
+  
+  actions: {
+    withdraw: (c, amount) => {
+      // Primary validation in the action
+      if (c.state.balance - amount < -c.state.overdraftLimit) {
+        throw new UserError("Insufficient funds", {
+          code: "insufficient_funds",
+          meta: {
+            requested: amount,
+            available: c.state.balance + c.state.overdraftLimit
+          }
+        });
+      }
+      
+      c.state.balance -= amount;
+      c.state.transactions.push({
+        type: "withdrawal",
+        amount,
+        timestamp: Date.now()
+      });
+      
+      return c.state.balance;
+    },
+    
+    deposit: (c, amount) => {
+      c.state.balance += amount;
+      c.state.transactions.push({
+        type: "deposit",
+        amount,
+        timestamp: Date.now()
+      });
+      
+      return c.state.balance;
+    }
+  }
+});
+```
+
+## Implementing a Change Log
+
+Track all state changes with a change log:
+
+```typescript
+import { actor } from "actor-core";
+import { diff } from "deep-object-diff";
+
+const documentEditor = actor({
+  state: {
+    document: {
+      title: "Untitled",
+      content: "",
+      lastModified: null
+    },
+    changeLog: []
+  },
+  
+  onStateChange: (c, prevState) => {
+    // Skip initial state
+    if (!prevState) return;
+    
+    // Calculate what changed
+    const changes = diff(prevState.document, c.state.document);
+    
+    // If there are meaningful changes, add to log
+    if (Object.keys(changes).length > 0) {
+      // Don't track lastModified in the change log
+      const { lastModified, ...changesWithoutTimestamp } = changes;
+      
+      // Add to change log
+      c.state.changeLog.push({
+        timestamp: Date.now(),
+        userId: c.conn?.state?.userId || "system",
+        changes: changesWithoutTimestamp
+      });
+      
+      // Limit change log size
+      if (c.state.changeLog.length > 100) {
+        c.state.changeLog = c.state.changeLog.slice(-100);
+      }
+      
+      // Broadcast update
+      c.broadcast("documentUpdated", c.state.document);
+    }
+  },
+  
+  actions: {
+    updateTitle: (c, title) => {
+      c.state.document.title = title;
+      c.state.document.lastModified = Date.now();
+    },
+    
+    updateContent: (c, content) => {
+      c.state.document.content = content;
+      c.state.document.lastModified = Date.now();
+    },
+    
+    getChangeHistory: (c) => {
+      return c.state.changeLog;
+    }
+  }
+});
+```
+
+## Optimized Broadcasts
+
+Optimize broadcasts to only send specific updates:
+
+```typescript
+import { actor } from "actor-core";
+
+const chatRoom = actor({
+  state: {
+    messages: [],
+    typingUsers: {}
+  },
+  
+  onStateChange: (c, prevState) => {
+    // Check if new messages were added
+    if (prevState && c.state.messages.length > prevState.messages.length) {
+      // Only send the new messages
+      const newMessages = c.state.messages.slice(prevState.messages.length);
+      c.broadcast("newMessages", newMessages);
+    }
+    
+    // Check if typing users changed
+    const prevTyping = prevState ? Object.keys(prevState.typingUsers) : [];
+    const currentTyping = Object.keys(c.state.typingUsers);
+    
+    if (JSON.stringify(prevTyping) !== JSON.stringify(currentTyping)) {
+      c.broadcast("typingStatus", currentTyping);
+    }
+  },
+  
+  actions: {
+    sendMessage: (c, message) => {
+      const newMessage = {
+        id: crypto.randomUUID(),
+        text: message,
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        timestamp: Date.now()
+      };
+      
+      c.state.messages.push(newMessage);
+      
+      // Remove user from typing list
+      if (c.state.typingUsers[c.conn.state.userId]) {
+        delete c.state.typingUsers[c.conn.state.userId];
+      }
+      
+      return newMessage.id;
+    },
+    
+    setTyping: (c, isTyping) => {
+      if (isTyping) {
+        c.state.typingUsers[c.conn.state.userId] = Date.now();
+      } else {
+        delete c.state.typingUsers[c.conn.state.userId];
+      }
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Use sparingly**: Only implement `onStateChange` when you need to react to state changes
+2. **Keep it fast**: Avoid expensive operations in this hook as it runs on every state change
+3. **Don't modify state directly**: Be cautious when modifying state in `onStateChange` to avoid infinite loops
+4. **Compare efficiently**: Use deep comparison only when necessary
+5. **Broadcast selectively**: Only broadcast what's changed, not the entire state
+6. **Primary validation in actions**: While you can validate in `onStateChange`, prefer validating in actions
+
+By using state change hooks effectively, you can create more responsive and robust applications that react intelligently to state changes.

@@ -1,0 +1,986 @@
+---
+title: React Integration
+description: Learn how to integrate ActorCore with React applications
+---
+
+# React Integration
+
+ActorCore provides seamless integration with React applications through its dedicated React package. This guide covers how to connect your ActorCore backend with a React frontend, create custom hooks, and manage real-time state with ActorCore.
+
+## Setting Up React Integration
+
+First, install the ActorCore React package:
+
+```bash
+npm install actor-core-react
+# or
+yarn add actor-core-react
+```
+
+Then, set up your ActorCore React provider:
+
+```tsx
+// src/ActorProvider.tsx
+import React from 'react';
+import { ActorProvider } from 'actor-core-react';
+import type { App } from './server/app'; // Your ActorCore app type
+
+interface ActorProviderWrapperProps {
+  children: React.ReactNode;
+}
+
+export const ActorProviderWrapper: React.FC<ActorProviderWrapperProps> = ({ children }) => {
+  return (
+    <ActorProvider<App>
+      url={process.env.NEXT_PUBLIC_ACTOR_URL || 'http://localhost:3001'}
+    >
+      {children}
+    </ActorProvider>
+  );
+};
+```
+
+Wrap your application with the provider:
+
+```tsx
+// src/App.tsx
+import React from 'react';
+import { ActorProviderWrapper } from './ActorProvider';
+import MainContent from './MainContent';
+
+const App: React.FC = () => {
+  return (
+    <ActorProviderWrapper>
+      <MainContent />
+    </ActorProviderWrapper>
+  );
+};
+
+export default App;
+```
+
+## Using ActorCore in React Components
+
+Once you've set up the provider, you can use ActorCore in your components:
+
+```tsx
+// src/components/Counter.tsx
+import React, { useEffect, useState } from 'react';
+import { useActor } from 'actor-core-react';
+import type { App } from '../server/app';
+
+const Counter: React.FC = () => {
+  const [count, setCount] = useState<number | null>(null);
+  const { actor, isConnecting, error } = useActor<App>('counter');
+  
+  // Get initial state
+  useEffect(() => {
+    if (actor) {
+      actor.getCount().then(setCount);
+      
+      // Subscribe to count updates
+      const unsubscribe = actor.on('countUpdated', (newCount) => {
+        setCount(newCount);
+      });
+      
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [actor]);
+  
+  // Handle increment
+  const handleIncrement = async () => {
+    if (actor) {
+      const newCount = await actor.increment();
+      setCount(newCount);
+    }
+  };
+  
+  // Handle decrement
+  const handleDecrement = async () => {
+    if (actor) {
+      const newCount = await actor.decrement();
+      setCount(newCount);
+    }
+  };
+  
+  if (isConnecting) return <div>Connecting to counter...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  if (count === null) return <div>Loading count...</div>;
+  
+  return (
+    <div className="counter">
+      <h2>Counter: {count}</h2>
+      <div className="counter-buttons">
+        <button onClick={handleDecrement}>-</button>
+        <button onClick={handleIncrement}>+</button>
+      </div>
+    </div>
+  );
+};
+
+export default Counter;
+```
+
+## Using ActorCore with Specific Actor IDs
+
+For actors that require IDs (in partition or coordinate topologies):
+
+```tsx
+// src/components/ChatRoom.tsx
+import React, { useState, useEffect } from 'react';
+import { useActorWithId } from 'actor-core-react';
+import type { App } from '../server/app';
+
+interface ChatRoomProps {
+  roomId: string;
+  username: string;
+}
+
+interface Message {
+  id: string;
+  username: string;
+  text: string;
+  timestamp: number;
+}
+
+const ChatRoom: React.FC<ChatRoomProps> = ({ roomId, username }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  
+  const { actor, isConnecting, error } = useActorWithId<App>(
+    'chatRoom',
+    roomId,
+    {
+      params: {
+        username
+      }
+    }
+  );
+  
+  // Load initial messages and subscribe to new ones
+  useEffect(() => {
+    if (actor) {
+      // Get message history
+      actor.getHistory().then(setMessages);
+      
+      // Subscribe to new messages
+      const unsubscribe = actor.on('newMessage', (username, message) => {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Math.random().toString(36).substring(2),
+            username,
+            text: message,
+            timestamp: Date.now()
+          }
+        ]);
+      });
+      
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [actor]);
+  
+  // Send a message
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (actor && newMessage.trim()) {
+      await actor.sendMessage(username, newMessage);
+      setNewMessage('');
+    }
+  };
+  
+  if (isConnecting) return <div>Connecting to chat room...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
+  return (
+    <div className="chat-room">
+      <h2>Chat Room: {roomId}</h2>
+      
+      <div className="message-list">
+        {messages.map(msg => (
+          <div 
+            key={msg.id} 
+            className={`message ${msg.username === username ? 'own-message' : ''}`}
+          >
+            <div className="message-username">{msg.username}</div>
+            <div className="message-text">{msg.text}</div>
+          </div>
+        ))}
+      </div>
+      
+      <form onSubmit={handleSendMessage} className="message-form">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={e => setNewMessage(e.target.value)}
+          placeholder="Type a message..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  );
+};
+
+export default ChatRoom;
+```
+
+## Creating Custom React Hooks
+
+You can create custom hooks for specific actor interactions:
+
+```tsx
+// src/hooks/useCounter.ts
+import { useState, useEffect, useCallback } from 'react';
+import { useActor } from 'actor-core-react';
+import type { App } from '../server/app';
+
+export function useCounter() {
+  const [count, setCount] = useState<number | null>(null);
+  const { actor, isConnecting, error } = useActor<App>('counter');
+  
+  // Fetch initial count and subscribe to updates
+  useEffect(() => {
+    if (actor) {
+      actor.getCount().then(setCount);
+      
+      const unsubscribe = actor.on('countUpdated', (newCount) => {
+        setCount(newCount);
+      });
+      
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [actor]);
+  
+  // Define counter operations
+  const increment = useCallback(async (amount = 1) => {
+    if (actor) {
+      const newCount = await actor.increment(amount);
+      setCount(newCount);
+      return newCount;
+    }
+    return null;
+  }, [actor]);
+  
+  const decrement = useCallback(async (amount = 1) => {
+    if (actor) {
+      const newCount = await actor.decrement(amount);
+      setCount(newCount);
+      return newCount;
+    }
+    return null;
+  }, [actor]);
+  
+  const reset = useCallback(async () => {
+    if (actor) {
+      const result = await actor.reset();
+      setCount(result.newCount);
+      return result;
+    }
+    return null;
+  }, [actor]);
+  
+  return {
+    count,
+    increment,
+    decrement,
+    reset,
+    isConnecting,
+    error
+  };
+}
+```
+
+Then use the custom hook in your components:
+
+```tsx
+// src/components/CounterWithHook.tsx
+import React from 'react';
+import { useCounter } from '../hooks/useCounter';
+
+const CounterWithHook: React.FC = () => {
+  const { count, increment, decrement, reset, isConnecting, error } = useCounter();
+  
+  if (isConnecting) return <div>Connecting to counter...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  if (count === null) return <div>Loading count...</div>;
+  
+  return (
+    <div className="counter">
+      <h2>Counter: {count}</h2>
+      <div className="counter-buttons">
+        <button onClick={() => decrement()}>-</button>
+        <button onClick={() => increment()}>+</button>
+        <button onClick={() => reset()}>Reset</button>
+      </div>
+    </div>
+  );
+};
+
+export default CounterWithHook;
+```
+
+## Creating a Chat Room Hook
+
+Here's a more sophisticated example for a chat room:
+
+```tsx
+// src/hooks/useChatRoom.ts
+import { useState, useEffect, useCallback } from 'react';
+import { useActorWithId } from 'actor-core-react';
+import type { App } from '../server/app';
+
+export interface Message {
+  id: string;
+  username: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface ChatUser {
+  id: string;
+  username: string;
+  isTyping: boolean;
+  lastActive: number;
+}
+
+export function useChatRoom(roomId: string, username: string, userId: string) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [users, setUsers] = useState<ChatUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const { actor, isConnecting, error } = useActorWithId<App>(
+    'chatRoom',
+    roomId,
+    {
+      params: {
+        userId,
+        username
+      }
+    }
+  );
+  
+  // Initialize and subscribe to events
+  useEffect(() => {
+    if (actor) {
+      // Load initial data
+      Promise.all([
+        actor.getHistory(),
+        actor.getUsers()
+      ]).then(([messagesData, usersData]) => {
+        setMessages(messagesData);
+        setUsers(usersData);
+        setIsLoading(false);
+      });
+      
+      // Subscribe to events
+      const unsubscribeNewMessage = actor.on('newMessage', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
+      
+      const unsubscribeUserJoined = actor.on('userJoined', (user) => {
+        setUsers(prev => [...prev.filter(u => u.id !== user.id), user]);
+      });
+      
+      const unsubscribeUserLeft = actor.on('userLeft', (userId) => {
+        setUsers(prev => prev.filter(u => u.id !== userId));
+      });
+      
+      const unsubscribeUserTyping = actor.on('userTyping', (userId, isTyping) => {
+        setUsers(prev => 
+          prev.map(u => u.id === userId ? { ...u, isTyping } : u)
+        );
+      });
+      
+      return () => {
+        unsubscribeNewMessage();
+        unsubscribeUserJoined();
+        unsubscribeUserLeft();
+        unsubscribeUserTyping();
+      };
+    }
+  }, [actor, roomId]);
+  
+  // Send a message
+  const sendMessage = useCallback(async (text: string) => {
+    if (actor && text.trim()) {
+      return await actor.sendMessage(text);
+    }
+  }, [actor]);
+  
+  // Set typing status
+  const setTyping = useCallback(async (isTyping: boolean) => {
+    if (actor) {
+      return await actor.setTyping(isTyping);
+    }
+  }, [actor]);
+  
+  return {
+    messages,
+    users,
+    sendMessage,
+    setTyping,
+    isLoading,
+    isConnecting,
+    error
+  };
+}
+```
+
+Then use it in a component:
+
+```tsx
+// src/components/ChatRoomWithHook.tsx
+import React, { useState, useRef, useEffect } from 'react';
+import { useChatRoom } from '../hooks/useChatRoom';
+
+interface ChatRoomWithHookProps {
+  roomId: string;
+  username: string;
+  userId: string;
+}
+
+const ChatRoomWithHook: React.FC<ChatRoomWithHookProps> = ({ 
+  roomId, 
+  username, 
+  userId 
+}) => {
+  const [newMessage, setNewMessage] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  const {
+    messages,
+    users,
+    sendMessage,
+    setTyping,
+    isLoading,
+    isConnecting,
+    error
+  } = useChatRoom(roomId, username, userId);
+  
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  
+  // Handle typing indicator
+  let typingTimeout = useRef<NodeJS.Timeout | null>(null);
+  const handleTyping = () => {
+    setTyping(true);
+    
+    // Clear previous timeout
+    if (typingTimeout.current) {
+      clearTimeout(typingTimeout.current);
+    }
+    
+    // Set typing to false after 3 seconds of inactivity
+    typingTimeout.current = setTimeout(() => {
+      setTyping(false);
+    }, 3000);
+  };
+  
+  // Handle sending message
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (newMessage.trim()) {
+      await sendMessage(newMessage);
+      setNewMessage('');
+      setTyping(false);
+      
+      // Focus back on input
+      inputRef.current?.focus();
+    }
+  };
+  
+  // Show loading states
+  if (isConnecting) return <div>Connecting to chat room...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  if (isLoading) return <div>Loading chat room data...</div>;
+  
+  // Format date for messages
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+  
+  // Get users who are currently typing (excluding current user)
+  const typingUsers = users
+    .filter(user => user.isTyping && user.id !== userId)
+    .map(user => user.username);
+  
+  return (
+    <div className="chat-room">
+      <header className="chat-header">
+        <h2>{roomId}</h2>
+        <div className="online-users">
+          {users.length} user{users.length !== 1 ? 's' : ''} online
+        </div>
+      </header>
+      
+      <div className="message-container">
+        <div className="messages">
+          {messages.map(msg => (
+            <div 
+              key={msg.id} 
+              className={`message ${msg.username === username ? 'own-message' : ''}`}
+            >
+              <div className="message-header">
+                <span className="message-username">{msg.username}</span>
+                <span className="message-time">{formatTime(msg.timestamp)}</span>
+              </div>
+              <div className="message-text">{msg.text}</div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+        
+        {typingUsers.length > 0 && (
+          <div className="typing-indicator">
+            {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+          </div>
+        )}
+      </div>
+      
+      <form onSubmit={handleSendMessage} className="message-form">
+        <input
+          ref={inputRef}
+          type="text"
+          value={newMessage}
+          onChange={e => setNewMessage(e.target.value)}
+          onKeyDown={handleTyping}
+          placeholder="Type a message..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  );
+};
+
+export default ChatRoomWithHook;
+```
+
+## Creating Actor Instances in React
+
+You can create actor instances directly from your React components:
+
+```tsx
+// src/components/NewChatRoom.tsx
+import React, { useState } from 'react';
+import { useClient } from 'actor-core-react';
+import type { App } from '../server/app';
+import { useNavigate } from 'react-router-dom';
+
+const NewChatRoom: React.FC = () => {
+  const [roomName, setRoomName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const client = useClient<App>();
+  const navigate = useNavigate();
+  
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!roomName.trim()) {
+      setError('Room name is required');
+      return;
+    }
+    
+    setIsCreating(true);
+    setError(null);
+    
+    try {
+      // Create a new chat room with a generated ID
+      const roomId = `room-${Date.now()}`;
+      
+      await client.chatRoom.create({
+        id: roomId,
+        params: [roomName]
+      });
+      
+      // Navigate to the new room
+      navigate(`/chat/${roomId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create room');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+  
+  return (
+    <div className="new-room-form">
+      <h2>Create New Chat Room</h2>
+      
+      {error && <div className="error-message">{error}</div>}
+      
+      <form onSubmit={handleCreateRoom}>
+        <div className="form-group">
+          <label htmlFor="roomName">Room Name</label>
+          <input
+            id="roomName"
+            type="text"
+            value={roomName}
+            onChange={e => setRoomName(e.target.value)}
+            disabled={isCreating}
+            placeholder="Enter room name"
+          />
+        </div>
+        
+        <button type="submit" disabled={isCreating}>
+          {isCreating ? 'Creating...' : 'Create Room'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default NewChatRoom;
+```
+
+## Handling Connection State and Errors
+
+ActorCore React provides hooks for managing connection state:
+
+```tsx
+// src/components/ConnectionStatus.tsx
+import React from 'react';
+import { useConnectionStatus } from 'actor-core-react';
+
+const ConnectionStatus: React.FC = () => {
+  const { status, error, reconnect } = useConnectionStatus();
+  
+  return (
+    <div className={`connection-status ${status}`}>
+      {status === 'connected' && (
+        <span className="status-indicator connected">Connected</span>
+      )}
+      
+      {status === 'connecting' && (
+        <span className="status-indicator connecting">Connecting...</span>
+      )}
+      
+      {status === 'disconnected' && (
+        <div className="disconnected-state">
+          <span className="status-indicator disconnected">Disconnected</span>
+          <button onClick={reconnect}>Reconnect</button>
+        </div>
+      )}
+      
+      {status === 'error' && (
+        <div className="error-state">
+          <span className="status-indicator error">Error: {error?.message}</span>
+          <button onClick={reconnect}>Retry</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ConnectionStatus;
+```
+
+## Complete React Integration Example
+
+Here's a complete example of a React application that integrates with ActorCore:
+
+```tsx
+// src/App.tsx
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ActorProviderWrapper } from './ActorProvider';
+import Home from './pages/Home';
+import ChatRoom from './pages/ChatRoom';
+import NewRoom from './pages/NewRoom';
+import NotFound from './pages/NotFound';
+import Layout from './components/Layout';
+
+const App: React.FC = () => {
+  return (
+    <BrowserRouter>
+      <ActorProviderWrapper>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Home />} />
+            <Route path="chat/new" element={<NewRoom />} />
+            <Route path="chat/:roomId" element={<ChatRoom />} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
+        </Routes>
+      </ActorProviderWrapper>
+    </BrowserRouter>
+  );
+};
+
+export default App;
+
+// src/ActorProvider.tsx
+import React from 'react';
+import { ActorProvider } from 'actor-core-react';
+import type { App } from './server/app';
+
+interface ActorProviderWrapperProps {
+  children: React.ReactNode;
+}
+
+export const ActorProviderWrapper: React.FC<ActorProviderWrapperProps> = ({ 
+  children 
+}) => {
+  return (
+    <ActorProvider<App>
+      url={process.env.REACT_APP_ACTOR_URL || 'http://localhost:3001'}
+      connectOptions={{
+        reconnectDelay: 1000,
+        maxReconnectAttempts: 5
+      }}
+    >
+      {children}
+    </ActorProvider>
+  );
+};
+
+// src/components/Layout.tsx
+import React from 'react';
+import { Outlet } from 'react-router-dom';
+import Navbar from './Navbar';
+import ConnectionStatus from './ConnectionStatus';
+
+const Layout: React.FC = () => {
+  return (
+    <div className="app-container">
+      <Navbar />
+      <ConnectionStatus />
+      <main className="content">
+        <Outlet />
+      </main>
+    </div>
+  );
+};
+
+export default Layout;
+
+// src/pages/ChatRoom.tsx
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useChatRoom } from '../hooks/useChatRoom';
+import useUserProfile from '../hooks/useUserProfile';
+import MessageList from '../components/MessageList';
+import MessageForm from '../components/MessageForm';
+import UserList from '../components/UserList';
+
+const ChatRoom: React.FC = () => {
+  const { roomId } = useParams<{ roomId: string }>();
+  const navigate = useNavigate();
+  const { user } = useUserProfile();
+  
+  // Redirect if no room ID or no user
+  useEffect(() => {
+    if (!roomId) {
+      navigate('/');
+    }
+    
+    if (!user) {
+      navigate('/login', { state: { redirectTo: `/chat/${roomId}` } });
+    }
+  }, [roomId, user, navigate]);
+  
+  if (!roomId || !user) {
+    return <div>Loading...</div>;
+  }
+  
+  const {
+    messages,
+    users,
+    sendMessage,
+    setTyping,
+    isLoading,
+    isConnecting,
+    error
+  } = useChatRoom(roomId, user.username, user.id);
+  
+  // Show error with a retry button
+  if (error) {
+    return (
+      <div className="error-container">
+        <h2>Error connecting to chat room</h2>
+        <p>{error.message}</p>
+        <button onClick={() => navigate(0)}>Retry</button>
+      </div>
+    );
+  }
+  
+  // Show loading state
+  if (isConnecting || isLoading) {
+    return <div className="loading">Loading chat room...</div>;
+  }
+  
+  return (
+    <div className="chat-room-page">
+      <div className="chat-container">
+        <div className="chat-header">
+          <h1>{roomId}</h1>
+          <div className="user-count">{users.length} online</div>
+        </div>
+        
+        <div className="chat-content">
+          <div className="chat-main">
+            <MessageList messages={messages} currentUserId={user.id} />
+            <MessageForm 
+              onSendMessage={sendMessage} 
+              onTyping={setTyping}
+            />
+          </div>
+          
+          <div className="chat-sidebar">
+            <UserList users={users} currentUserId={user.id} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ChatRoom;
+```
+
+## Advanced React Usage
+
+### Global State Management
+
+You can integrate ActorCore with global state management tools like Redux:
+
+```tsx
+// src/hooks/useActorRedux.ts
+import { useEffect } from 'react';
+import { useActor } from 'actor-core-react';
+import { useDispatch } from 'react-redux';
+import type { App } from '../server/app';
+import { setCount, incrementCount, decrementCount } from '../store/counterSlice';
+
+export function useActorRedux() {
+  const { actor, isConnecting, error } = useActor<App>('counter');
+  const dispatch = useDispatch();
+  
+  useEffect(() => {
+    if (actor) {
+      // Initialize state
+      actor.getCount().then(count => {
+        dispatch(setCount(count));
+      });
+      
+      // Subscribe to updates
+      const unsubscribe = actor.on('countUpdated', (count) => {
+        dispatch(setCount(count));
+      });
+      
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [actor, dispatch]);
+  
+  // Define actions that dispatch Redux actions
+  const increment = async (amount = 1) => {
+    if (actor) {
+      const newCount = await actor.increment(amount);
+      dispatch(incrementCount(amount));
+      return newCount;
+    }
+  };
+  
+  const decrement = async (amount = 1) => {
+    if (actor) {
+      const newCount = await actor.decrement(amount);
+      dispatch(decrementCount(amount));
+      return newCount;
+    }
+  };
+  
+  return {
+    increment,
+    decrement,
+    isConnecting,
+    error
+  };
+}
+```
+
+### Authentication and Tokens
+
+You can pass authentication tokens to the ActorCore server:
+
+```tsx
+// src/AuthenticatedActorProvider.tsx
+import React, { useState, useEffect } from 'react';
+import { ActorProvider } from 'actor-core-react';
+import type { App } from './server/app';
+import { useAuth } from './hooks/useAuth';
+
+interface AuthenticatedActorProviderProps {
+  children: React.ReactNode;
+}
+
+export const AuthenticatedActorProvider: React.FC<AuthenticatedActorProviderProps> = ({ 
+  children 
+}) => {
+  const { token, isAuthenticated } = useAuth();
+  const [headers, setHeaders] = useState<Record<string, string>>({});
+  
+  // Update headers when token changes
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      setHeaders({
+        'Authorization': `Bearer ${token}`
+      });
+    } else {
+      setHeaders({});
+    }
+  }, [token, isAuthenticated]);
+  
+  return (
+    <ActorProvider<App>
+      url={process.env.REACT_APP_ACTOR_URL || 'http://localhost:3001'}
+      headers={headers}
+      connectOptions={{
+        reconnectDelay: 1000,
+        maxReconnectAttempts: 5
+      }}
+    >
+      {children}
+    </ActorProvider>
+  );
+};
+```
+
+## Best Practices
+
+1. **State Management**: Use ActorCore for complex state that benefits from real-time updates and persistence.
+
+2. **Custom Hooks**: Create custom hooks for specific actor interactions to encapsulate behavior and maintain clean components.
+
+3. **Error Handling**: Always handle connection errors and provide meaningful feedback to users.
+
+4. **Loading States**: Show appropriate loading indicators during connection and data fetching.
+
+5. **Event Subscriptions**: Properly subscribe to and unsubscribe from events to prevent memory leaks.
+
+6. **Optimistic Updates**: Update UI optimistically before waiting for server confirmation, then sync with server response.
+
+7. **Authentication**: Pass authentication tokens securely and handle authentication errors gracefully.
+
+8. **Type Safety**: Use TypeScript types from your ActorCore app for end-to-end type safety.
+
+9. **Connection Status**: Display connection status and provide reconnection options when disconnected.
+
+10. **Performance**: For large datasets, consider pagination, virtualization, and selective updates.
+
+By following these patterns and best practices, you can build responsive, real-time React applications that leverage the full power of ActorCore's stateful actor model.

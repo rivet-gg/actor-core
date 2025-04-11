@@ -1,0 +1,546 @@
+---
+title: Rivet Platform Configuration
+description: Configure and deploy ActorCore applications on Rivet's managed platform
+---
+
+# Rivet Platform Configuration
+
+[Rivet](https://rivet.gg) is a managed cloud platform for ActorCore that provides automatic scaling, global deployment, and built-in monitoring. This guide will help you deploy and configure ActorCore applications on Rivet.
+
+## Introduction
+
+Rivet's platform is designed to handle all the infrastructure complexity for ActorCore applications, allowing you to focus on developing your actor logic. Key benefits include:
+
+- Global deployment across multiple regions
+- Automatic scaling based on demand
+- Built-in monitoring and observability
+- Managed KV storage
+- Custom domains with SSL
+- Integrated user authentication
+
+## Getting Started
+
+### Project Setup
+
+To get started with Rivet, you'll first need to create an account and set up a project:
+
+```typescript
+// Install dependencies
+npm install @actor-core/rivet
+
+// Deploy to Rivet
+npx @actor-core/cli@latest deploy rivet actors/app.ts
+```
+
+The deployment CLI will guide you through:
+1. Authenticating with Rivet
+2. Creating or selecting a project
+3. Building and deploying your application
+4. Providing your new API endpoint
+
+### Basic Configuration
+
+Here's how to set up a basic ActorCore application for Rivet:
+
+```typescript
+// app.ts
+import { setup, serve } from "actor-core";
+import { chatRoom } from "./chat-room";
+
+const app = setup({
+  actors: { chatRoom },
+  // Rivet-specific configuration is handled automatically
+});
+
+serve(app);
+
+export type App = typeof app;
+```
+
+## Accessing Rivet Context
+
+Rivet provides additional context and services that you can access in your actors. The Rivet context gives you access to region information, KV storage, and other Rivet-specific functionality.
+
+```typescript
+import { actor } from "actor-core";
+
+const myActor = actor({
+  // Access Rivet-specific variables
+  createVars: (c, rivet) => ({
+    rivet: rivet.ctx,
+    region: rivet.ctx.metadata.region.name
+  }),
+  
+  actions: {
+    storeData: async (c, key, value) => {
+      // Use Rivet's KV storage
+      await c.vars.rivet.kv.put(key, value);
+      c.log.info(`Stored data in ${c.vars.region}`);
+      return { success: true };
+    },
+    
+    retrieveData: async (c, key) => {
+      // Retrieve from KV storage
+      const value = await c.vars.rivet.kv.get(key);
+      return { key, value };
+    }
+  }
+});
+```
+
+## Multi-Region Deployment
+
+Rivet allows you to deploy your ActorCore applications across multiple global regions for improved latency and reliability.
+
+```typescript
+import { actor } from "actor-core";
+
+const globalActor = actor({
+  createVars: (c, rivet) => ({
+    regionInfo: {
+      id: rivet.ctx.metadata.region.id,
+      name: rivet.ctx.metadata.region.name,
+    }
+  }),
+  
+  createState: () => ({
+    regionAccesses: {}
+  }),
+  
+  actions: {
+    recordAccess: (c) => {
+      const region = c.vars.regionInfo.name;
+      c.state.regionAccesses[region] = (c.state.regionAccesses[region] || 0) + 1;
+      
+      c.log.info(`Access recorded in ${region}`, {
+        regionId: c.vars.regionInfo.id,
+        count: c.state.regionAccesses[region]
+      });
+      
+      return {
+        currentRegion: region,
+        accessCounts: c.state.regionAccesses
+      };
+    }
+  }
+});
+```
+
+## Using Rivet KV Storage
+
+Rivet provides a built-in KV (Key-Value) storage system that's accessible through the Rivet context. You can use this for:
+
+- Storing configuration values
+- Caching frequently accessed data
+- Sharing data between actors
+
+```typescript
+import { actor } from "actor-core";
+
+const kvActor = actor({
+  createVars: (c, rivet) => ({
+    kv: rivet.ctx.kv
+  }),
+  
+  actions: {
+    // Store a complex object
+    storeObject: async (c, key, object) => {
+      await c.vars.kv.put(key, JSON.stringify(object));
+      return { success: true };
+    },
+    
+    // Retrieve and parse a complex object
+    getObject: async (c, key) => {
+      const rawValue = await c.vars.kv.get(key);
+      if (!rawValue) return null;
+      
+      try {
+        return JSON.parse(rawValue);
+      } catch (err) {
+        c.log.error("Failed to parse KV object", { key, error: err.message });
+        return null;
+      }
+    },
+    
+    // List keys with a prefix
+    listKeys: async (c, prefix) => {
+      const keys = await c.vars.kv.list({ prefix });
+      return keys;
+    },
+    
+    // Delete a key
+    deleteKey: async (c, key) => {
+      await c.vars.kv.delete(key);
+      return { success: true };
+    }
+  }
+});
+```
+
+## Actor Discovery and Remote Regions
+
+Rivet supports actor discovery across regions, allowing you to communicate with actors running in different regions:
+
+```typescript
+import { actor } from "actor-core";
+
+const coordinatorActor = actor({
+  createVars: (c, rivet) => ({
+    region: rivet.ctx.metadata.region.name
+  }),
+  
+  actions: {
+    // Find and communicate with actors in other regions
+    pingRemoteActors: async (c) => {
+      const results = {};
+      
+      // Get all worker actors across all regions
+      const workerActors = await c.actors.workerActor.findAll({
+        task: "important-job"
+      });
+      
+      // Ping each worker and track response by region
+      for (const worker of workerActors) {
+        try {
+          const response = await worker.getStatus();
+          results[worker.actorInfo.region || "unknown"] = response;
+        } catch (err) {
+          c.log.error("Failed to ping worker", { 
+            workerId: worker.actorInfo.id,
+            region: worker.actorInfo.region,
+            error: err.message
+          });
+        }
+      }
+      
+      return {
+        currentRegion: c.vars.region,
+        remoteResults: results
+      };
+    }
+  }
+});
+```
+
+## Custom Domains
+
+Rivet allows you to configure custom domains for your ActorCore applications. This is done through the Rivet management console rather than in code.
+
+1. Add your domain in the Rivet dashboard
+2. Configure DNS records as directed
+3. Rivet automatically provisions SSL certificates
+
+Once configured, your client code can use the custom domain:
+
+```typescript
+// client.ts
+import { createClient } from "actor-core/client";
+import type { App } from "./app";
+
+// Connect using your custom domain
+const client = createClient<App>("https://your-custom-domain.com");
+
+// Then use client normally
+const chatRoom = await client.chatRoom.get({ room: "general" });
+await chatRoom.sendMessage("Hello from custom domain!");
+```
+
+## Performance Optimization
+
+For optimal performance on Rivet, follow these guidelines:
+
+1. **Actor State Size**: Keep your actor state reasonably sized (under 1MB) for optimal performance
+2. **Use KV for Large Data**: Store large datasets in KV and keep references in actor state
+3. **Batch Operations**: Group related operations to minimize API calls
+4. **Effective Tags**: Design actor tags for efficient discovery
+
+Example of optimizing with KV storage:
+
+```typescript
+import { actor } from "actor-core";
+
+const optimizedActor = actor({
+  createVars: (c, rivet) => ({
+    kv: rivet.ctx.kv
+  }),
+  
+  createState: () => ({
+    // Store metadata and references in actor state
+    items: {}, // Map of itemId -> metadata (small)
+    largeDataKeys: {} // Map of itemId -> KV key
+  }),
+  
+  actions: {
+    // Store large data efficiently
+    storeItem: async (c, itemId, metadata, largeData) => {
+      // Store small metadata in actor state
+      c.state.items[itemId] = metadata;
+      
+      // Store large data in KV
+      const kvKey = `item:${itemId}:data`;
+      await c.vars.kv.put(kvKey, JSON.stringify(largeData));
+      c.state.largeDataKeys[itemId] = kvKey;
+      
+      return { success: true };
+    },
+    
+    // Retrieve combined data
+    getCompleteItem: async (c, itemId) => {
+      const metadata = c.state.items[itemId];
+      if (!metadata) return null;
+      
+      // Get large data from KV
+      const kvKey = c.state.largeDataKeys[itemId];
+      const largeDataJson = await c.vars.kv.get(kvKey);
+      const largeData = largeDataJson ? JSON.parse(largeDataJson) : null;
+      
+      return {
+        metadata,
+        data: largeData
+      };
+    }
+  }
+});
+```
+
+## Monitoring and Debugging
+
+Rivet provides detailed monitoring and logging for your ActorCore applications:
+
+1. **Logs**: All logs from actor-core are automatically collected and viewable in the Rivet console
+2. **Metrics**: Track actor counts, action latency, and more
+3. **Error Tracking**: Automatically capture and visualize errors
+
+Use structured logging for better searchability:
+
+```typescript
+import { actor } from "actor-core";
+
+const monitoredActor = actor({
+  createState: () => ({
+    requestCount: 0,
+    errorCount: 0
+  }),
+  
+  actions: {
+    processRequest: async (c, data) => {
+      const startTime = Date.now();
+      c.state.requestCount++;
+      
+      c.log.info("Processing request", {
+        requestId: data.id,
+        requestCount: c.state.requestCount
+      });
+      
+      try {
+        // Process request logic
+        const result = await someProcessingFunction(data);
+        
+        // Log success with timing
+        c.log.info("Request processed successfully", {
+          requestId: data.id,
+          durationMs: Date.now() - startTime
+        });
+        
+        return result;
+      } catch (err) {
+        // Track and log errors
+        c.state.errorCount++;
+        c.log.error("Request processing failed", {
+          requestId: data.id,
+          error: err.message,
+          errorCount: c.state.errorCount,
+          durationMs: Date.now() - startTime
+        });
+        
+        throw err;
+      }
+    }
+  }
+});
+```
+
+## Advanced Topics
+
+### Actor Expiration on Rivet
+
+In cloud environments, you may want to clean up unused actors to conserve resources. Rivet provides a mechanism to expire inactive actors:
+
+```typescript
+import { actor } from "actor-core";
+
+const expiringActor = actor({
+  createState: () => ({
+    lastAccessTime: Date.now(),
+    data: {}
+  }),
+  
+  actions: {
+    // Update last access time on any request
+    updateAccessTime: (c) => {
+      c.state.lastAccessTime = Date.now();
+    },
+    
+    // Store data and update access time
+    storeData: (c, key, value) => {
+      c.state.data[key] = value;
+      c.state.lastAccessTime = Date.now();
+      return { success: true };
+    },
+    
+    // Check and potentially expire this actor
+    checkExpiration: (c) => {
+      const now = Date.now();
+      const inactiveTimeMs = now - c.state.lastAccessTime;
+      const maxInactiveTimeMs = 24 * 60 * 60 * 1000; // 24 hours
+      
+      if (inactiveTimeMs > maxInactiveTimeMs) {
+        c.log.info("Expiring inactive actor", {
+          inactiveTimeMs,
+          lastAccessTime: new Date(c.state.lastAccessTime).toISOString()
+        });
+        
+        // Shutdown the actor
+        c.shutdown();
+        return { expired: true };
+      }
+      
+      return { 
+        expired: false,
+        inactiveTimeMs,
+        expiresInMs: maxInactiveTimeMs - inactiveTimeMs
+      };
+    }
+  },
+  
+  // Schedule regular expiration checks
+  schedule: {
+    checkExpiration: {
+      interval: "1h", // Check every hour
+      handler: (c) => c.actions.checkExpiration()
+    }
+  }
+});
+```
+
+### Handling Scheduled Tasks
+
+Rivet supports scheduled tasks for actor maintenance, data cleanup, and recurring operations:
+
+```typescript
+import { actor } from "actor-core";
+
+const scheduledActor = actor({
+  createState: () => ({
+    tasks: {},
+    completedTasks: []
+  }),
+  
+  actions: {
+    addTask: (c, taskId, description, scheduledTime) => {
+      c.state.tasks[taskId] = {
+        id: taskId,
+        description,
+        createdAt: Date.now(),
+        scheduledTime
+      };
+      
+      // Schedule a one-time task using relative time
+      c.schedule.once(`task:${taskId}`, new Date(scheduledTime), async () => {
+        await c.actions.processTask(taskId);
+      });
+      
+      return { success: true };
+    },
+    
+    processTask: (c, taskId) => {
+      const task = c.state.tasks[taskId];
+      if (!task) {
+        c.log.warn("Tried to process non-existent task", { taskId });
+        return { success: false, reason: "Task not found" };
+      }
+      
+      // Process the task
+      c.log.info("Processing scheduled task", { taskId, description: task.description });
+      
+      // Move to completed tasks
+      c.state.completedTasks.push({
+        ...task,
+        completedAt: Date.now()
+      });
+      
+      // Remove from active tasks
+      delete c.state.tasks[taskId];
+      
+      // Broadcast task completion
+      c.broadcast("taskCompleted", { taskId, task });
+      
+      return { success: true };
+    },
+    
+    // Get all tasks
+    getTasks: (c) => {
+      return {
+        pending: Object.values(c.state.tasks),
+        completed: c.state.completedTasks
+      };
+    }
+  },
+  
+  // Regular maintenance scheduler
+  schedule: {
+    cleanupOldTasks: {
+      interval: "1d", // Daily cleanup
+      handler: (c) => {
+        const now = Date.now();
+        const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+        
+        // Remove completed tasks older than 30 days
+        c.state.completedTasks = c.state.completedTasks.filter(
+          task => task.completedAt > thirtyDaysAgo
+        );
+        
+        c.log.info("Cleaned up old completed tasks", {
+          remainingTaskCount: c.state.completedTasks.length
+        });
+      }
+    }
+  }
+});
+```
+
+## Migrating from Other Platforms
+
+If you're migrating an existing ActorCore application to Rivet, follow these steps:
+
+1. Install the Rivet platform package: `npm install @actor-core/rivet`
+2. Deploy using the CLI: `npx @actor-core/cli@latest deploy rivet actors/app.ts`
+3. Update your client code to use the new Rivet endpoint
+
+Your actor code typically requires minimal changes, but be aware of platform-specific differences:
+
+```typescript
+// Before: Using environment variables for configuration
+const myActor = actor({
+  createVars: (c) => ({
+    apiKey: process.env.API_KEY,
+    region: process.env.REGION
+  }),
+  // ...
+});
+
+// After: Using Rivet context for configuration
+const myActor = actor({
+  createVars: (c, rivet) => ({
+    apiKey: rivet.ctx.secrets.API_KEY, // Configure in Rivet dashboard
+    region: rivet.ctx.metadata.region.name // Automatically provided
+  }),
+  // ...
+});
+```
+
+## Conclusion
+
+Rivet provides a robust, scalable platform for deploying ActorCore applications with minimal configuration. By leveraging Rivet's managed infrastructure, you can focus on building your application logic while enjoying the benefits of global deployment, automatic scaling, and comprehensive monitoring.
+
+For more information, visit the [Rivet documentation](https://rivet.gg/docs) or [ActorCore on Rivet](https://actorcore.org/platforms/rivet).

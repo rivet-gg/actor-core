@@ -1,0 +1,1197 @@
+---
+title: Express/Hono Integration
+description: Learn how to integrate ActorCore with Express and Hono frameworks
+---
+
+# Express/Hono Integration
+
+ActorCore integrates seamlessly with popular HTTP frameworks like Express and Hono. This guide demonstrates how to combine these web frameworks with ActorCore to build full-stack applications that leverage both traditional HTTP endpoints and real-time actor-based functionality.
+
+## Express Integration
+
+### Basic Setup with Express
+
+First, install the necessary packages:
+
+```bash
+npm install actor-core express cors
+# or
+yarn add actor-core express cors
+```
+
+Create your ActorCore application:
+
+```typescript
+// src/actors/index.ts
+import { actor, setup } from "actor-core";
+
+// Define a counter actor
+export const counter = actor({
+  state: { count: 0 },
+  
+  actions: {
+    increment: (c, amount = 1) => {
+      c.state.count += amount;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    },
+    
+    decrement: (c, amount = 1) => {
+      c.state.count -= amount;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    },
+    
+    getCount: (c) => {
+      return c.state.count;
+    }
+  }
+});
+
+// Set up the actor app
+export const actorApp = setup({
+  actors: {
+    counter
+  }
+});
+```
+
+Then integrate with Express:
+
+```typescript
+// src/server.ts
+import express from "express";
+import cors from "cors";
+import { actorApp } from "./actors";
+
+// Create Express app
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Configure middleware
+app.use(cors());
+app.use(express.json());
+
+// Create ActorCore server
+const actorServer = actorApp.listen({
+  port: 3001 // ActorCore WebSocket server
+});
+
+// Express REST endpoints that interact with actors
+app.get("/api/counter", async (req, res) => {
+  try {
+    // Create a client
+    const client = actorApp.createClient();
+    
+    // Get counter actor
+    const counter = await client.counter.get();
+    
+    // Get current count
+    const count = await counter.getCount();
+    
+    res.json({ count });
+  } catch (error) {
+    console.error("Error fetching count:", error);
+    res.status(500).json({ error: "Failed to fetch count" });
+  }
+});
+
+app.post("/api/counter/increment", async (req, res) => {
+  try {
+    const { amount = 1 } = req.body;
+    
+    // Create a client
+    const client = actorApp.createClient();
+    
+    // Get counter actor
+    const counter = await client.counter.get();
+    
+    // Increment count
+    const newCount = await counter.increment(amount);
+    
+    res.json({ count: newCount });
+  } catch (error) {
+    console.error("Error incrementing count:", error);
+    res.status(500).json({ error: "Failed to increment count" });
+  }
+});
+
+// Start the Express server
+app.listen(port, () => {
+  console.log(`Express server running on port ${port}`);
+  console.log(`ActorCore server running on port 3001`);
+});
+```
+
+### Express with Middleware
+
+Enhance your Express integration with middleware:
+
+```typescript
+// src/middleware/auth.ts
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+
+// JWT secret key (use environment variable in production)
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+
+// Authentication middleware
+export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Get token from header
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  
+  const token = authHeader.split(" ")[1];
+  
+  try {
+    // Verify token
+    const decoded = jwt.verify(token, JWT_SECRET);
+    
+    // Add user to request
+    (req as any).user = decoded;
+    
+    next();
+  } catch (error) {
+    console.error("Auth error:", error);
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+// Rate limiting middleware
+export function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Implement rate limiting logic here
+  // This is a simplified example
+  
+  const ip = req.ip;
+  const now = Date.now();
+  
+  // Get or initialize rate limit data
+  if (!global.rateLimitMap) {
+    global.rateLimitMap = new Map();
+  }
+  
+  const rateLimitData = global.rateLimitMap.get(ip) || {
+    count: 0,
+    resetAt: now + 60000 // 1 minute
+  };
+  
+  // Reset if window expired
+  if (now > rateLimitData.resetAt) {
+    rateLimitData.count = 0;
+    rateLimitData.resetAt = now + 60000;
+  }
+  
+  // Check limit
+  if (rateLimitData.count >= 100) {
+    return res.status(429).json({
+      error: "Rate limit exceeded",
+      retryAfter: Math.ceil((rateLimitData.resetAt - now) / 1000)
+    });
+  }
+  
+  // Increment counter
+  rateLimitData.count++;
+  global.rateLimitMap.set(ip, rateLimitData);
+  
+  next();
+}
+```
+
+Apply middleware to your routes:
+
+```typescript
+// src/server.ts
+import express from "express";
+import cors from "cors";
+import { actorApp } from "./actors";
+import { authMiddleware, rateLimitMiddleware } from "./middleware/auth";
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+app.use(rateLimitMiddleware); // Apply rate limiting to all routes
+
+// Public routes
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Protected routes
+app.get("/api/counter", authMiddleware, async (req, res) => {
+  try {
+    const client = actorApp.createClient();
+    const counter = await client.counter.get();
+    const count = await counter.getCount();
+    
+    res.json({ count });
+  } catch (error) {
+    console.error("Error fetching count:", error);
+    res.status(500).json({ error: "Failed to fetch count" });
+  }
+});
+
+app.post("/api/counter/increment", authMiddleware, async (req, res) => {
+  try {
+    const { amount = 1 } = req.body;
+    
+    const client = actorApp.createClient();
+    const counter = await client.counter.get();
+    const newCount = await counter.increment(amount);
+    
+    res.json({ count: newCount });
+  } catch (error) {
+    console.error("Error incrementing count:", error);
+    res.status(500).json({ error: "Failed to increment count" });
+  }
+});
+
+// Start servers
+const actorServer = actorApp.listen({ port: 3001 });
+app.listen(port, () => {
+  console.log(`Express server running on port ${port}`);
+  console.log(`ActorCore server running on port 3001`);
+});
+```
+
+### Express with Routing
+
+Organize your Express app with routers:
+
+```typescript
+// src/routes/counter.ts
+import { Router } from "express";
+import { actorApp } from "../actors";
+import { authMiddleware } from "../middleware/auth";
+
+const router = Router();
+
+// Get counter value
+router.get("/", authMiddleware, async (req, res) => {
+  try {
+    const client = actorApp.createClient();
+    const counter = await client.counter.get();
+    const count = await counter.getCount();
+    
+    res.json({ count });
+  } catch (error) {
+    console.error("Error fetching count:", error);
+    res.status(500).json({ error: "Failed to fetch count" });
+  }
+});
+
+// Increment counter
+router.post("/increment", authMiddleware, async (req, res) => {
+  try {
+    const { amount = 1 } = req.body;
+    
+    const client = actorApp.createClient();
+    const counter = await client.counter.get();
+    const newCount = await counter.increment(amount);
+    
+    res.json({ count: newCount });
+  } catch (error) {
+    console.error("Error incrementing count:", error);
+    res.status(500).json({ error: "Failed to increment count" });
+  }
+});
+
+// Decrement counter
+router.post("/decrement", authMiddleware, async (req, res) => {
+  try {
+    const { amount = 1 } = req.body;
+    
+    const client = actorApp.createClient();
+    const counter = await client.counter.get();
+    const newCount = await counter.decrement(amount);
+    
+    res.json({ count: newCount });
+  } catch (error) {
+    console.error("Error decrementing count:", error);
+    res.status(500).json({ error: "Failed to decrement count" });
+  }
+});
+
+export default router;
+```
+
+Use the router in your main server file:
+
+```typescript
+// src/server.ts
+import express from "express";
+import cors from "cors";
+import { actorApp } from "./actors";
+import counterRoutes from "./routes/counter";
+import { rateLimitMiddleware } from "./middleware/auth";
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+app.use(rateLimitMiddleware);
+
+// Use routers
+app.use("/api/counter", counterRoutes);
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Start servers
+const actorServer = actorApp.listen({ port: 3001 });
+app.listen(port, () => {
+  console.log(`Express server running on port ${port}`);
+  console.log(`ActorCore server running on port 3001`);
+});
+```
+
+## Hono Integration
+
+[Hono](https://hono.dev/) is a lightweight, ultrafast web framework that's perfect for serverless environments and edge computing. Here's how to integrate it with ActorCore:
+
+### Basic Setup with Hono
+
+First, install the necessary packages:
+
+```bash
+npm install actor-core hono
+# or
+yarn add actor-core hono
+```
+
+Create your ActorCore application:
+
+```typescript
+// src/actors/index.ts
+import { actor, setup } from "actor-core";
+
+// Define a todo list actor
+export const todoList = actor({
+  state: {
+    todos: [] as Array<{
+      id: string;
+      text: string;
+      completed: boolean;
+      createdAt: number;
+    }>
+  },
+  
+  actions: {
+    addTodo: (c, text: string) => {
+      const id = crypto.randomUUID();
+      
+      const todo = {
+        id,
+        text,
+        completed: false,
+        createdAt: Date.now()
+      };
+      
+      c.state.todos.push(todo);
+      
+      c.broadcast("todoAdded", todo);
+      
+      return todo;
+    },
+    
+    toggleTodo: (c, id: string) => {
+      const todo = c.state.todos.find(t => t.id === id);
+      
+      if (!todo) {
+        throw new Error(`Todo ${id} not found`);
+      }
+      
+      todo.completed = !todo.completed;
+      
+      c.broadcast("todoToggled", { id, completed: todo.completed });
+      
+      return todo;
+    },
+    
+    deleteTodo: (c, id: string) => {
+      const index = c.state.todos.findIndex(t => t.id === id);
+      
+      if (index === -1) {
+        throw new Error(`Todo ${id} not found`);
+      }
+      
+      // Remove todo
+      const [todo] = c.state.todos.splice(index, 1);
+      
+      c.broadcast("todoDeleted", { id });
+      
+      return { success: true, id };
+    },
+    
+    getTodos: (c) => {
+      return c.state.todos;
+    }
+  }
+});
+
+// Set up the actor app
+export const actorApp = setup({
+  actors: {
+    todoList
+  }
+});
+```
+
+Integrate with Hono:
+
+```typescript
+// src/server.ts
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { actorApp } from "./actors";
+
+// Create Hono app
+const app = new Hono();
+
+// Add CORS middleware
+app.use("/*", cors());
+
+// Create ActorCore server
+const actorServer = actorApp.listen({
+  port: 3001 // ActorCore WebSocket server
+});
+
+// Define API routes
+app.get("/", (c) => c.text("ActorCore + Hono Example"));
+
+// Health check
+app.get("/api/health", (c) => c.json({ status: "ok" }));
+
+// Todo list API
+app.get("/api/todos", async (c) => {
+  try {
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todos = await todoList.getTodos();
+    
+    return c.json({ todos });
+  } catch (error) {
+    console.error("Error fetching todos:", error);
+    return c.json({ error: "Failed to fetch todos" }, 500);
+  }
+});
+
+app.post("/api/todos", async (c) => {
+  try {
+    const { text } = await c.req.json();
+    
+    if (!text) {
+      return c.json({ error: "Todo text is required" }, 400);
+    }
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todo = await todoList.addTodo(text);
+    
+    return c.json({ todo });
+  } catch (error) {
+    console.error("Error adding todo:", error);
+    return c.json({ error: "Failed to add todo" }, 500);
+  }
+});
+
+app.put("/api/todos/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todo = await todoList.toggleTodo(id);
+    
+    return c.json({ todo });
+  } catch (error) {
+    console.error("Error toggling todo:", error);
+    return c.json({ error: "Failed to toggle todo" }, 500);
+  }
+});
+
+app.delete("/api/todos/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const result = await todoList.deleteTodo(id);
+    
+    return c.json(result);
+  } catch (error) {
+    console.error("Error deleting todo:", error);
+    return c.json({ error: "Failed to delete todo" }, 500);
+  }
+});
+
+// Start the Hono server
+const port = parseInt(process.env.PORT || "3000");
+console.log(`Hono server starting on port ${port}`);
+console.log(`ActorCore server running on port 3001`);
+
+export default {
+  port,
+  fetch: app.fetch
+};
+```
+
+### Hono with Middleware
+
+Enhance your Hono integration with middleware:
+
+```typescript
+// src/middleware/auth.ts
+import { Context, Next } from "hono";
+import { verify } from "hono/jwt";
+
+// JWT secret key (use environment variable in production)
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+
+// Authentication middleware
+export async function authMiddleware(c: Context, next: Next) {
+  // Get token from header
+  const authHeader = c.req.header("Authorization");
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return c.json({ error: "Authentication required" }, 401);
+  }
+  
+  const token = authHeader.split(" ")[1];
+  
+  try {
+    // Verify token
+    const payload = await verify(token, JWT_SECRET);
+    
+    // Add user to context
+    c.set("user", payload);
+    
+    await next();
+  } catch (error) {
+    console.error("Auth error:", error);
+    return c.json({ error: "Invalid token" }, 401);
+  }
+}
+
+// Rate limiting middleware (simplified implementation)
+export async function rateLimitMiddleware(c: Context, next: Next) {
+  const ip = c.req.header("X-Forwarded-For") || "unknown";
+  const now = Date.now();
+  
+  // Get or initialize rate limit store
+  if (!global.rateLimitMap) {
+    global.rateLimitMap = new Map();
+  }
+  
+  const rateLimitData = global.rateLimitMap.get(ip) || {
+    count: 0,
+    resetAt: now + 60000 // 1 minute
+  };
+  
+  // Reset if window expired
+  if (now > rateLimitData.resetAt) {
+    rateLimitData.count = 0;
+    rateLimitData.resetAt = now + 60000;
+  }
+  
+  // Check limit
+  if (rateLimitData.count >= 100) {
+    return c.json({
+      error: "Rate limit exceeded",
+      retryAfter: Math.ceil((rateLimitData.resetAt - now) / 1000)
+    }, 429);
+  }
+  
+  // Increment counter
+  rateLimitData.count++;
+  global.rateLimitMap.set(ip, rateLimitData);
+  
+  await next();
+}
+```
+
+Apply middleware to your Hono app:
+
+```typescript
+// src/server.ts
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { actorApp } from "./actors";
+import { authMiddleware, rateLimitMiddleware } from "./middleware/auth";
+
+// Create Hono app
+const app = new Hono();
+
+// Add middlewares
+app.use("/*", cors());
+app.use("/*", logger());
+app.use("/api/*", rateLimitMiddleware);
+
+// Public routes
+app.get("/", (c) => c.text("ActorCore + Hono Example"));
+app.get("/api/health", (c) => c.json({ status: "ok" }));
+
+// Protected routes
+app.get("/api/todos", authMiddleware, async (c) => {
+  try {
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todos = await todoList.getTodos();
+    
+    return c.json({ todos });
+  } catch (error) {
+    console.error("Error fetching todos:", error);
+    return c.json({ error: "Failed to fetch todos" }, 500);
+  }
+});
+
+// Additional protected routes...
+app.post("/api/todos", authMiddleware, async (c) => {
+  try {
+    const { text } = await c.req.json();
+    
+    if (!text) {
+      return c.json({ error: "Todo text is required" }, 400);
+    }
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todo = await todoList.addTodo(text);
+    
+    return c.json({ todo });
+  } catch (error) {
+    console.error("Error adding todo:", error);
+    return c.json({ error: "Failed to add todo" }, 500);
+  }
+});
+
+// Create ActorCore server
+const actorServer = actorApp.listen({
+  port: 3001
+});
+
+// Start the Hono server
+const port = parseInt(process.env.PORT || "3000");
+console.log(`Hono server starting on port ${port}`);
+console.log(`ActorCore server running on port 3001`);
+
+export default {
+  port,
+  fetch: app.fetch
+};
+```
+
+### Hono with Route Groups
+
+Organize your Hono app with route groups:
+
+```typescript
+// src/routes/todos.ts
+import { Hono } from "hono";
+import { actorApp } from "../actors";
+import { authMiddleware } from "../middleware/auth";
+
+// Create a sub-application
+const app = new Hono();
+
+// Apply auth middleware to all routes
+app.use("/*", authMiddleware);
+
+// Get all todos
+app.get("/", async (c) => {
+  try {
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todos = await todoList.getTodos();
+    
+    return c.json({ todos });
+  } catch (error) {
+    console.error("Error fetching todos:", error);
+    return c.json({ error: "Failed to fetch todos" }, 500);
+  }
+});
+
+// Add a todo
+app.post("/", async (c) => {
+  try {
+    const { text } = await c.req.json();
+    
+    if (!text) {
+      return c.json({ error: "Todo text is required" }, 400);
+    }
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todo = await todoList.addTodo(text);
+    
+    return c.json({ todo });
+  } catch (error) {
+    console.error("Error adding todo:", error);
+    return c.json({ error: "Failed to add todo" }, 500);
+  }
+});
+
+// Toggle todo completion
+app.put("/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const todo = await todoList.toggleTodo(id);
+    
+    return c.json({ todo });
+  } catch (error) {
+    console.error("Error toggling todo:", error);
+    return c.json({ error: "Failed to toggle todo" }, 500);
+  }
+});
+
+// Delete a todo
+app.delete("/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    
+    const client = actorApp.createClient();
+    const todoList = await client.todoList.get();
+    const result = await todoList.deleteTodo(id);
+    
+    return c.json(result);
+  } catch (error) {
+    console.error("Error deleting todo:", error);
+    return c.json({ error: "Failed to delete todo" }, 500);
+  }
+});
+
+export default app;
+```
+
+Use route groups in your main server file:
+
+```typescript
+// src/server.ts
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { actorApp } from "./actors";
+import { rateLimitMiddleware } from "./middleware/auth";
+import todoRoutes from "./routes/todos";
+
+// Create Hono app
+const app = new Hono();
+
+// Add middleware
+app.use("/*", cors());
+app.use("/*", logger());
+app.use("/api/*", rateLimitMiddleware);
+
+// Public routes
+app.get("/", (c) => c.text("ActorCore + Hono Example"));
+app.get("/api/health", (c) => c.json({ status: "ok" }));
+
+// Route groups
+app.route("/api/todos", todoRoutes);
+
+// Create ActorCore server
+const actorServer = actorApp.listen({
+  port: 3001
+});
+
+// Start the server
+const port = parseInt(process.env.PORT || "3000");
+console.log(`Hono server starting on port ${port}`);
+console.log(`ActorCore server running on port 3001`);
+
+export default {
+  port,
+  fetch: app.fetch
+};
+```
+
+## Shared Authentication Between HTTP and WebSocket
+
+To maintain consistent authentication between HTTP API calls and WebSocket connections:
+
+```typescript
+// src/middleware/auth.ts
+import { verify, sign } from "jsonwebtoken";
+
+// JWT secret key (use environment variable in production)
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+
+// Verify token
+export function verifyToken(token: string) {
+  try {
+    return verify(token, JWT_SECRET);
+  } catch (error) {
+    return null;
+  }
+}
+
+// Generate token
+export function generateToken(payload: any) {
+  return sign(payload, JWT_SECRET, { expiresIn: "24h" });
+}
+```
+
+Use shared authentication for both Express and ActorCore:
+
+```typescript
+// src/server.ts
+import express from "express";
+import cors from "cors";
+import { actorApp } from "./actors";
+import { verifyToken, generateToken } from "./middleware/auth";
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+// Authentication endpoint
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  
+  // Simple authentication (replace with your auth logic)
+  if (username === "user" && password === "password") {
+    const user = {
+      id: "user1",
+      username,
+      role: "user"
+    };
+    
+    // Generate JWT token
+    const token = generateToken(user);
+    
+    res.json({ token, user });
+  } else {
+    res.status(401).json({ error: "Invalid credentials" });
+  }
+});
+
+// Create ActorCore server
+const actorServer = actorApp.listen({
+  port: 3001, 
+  
+  // Connection validator for ActorCore WebSocket
+  onConnection: (request) => {
+    const url = new URL(request.url);
+    const token = url.searchParams.get("token");
+    
+    if (!token) {
+      return { allowed: false, reason: "No token provided" };
+    }
+    
+    const user = verifyToken(token);
+    
+    if (!user) {
+      return { allowed: false, reason: "Invalid token" };
+    }
+    
+    // Allow connection with user data
+    return {
+      allowed: true,
+      metadata: { user }
+    };
+  }
+});
+
+// Start the Express server
+app.listen(port, () => {
+  console.log(`Express server running on port ${port}`);
+  console.log(`ActorCore server running on port 3001`);
+});
+```
+
+## Complete Integration Example
+
+Here's a complete chat application that combines Express, React, and ActorCore:
+
+```typescript
+// src/actors/chat.ts
+import { actor, UserError } from "actor-core";
+
+export const chatRoom = actor({
+  state: {
+    messages: [] as Array<{
+      id: string;
+      userId: string;
+      username: string;
+      text: string;
+      timestamp: number;
+    }>,
+    users: {} as Record<string, {
+      userId: string;
+      username: string;
+      lastActive: number;
+    }>
+  },
+  
+  // Validate connection
+  createConnState: (c, { params, metadata }) => {
+    // Ensure user data is provided
+    if (!params.userId || !params.username) {
+      throw new UserError("User ID and username are required");
+    }
+    
+    // Add to active users
+    c.state.users[params.userId] = {
+      userId: params.userId,
+      username: params.username,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast user joined
+    c.broadcast("userJoined", {
+      userId: params.userId,
+      username: params.username,
+      timestamp: Date.now()
+    });
+    
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // Send a message
+    sendMessage: (c, text: string) => {
+      if (!text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      const messageId = crypto.randomUUID();
+      const now = Date.now();
+      
+      const message = {
+        id: messageId,
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: now
+      };
+      
+      // Add to message history
+      c.state.messages.push(message);
+      
+      // Limit history size (last 100 messages)
+      if (c.state.messages.length > 100) {
+        c.state.messages = c.state.messages.slice(-100);
+      }
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = now;
+      
+      // Broadcast to all connected clients
+      c.broadcast("newMessage", message);
+      
+      return { messageId };
+    },
+    
+    // Get message history
+    getMessages: (c, limit = 50) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return most recent messages
+      return c.state.messages.slice(-Math.min(limit, 100));
+    },
+    
+    // Get active users
+    getUsers: (c) => {
+      return Object.values(c.state.users);
+    }
+  }
+});
+
+// src/server.ts (Express + ActorCore)
+import express from "express";
+import cors from "cors";
+import path from "path";
+import { setup } from "actor-core";
+import { chatRoom } from "./actors/chat";
+import { verifyToken, generateToken } from "./middleware/auth";
+
+// Create Express app
+const app = express();
+const port = process.env.PORT || 3000;
+const actorPort = process.env.ACTOR_PORT || 3001;
+
+// Configure middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "../client/build")));
+
+// Set up ActorCore app
+const actorApp = setup({
+  actors: { chatRoom }
+});
+
+// Auth middleware
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  
+  const token = authHeader.split(" ")[1];
+  const user = verifyToken(token);
+  
+  if (!user) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+  
+  req.user = user;
+  next();
+}
+
+// Auth routes
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  
+  // Simple authentication (replace with your auth logic)
+  if (username && password) {
+    const userId = `user_${Date.now()}`;
+    
+    const user = {
+      id: userId,
+      username
+    };
+    
+    // Generate JWT token
+    const token = generateToken(user);
+    
+    res.json({ token, user });
+  } else {
+    res.status(401).json({ error: "Invalid credentials" });
+  }
+});
+
+// Chat API routes
+app.get("/api/chat/history", authMiddleware, async (req, res) => {
+  try {
+    const client = actorApp.createClient();
+    const chat = await client.chatRoom.get();
+    const messages = await chat.getMessages(50);
+    
+    res.json({ messages });
+  } catch (error) {
+    console.error("Error fetching chat history:", error);
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
+});
+
+app.get("/api/chat/users", authMiddleware, async (req, res) => {
+  try {
+    const client = actorApp.createClient();
+    const chat = await client.chatRoom.get();
+    const users = await chat.getUsers();
+    
+    res.json({ users });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+app.post("/api/chat/message", authMiddleware, async (req, res) => {
+  try {
+    const { text } = req.body;
+    
+    if (!text) {
+      return res.status(400).json({ error: "Message text is required" });
+    }
+    
+    const client = actorApp.createClient();
+    
+    // Get connection parameters from auth token
+    const chat = await client.chatRoom.get({
+      params: {
+        userId: req.user.id,
+        username: req.user.username
+      }
+    });
+    
+    const result = await chat.sendMessage(text);
+    
+    res.json(result);
+  } catch (error) {
+    console.error("Error sending message:", error);
+    res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+// SPA fallback route
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../client/build/index.html"));
+});
+
+// Start ActorCore server
+const actorServer = actorApp.listen({
+  port: actorPort,
+  
+  // Connection validator for WebSocket
+  onConnection: (request) => {
+    const url = new URL(request.url);
+    const token = url.searchParams.get("token");
+    
+    if (!token) {
+      return { allowed: false, reason: "No token provided" };
+    }
+    
+    const user = verifyToken(token);
+    
+    if (!user) {
+      return { allowed: false, reason: "Invalid token" };
+    }
+    
+    // Allow connection with user data
+    return {
+      allowed: true,
+      metadata: { user }
+    };
+  }
+});
+
+// Start Express server
+app.listen(port, () => {
+  console.log(`Express server running on port ${port}`);
+  console.log(`ActorCore server running on port ${actorPort}`);
+});
+```
+
+## Integration Best Practices
+
+1. **Separation of Concerns**: Use HTTP routes for CRUD operations and ActorCore for real-time features.
+
+2. **Consistent Authentication**: Maintain the same authentication mechanism for both HTTP and WebSocket connections.
+
+3. **Connection Validation**: Validate WebSocket connections using the `onConnection` handler.
+
+4. **Error Handling**: Implement consistent error handling across both HTTP and ActorCore layers.
+
+5. **Health Checks**: Provide health check endpoints for both Express/Hono and ActorCore services.
+
+6. **Resource Sharing**: Be careful when sharing resources (like database connections) between HTTP and actor handlers.
+
+7. **Rate Limiting**: Apply rate limiting to both HTTP endpoints and actor action calls.
+
+8. **Environment Configuration**: Use environment variables to configure ports, hosts, and other settings.
+
+9. **Graceful Shutdown**: Implement proper shutdown procedures for both servers.
+
+10. **Monitoring**: Set up logging and monitoring for both the HTTP server and ActorCore.
+
+By following these patterns and best practices, you can build robust applications that leverage both traditional HTTP request/response patterns and real-time actor-based functionality, giving your users the best of both worlds.

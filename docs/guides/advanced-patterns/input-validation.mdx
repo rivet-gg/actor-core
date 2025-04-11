@@ -1,0 +1,1043 @@
+---
+title: Input Validation with Zod
+description: Learn how to validate action inputs in ActorCore using Zod
+---
+
+# Input Validation with Zod
+
+Input validation is a critical aspect of building robust actor-based applications. ActorCore integrates seamlessly with Zod, a TypeScript-first schema validation library, to ensure that actions receive correctly formatted data. This guide demonstrates how to use Zod for comprehensive input validation in your actors.
+
+## Getting Started with Zod
+
+First, add Zod to your project:
+
+```bash
+npm install zod
+# or
+yarn add zod
+```
+
+## Basic Input Validation
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+const userProfile = actor({
+  state: {
+    profiles: {} as Record<string, {
+      id: string,
+      username: string,
+      email: string,
+      displayName: string,
+      age: number,
+      preferences: {
+        theme: "light" | "dark" | "system",
+        notifications: boolean,
+        language: string
+      },
+      createdAt: number,
+      updatedAt: number
+    }>
+  },
+  
+  actions: {
+    // Create a new user profile with Zod validation
+    createProfile: (c, input) => {
+      // Define the schema for profile creation
+      const schema = z.object({
+        username: z.string()
+          .min(3, "Username must be at least 3 characters")
+          .max(20, "Username cannot exceed 20 characters")
+          .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
+        email: z.string()
+          .email("Invalid email address"),
+        displayName: z.string()
+          .min(1, "Display name is required")
+          .max(50, "Display name cannot exceed 50 characters"),
+        age: z.number()
+          .int("Age must be an integer")
+          .min(13, "Must be at least 13 years old")
+          .optional(),
+        preferences: z.object({
+          theme: z.enum(["light", "dark", "system"]).default("system"),
+          notifications: z.boolean().default(true),
+          language: z.string().default("en-US")
+        }).optional()
+      });
+      
+      try {
+        // Validate input using Zod
+        const validatedInput = schema.parse(input);
+        
+        // Generate unique ID
+        const userId = crypto.randomUUID();
+        
+        // Create profile with validated data
+        const now = Date.now();
+        c.state.profiles[userId] = {
+          id: userId,
+          username: validatedInput.username,
+          email: validatedInput.email,
+          displayName: validatedInput.displayName,
+          age: validatedInput.age || 0,
+          preferences: validatedInput.preferences || {
+            theme: "system",
+            notifications: true,
+            language: "en-US"
+          },
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        return {
+          success: true,
+          userId,
+          profile: c.state.profiles[userId]
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          // Convert Zod validation errors to user-friendly format
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Validation failed", { fieldErrors });
+        }
+        
+        // Rethrow other errors
+        throw error;
+      }
+    },
+    
+    // Update an existing profile with Zod validation
+    updateProfile: (c, userId, updates) => {
+      // Check if profile exists
+      if (!c.state.profiles[userId]) {
+        throw new UserError("Profile not found");
+      }
+      
+      // Get current profile
+      const currentProfile = c.state.profiles[userId];
+      
+      // Define schema for partial updates
+      const schema = z.object({
+        displayName: z.string()
+          .min(1, "Display name is required")
+          .max(50, "Display name cannot exceed 50 characters")
+          .optional(),
+        email: z.string()
+          .email("Invalid email address")
+          .optional(),
+        age: z.number()
+          .int("Age must be an integer")
+          .min(13, "Must be at least 13 years old")
+          .optional(),
+        preferences: z.object({
+          theme: z.enum(["light", "dark", "system"]).optional(),
+          notifications: z.boolean().optional(),
+          language: z.string().optional()
+        }).optional()
+      });
+      
+      try {
+        // Validate updates
+        const validatedUpdates = schema.parse(updates);
+        
+        // Update profile
+        const updatedProfile = {
+          ...currentProfile,
+          ...validatedUpdates,
+          // Merge preferences if provided
+          preferences: validatedUpdates.preferences ? {
+            ...currentProfile.preferences,
+            ...validatedUpdates.preferences
+          } : currentProfile.preferences,
+          updatedAt: Date.now()
+        };
+        
+        // Save updated profile
+        c.state.profiles[userId] = updatedProfile;
+        
+        return {
+          success: true,
+          profile: updatedProfile
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          // Format validation errors
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Validation failed", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    }
+  }
+});
+```
+
+## Validating Arrays and Complex Objects
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+const taskManager = actor({
+  state: {
+    tasks: [] as Array<{
+      id: string,
+      title: string,
+      description: string,
+      status: "todo" | "in_progress" | "done",
+      priority: "low" | "medium" | "high",
+      tags: string[],
+      assignees: string[],
+      dueDate: number | null,
+      createdAt: number,
+      updatedAt: number,
+      subtasks: Array<{
+        id: string,
+        title: string,
+        completed: boolean
+      }>
+    }>
+  },
+  
+  actions: {
+    // Create a new task with complex validation
+    createTask: (c, input) => {
+      // Define subtask schema
+      const subtaskSchema = z.object({
+        title: z.string().min(1, "Subtask title is required"),
+        completed: z.boolean().default(false)
+      });
+      
+      // Define task schema
+      const schema = z.object({
+        title: z.string()
+          .min(1, "Title is required")
+          .max(100, "Title cannot exceed 100 characters"),
+        description: z.string()
+          .max(1000, "Description cannot exceed 1000 characters")
+          .optional()
+          .default(""),
+        status: z.enum(["todo", "in_progress", "done"])
+          .default("todo"),
+        priority: z.enum(["low", "medium", "high"])
+          .default("medium"),
+        tags: z.array(z.string())
+          .max(10, "Cannot have more than 10 tags")
+          .default([]),
+        assignees: z.array(z.string().uuid("Invalid assignee ID"))
+          .max(5, "Cannot have more than 5 assignees")
+          .default([]),
+        dueDate: z.number()
+          .min(Date.now(), "Due date must be in the future")
+          .nullable()
+          .default(null),
+        subtasks: z.array(subtaskSchema)
+          .max(20, "Cannot have more than 20 subtasks")
+          .default([])
+      });
+      
+      try {
+        // Validate input
+        const validatedInput = schema.parse(input);
+        
+        // Create task with validated data
+        const now = Date.now();
+        const taskId = crypto.randomUUID();
+        
+        const newTask = {
+          id: taskId,
+          ...validatedInput,
+          createdAt: now,
+          updatedAt: now,
+          // Add IDs to subtasks
+          subtasks: validatedInput.subtasks.map(subtask => ({
+            id: crypto.randomUUID(),
+            title: subtask.title,
+            completed: subtask.completed
+          }))
+        };
+        
+        // Add to state
+        c.state.tasks.push(newTask);
+        
+        return {
+          success: true,
+          taskId,
+          task: newTask
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          // Format nested validation errors
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Task validation failed", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    },
+    
+    // Update subtasks with array validation
+    updateSubtasks: (c, taskId, subtasks) => {
+      // Find task
+      const taskIndex = c.state.tasks.findIndex(t => t.id === taskId);
+      if (taskIndex === -1) {
+        throw new UserError("Task not found");
+      }
+      
+      // Define subtask update schema
+      const subtaskUpdateSchema = z.array(
+        z.object({
+          id: z.string().optional(), // Optional for new subtasks
+          title: z.string().min(1, "Subtask title is required"),
+          completed: z.boolean().default(false)
+        })
+      ).max(20, "Cannot have more than 20 subtasks");
+      
+      try {
+        // Validate subtasks array
+        const validatedSubtasks = subtaskUpdateSchema.parse(subtasks);
+        
+        // Get current task
+        const task = c.state.tasks[taskIndex];
+        
+        // Process subtasks (keep existing ones if they have an ID)
+        const updatedSubtasks = validatedSubtasks.map(subtask => {
+          if (subtask.id) {
+            // Update existing subtask
+            const existingIndex = task.subtasks.findIndex(s => s.id === subtask.id);
+            if (existingIndex !== -1) {
+              return {
+                id: subtask.id,
+                title: subtask.title,
+                completed: subtask.completed
+              };
+            }
+          }
+          
+          // Create new subtask
+          return {
+            id: crypto.randomUUID(),
+            title: subtask.title,
+            completed: subtask.completed
+          };
+        });
+        
+        // Update task
+        task.subtasks = updatedSubtasks;
+        task.updatedAt = Date.now();
+        
+        return {
+          success: true,
+          subtasks: task.subtasks
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          // Format array validation errors
+          const fieldErrors = error.errors.map(err => {
+            // Handle array indices in error path
+            const field = err.path.join(".");
+            return {
+              field: field || "subtasks",
+              message: err.message
+            };
+          });
+          
+          throw new UserError("Subtask validation failed", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    }
+  }
+});
+```
+
+## Validating Query Parameters
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+const productCatalog = actor({
+  state: {
+    products: [] as Array<{
+      id: string,
+      name: string,
+      price: number,
+      category: string,
+      tags: string[],
+      inStock: boolean,
+      createdAt: number
+    }>
+  },
+  
+  onCreate: (c) => {
+    // Initialize with sample products
+    for (let i = 0; i < 100; i++) {
+      const categoryIndex = i % 5;
+      const categories = ["electronics", "clothing", "food", "books", "toys"];
+      
+      c.state.products.push({
+        id: crypto.randomUUID(),
+        name: `Product ${i}`,
+        price: 10 + i * 2,
+        category: categories[categoryIndex],
+        tags: [`tag${i % 3}`, `tag${i % 7}`],
+        inStock: i % 4 !== 0,
+        createdAt: Date.now() - i * 86400000 // Days ago
+      });
+    }
+  },
+  
+  actions: {
+    // Search products with query parameter validation
+    searchProducts: (c, queryParams) => {
+      // Define schema for search parameters
+      const schema = z.object({
+        query: z.string().optional(),
+        category: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        minPrice: z.number().min(0).optional(),
+        maxPrice: z.number().min(0).optional(),
+        inStock: z.boolean().optional(),
+        sortBy: z.enum(["name", "price", "createdAt"]).optional(),
+        sortOrder: z.enum(["asc", "desc"]).default("asc"),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(50).default(20)
+      }).refine(data => {
+        // Custom refinement: if both min and max price are provided,
+        // ensure min is less than or equal to max
+        if (data.minPrice !== undefined && data.maxPrice !== undefined) {
+          return data.minPrice <= data.maxPrice;
+        }
+        return true;
+      }, {
+        message: "Minimum price must be less than or equal to maximum price",
+        path: ["minPrice"]
+      });
+      
+      try {
+        // Validate query parameters
+        const params = schema.parse(queryParams);
+        
+        // Filter products based on parameters
+        let filtered = [...c.state.products];
+        
+        // Text search
+        if (params.query) {
+          const query = params.query.toLowerCase();
+          filtered = filtered.filter(p => 
+            p.name.toLowerCase().includes(query)
+          );
+        }
+        
+        // Category filter
+        if (params.category) {
+          filtered = filtered.filter(p => p.category === params.category);
+        }
+        
+        // Tags filter (product must have ALL specified tags)
+        if (params.tags && params.tags.length > 0) {
+          filtered = filtered.filter(p => 
+            params.tags!.every(tag => p.tags.includes(tag))
+          );
+        }
+        
+        // Price range
+        if (params.minPrice !== undefined) {
+          filtered = filtered.filter(p => p.price >= params.minPrice!);
+        }
+        if (params.maxPrice !== undefined) {
+          filtered = filtered.filter(p => p.price <= params.maxPrice!);
+        }
+        
+        // Stock status
+        if (params.inStock !== undefined) {
+          filtered = filtered.filter(p => p.inStock === params.inStock);
+        }
+        
+        // Sorting
+        if (params.sortBy) {
+          filtered.sort((a, b) => {
+            let comparison = 0;
+            
+            switch (params.sortBy) {
+              case "name":
+                comparison = a.name.localeCompare(b.name);
+                break;
+              case "price":
+                comparison = a.price - b.price;
+                break;
+              case "createdAt":
+                comparison = a.createdAt - b.createdAt;
+                break;
+            }
+            
+            return params.sortOrder === "asc" ? comparison : -comparison;
+          });
+        }
+        
+        // Pagination
+        const total = filtered.length;
+        const start = (params.page - 1) * params.pageSize;
+        const end = start + params.pageSize;
+        const paginatedResults = filtered.slice(start, end);
+        
+        return {
+          products: paginatedResults,
+          pagination: {
+            page: params.page,
+            pageSize: params.pageSize,
+            totalItems: total,
+            totalPages: Math.ceil(total / params.pageSize),
+            hasNext: end < total,
+            hasPrev: params.page > 1
+          },
+          filters: {
+            query: params.query,
+            category: params.category,
+            tags: params.tags,
+            minPrice: params.minPrice,
+            maxPrice: params.maxPrice,
+            inStock: params.inStock
+          }
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Invalid search parameters", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    }
+  }
+});
+```
+
+## Custom Validation with Zod
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+// Custom validation functions
+const isValidISBN = (isbn: string) => {
+  // ISBN-10 or ISBN-13 validation logic
+  const cleanISBN = isbn.replace(/[-\s]/g, '');
+  
+  if (cleanISBN.length === 10) {
+    // ISBN-10 validation (simplified)
+    return /^\d{9}[\dX]$/.test(cleanISBN);
+  } else if (cleanISBN.length === 13) {
+    // ISBN-13 validation (simplified)
+    return /^978\d{10}$|^979\d{10}$/.test(cleanISBN);
+  }
+  
+  return false;
+};
+
+const isValidPublishDate = (date: number) => {
+  const publishDate = new Date(date);
+  const now = new Date();
+  const oldestAllowed = new Date('1800-01-01');
+  
+  return publishDate >= oldestAllowed && publishDate <= now;
+};
+
+// Create actor with custom validations
+const bookCatalog = actor({
+  state: {
+    books: {} as Record<string, {
+      id: string,
+      title: string,
+      authors: string[],
+      isbn: string,
+      publishDate: number,
+      genres: string[],
+      pages: number,
+      language: string,
+      publisher: string,
+      price: number,
+      createdAt: number,
+      updatedAt: number
+    }>
+  },
+  
+  actions: {
+    // Add a book with custom validations
+    addBook: (c, input) => {
+      // Create schema with custom validations
+      const schema = z.object({
+        title: z.string()
+          .min(1, "Title is required")
+          .max(200, "Title cannot exceed 200 characters"),
+        authors: z.array(z.string())
+          .min(1, "At least one author is required")
+          .max(10, "Cannot have more than 10 authors"),
+        isbn: z.string()
+          .refine(isValidISBN, "Invalid ISBN format"),
+        publishDate: z.number()
+          .refine(isValidPublishDate, "Invalid publish date"),
+        genres: z.array(z.string())
+          .min(1, "At least one genre is required")
+          .max(5, "Cannot have more than 5 genres"),
+        pages: z.number()
+          .int("Page count must be an integer")
+          .positive("Page count must be positive"),
+        language: z.string()
+          .min(2, "Language code must be at least 2 characters")
+          .max(5, "Language code cannot exceed 5 characters"),
+        publisher: z.string()
+          .min(1, "Publisher is required"),
+        price: z.number()
+          .min(0, "Price cannot be negative")
+      }).refine(data => {
+        // Check if ISBN already exists
+        return !Object.values(c.state.books).some(book => book.isbn === data.isbn);
+      }, {
+        message: "ISBN already exists in the catalog",
+        path: ["isbn"]
+      });
+      
+      try {
+        // Validate input with custom rules
+        const validatedInput = schema.parse(input);
+        
+        // Create book
+        const bookId = crypto.randomUUID();
+        const now = Date.now();
+        
+        c.state.books[bookId] = {
+          id: bookId,
+          ...validatedInput,
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        return {
+          success: true,
+          bookId,
+          book: c.state.books[bookId]
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Book validation failed", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    },
+    
+    // Update a book with conditional validation
+    updateBook: (c, bookId, updates) => {
+      // Ensure book exists
+      if (!c.state.books[bookId]) {
+        throw new UserError("Book not found");
+      }
+      
+      const currentBook = c.state.books[bookId];
+      
+      // Create schema with conditional validations
+      const schema = z.object({
+        title: z.string()
+          .min(1, "Title is required")
+          .max(200, "Title cannot exceed 200 characters")
+          .optional(),
+        authors: z.array(z.string())
+          .min(1, "At least one author is required")
+          .max(10, "Cannot have more than 10 authors")
+          .optional(),
+        isbn: z.string()
+          .refine(isValidISBN, "Invalid ISBN format")
+          .optional(),
+        publishDate: z.number()
+          .refine(isValidPublishDate, "Invalid publish date")
+          .optional(),
+        genres: z.array(z.string())
+          .min(1, "At least one genre is required")
+          .max(5, "Cannot have more than 5 genres")
+          .optional(),
+        pages: z.number()
+          .int("Page count must be an integer")
+          .positive("Page count must be positive")
+          .optional(),
+        language: z.string()
+          .min(2, "Language code must be at least 2 characters")
+          .max(5, "Language code cannot exceed 5 characters")
+          .optional(),
+        publisher: z.string()
+          .min(1, "Publisher is required")
+          .optional(),
+        price: z.number()
+          .min(0, "Price cannot be negative")
+          .optional()
+      }).refine(data => {
+        // If ISBN is being updated, check that it doesn't already exist
+        if (data.isbn && data.isbn !== currentBook.isbn) {
+          return !Object.values(c.state.books).some(book => 
+            book.id !== bookId && book.isbn === data.isbn
+          );
+        }
+        return true;
+      }, {
+        message: "ISBN already exists in the catalog",
+        path: ["isbn"]
+      });
+      
+      try {
+        // Validate updates
+        const validatedUpdates = schema.parse(updates);
+        
+        // Update book
+        const updatedBook = {
+          ...currentBook,
+          ...validatedUpdates,
+          updatedAt: Date.now()
+        };
+        
+        c.state.books[bookId] = updatedBook;
+        
+        return {
+          success: true,
+          book: updatedBook
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Book validation failed", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    }
+  }
+});
+```
+
+## Combining Zod with TypeScript Types
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+// Define schemas with Zod
+const addressSchema = z.object({
+  street: z.string().min(1, "Street is required"),
+  city: z.string().min(1, "City is required"),
+  state: z.string().min(1, "State is required"),
+  postalCode: z.string().min(1, "Postal code is required"),
+  country: z.string().min(1, "Country is required")
+});
+
+const customerSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string().regex(/^\+?[0-9]{10,15}$/, "Invalid phone number"),
+  birthDate: z.number().optional(),
+  shippingAddress: addressSchema,
+  billingAddress: addressSchema.optional()
+});
+
+const productItemSchema = z.object({
+  productId: z.string().uuid("Invalid product ID"),
+  quantity: z.number().int().positive("Quantity must be positive"),
+  price: z.number().positive("Price must be positive"),
+  name: z.string()
+});
+
+const orderSchema = z.object({
+  customer: customerSchema,
+  items: z.array(productItemSchema)
+    .min(1, "Order must have at least one item"),
+  paymentMethod: z.enum(["credit_card", "paypal", "bank_transfer"]),
+  notes: z.string().optional()
+});
+
+// Extract TypeScript types from schemas
+type Address = z.infer<typeof addressSchema>;
+type Customer = z.infer<typeof customerSchema>;
+type ProductItem = z.infer<typeof productItemSchema>;
+type Order = z.infer<typeof orderSchema>;
+
+// Use types in actor definition
+interface OrderState {
+  id: string;
+  customer: Customer;
+  items: ProductItem[];
+  paymentMethod: string;
+  notes?: string;
+  total: number;
+  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
+  createdAt: number;
+  updatedAt: number;
+}
+
+const orderProcessor = actor({
+  state: {
+    orders: {} as Record<string, OrderState>
+  },
+  
+  actions: {
+    // Create order with Zod validation and TypeScript types
+    createOrder: (c, orderData) => {
+      try {
+        // Validate with Zod
+        const validatedOrder = orderSchema.parse(orderData);
+        
+        // Calculate total
+        const total = validatedOrder.items.reduce(
+          (sum, item) => sum + (item.price * item.quantity), 
+          0
+        );
+        
+        // Create order
+        const orderId = crypto.randomUUID();
+        const now = Date.now();
+        
+        // Use validated data to create typed order
+        const order: OrderState = {
+          id: orderId,
+          customer: validatedOrder.customer,
+          items: validatedOrder.items,
+          paymentMethod: validatedOrder.paymentMethod,
+          notes: validatedOrder.notes,
+          total,
+          status: "pending",
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        // Store order
+        c.state.orders[orderId] = order;
+        
+        return {
+          success: true,
+          orderId,
+          order
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const fieldErrors = error.errors.map(err => ({
+            field: err.path.join("."),
+            message: err.message
+          }));
+          
+          throw new UserError("Order validation failed", { fieldErrors });
+        }
+        
+        throw error;
+      }
+    },
+    
+    // Update order status with typed input
+    updateOrderStatus: (c, orderId, status: OrderState["status"]) => {
+      // Ensure order exists
+      if (!c.state.orders[orderId]) {
+        throw new UserError("Order not found");
+      }
+      
+      // Validate status
+      const statusSchema = z.enum([
+        "pending", "processing", "shipped", "delivered", "cancelled"
+      ]);
+      
+      try {
+        const validatedStatus = statusSchema.parse(status);
+        
+        // Update order
+        c.state.orders[orderId].status = validatedStatus;
+        c.state.orders[orderId].updatedAt = Date.now();
+        
+        return {
+          success: true,
+          order: c.state.orders[orderId]
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          throw new UserError(`Invalid status: ${status}`);
+        }
+        
+        throw error;
+      }
+    }
+  }
+});
+```
+
+## Form Validation
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { z } from "zod";
+
+// Define form schemas
+const contactFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("Invalid email address"),
+  subject: z.string().min(5, "Subject must be at least 5 characters"),
+  message: z.string()
+    .min(10, "Message must be at least 10 characters")
+    .max(1000, "Message cannot exceed 1000 characters"),
+  phone: z.string()
+    .regex(/^\+?[0-9]{10,15}$/, "Invalid phone number")
+    .optional(),
+  preferredContact: z.enum(["email", "phone"])
+    .default("email"),
+  newsletter: z.boolean().default(false)
+});
+
+const formProcessor = actor({
+  state: {
+    submissions: [] as Array<{
+      id: string,
+      formType: string,
+      data: any,
+      createdAt: number,
+      processed: boolean
+    }>
+  },
+  
+  actions: {
+    // Submit contact form with validation
+    submitContactForm: (c, formData) => {
+      try {
+        // Validate form data
+        const validatedData = contactFormSchema.parse(formData);
+        
+        // Store submission
+        const submissionId = crypto.randomUUID();
+        
+        c.state.submissions.push({
+          id: submissionId,
+          formType: "contact",
+          data: validatedData,
+          createdAt: Date.now(),
+          processed: false
+        });
+        
+        // Broadcast event
+        c.broadcast("formSubmitted", {
+          submissionId,
+          formType: "contact"
+        });
+        
+        // Schedule processing
+        c.schedule.after(1000, "processSubmission", submissionId);
+        
+        return {
+          success: true,
+          submissionId,
+          message: "Form submitted successfully"
+        };
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          // Format friendly error messages for forms
+          const formErrors: Record<string, string> = {};
+          
+          error.errors.forEach(err => {
+            const field = err.path.join(".");
+            formErrors[field] = err.message;
+          });
+          
+          throw new UserError("Form validation failed", { formErrors });
+        }
+        
+        throw error;
+      }
+    },
+    
+    // Process a form submission
+    processSubmission: (c, submissionId) => {
+      // Find submission
+      const submissionIndex = c.state.submissions.findIndex(
+        s => s.id === submissionId
+      );
+      
+      if (submissionIndex === -1) {
+        c.log.warn(`Submission ${submissionId} not found`);
+        return { success: false, reason: "not_found" };
+      }
+      
+      const submission = c.state.submissions[submissionIndex];
+      
+      // Skip if already processed
+      if (submission.processed) {
+        return { success: true, alreadyProcessed: true };
+      }
+      
+      // Process based on form type
+      if (submission.formType === "contact") {
+        // In a real app, would send email, create ticket, etc.
+        c.log.info("Processing contact form", {
+          submissionId,
+          email: submission.data.email,
+          subject: submission.data.subject
+        });
+        
+        // Mark as processed
+        submission.processed = true;
+        
+        return {
+          success: true,
+          processed: true
+        };
+      }
+      
+      return { success: false, reason: "unknown_form_type" };
+    }
+  }
+});
+```
+
+## Best Practices
+
+1. **Separate Schema Definition**: Define schemas outside of action handlers for reusability and clarity.
+
+2. **Type Integration**: Use `z.infer<typeof schema>` to extract TypeScript types from Zod schemas.
+
+3. **Friendly Error Messages**: Convert Zod errors to user-friendly messages with field references.
+
+4. **Validation Layers**: Use Zod validation as the first step in action handlers before any business logic.
+
+5. **Refinements**: Use `.refine()` for complex validations that depend on multiple fields or external state.
+
+6. **Transformations**: Use `.transform()` to clean or convert data during validation.
+
+7. **Defaults**: Use `.default()` to provide default values for optional fields.
+
+8. **Conditional Validation**: Create schemas dynamically based on context or input requirements.
+
+9. **Security**: Validate all user input to prevent injection attacks and data corruption.
+
+10. **Error Handling**: Always catch and properly handle Zod validation errors.
+
+By following these patterns, you can create robust, well-validated ActorCore systems that catch errors early and provide clear feedback to users.

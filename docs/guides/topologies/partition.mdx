@@ -1,0 +1,621 @@
+---
+title: Partition Topology
+description: Learn how to horizontally scale your ActorCore applications with the Partition Topology
+---
+
+# Partition Topology
+
+Partition topology in ActorCore allows your application to horizontally scale by distributing actor instances across multiple nodes. Each actor instance operates independently with its own state, making it ideal for workloads where actors don't need to share state with each other.
+
+## Understanding Partition Topology
+
+In Partition topology:
+
+- Multiple instances of the same actor type can exist simultaneously
+- Each actor instance has its own isolated state
+- Actors are identified and accessed by unique IDs
+- Work is distributed across multiple nodes automatically
+- Perfect for horizontal scaling of stateful applications
+
+The partition topology is ideal when your application needs to handle many independent actors of the same type, such as:
+
+- User accounts (one actor per user)
+- Game rooms (one actor per room)
+- IoT devices (one actor per device)
+- Chat channels (one actor per channel)
+
+## Basic Partition Topology Setup
+
+```typescript
+import { setup, partitionTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+// Define your actors
+import { userProfile } from "./actors/user-profile";
+import { chatRoom } from "./actors/chat-room";
+
+// Set up the application with partition topology
+export const app = setup({
+  actors: {
+    userProfile,
+    chatRoom
+  },
+  topology: partitionTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      prefix: "my-app"
+    })
+  })
+});
+
+export type App = typeof app;
+```
+
+## Working with Partitioned Actors
+
+Unlike standalone topology, with partition topology you need to specify an ID when accessing an actor:
+
+```typescript
+import { app } from "./app";
+
+async function main() {
+  // Create a client
+  const client = app.createClient();
+  
+  // Get a specific user profile by ID
+  const alice = await client.userProfile.getWithId("user-alice");
+  
+  // Get a specific chat room by ID
+  const generalChat = await client.chatRoom.getWithId("room-general");
+  
+  // Create a new user profile with a specific ID
+  const bob = await client.userProfile.create({
+    id: "user-bob",
+    params: ["Bob Smith", "bob@example.com"]
+  });
+  
+  // Use the actors
+  await alice.updateStatus("online");
+  await generalChat.sendMessage("user-alice", "Hello everyone!");
+  
+  // Get chat history
+  const messages = await generalChat.getMessages();
+  console.log(messages);
+}
+
+main().catch(console.error);
+```
+
+## Creating Partitioned Actors
+
+There are two main ways to create partitioned actors:
+
+### 1. Create with Explicit ID
+
+```typescript
+// Create a user profile with explicit ID
+const alice = await client.userProfile.create({
+  id: "user-alice", // Specific ID for this actor
+  params: ["Alice Smith", "alice@example.com"]
+});
+```
+
+### 2. Create with Generated ID
+
+```typescript
+// Create a chat room with auto-generated ID
+const chatRoom = await client.chatRoom.create({
+  params: ["Tech Discussion"]
+});
+
+// Get the auto-generated ID from the result
+const roomId = chatRoom.id;
+console.log(`Created chat room with ID: ${roomId}`);
+```
+
+## Redis Driver Configuration for Partition Topology
+
+The Redis driver is essential for partition topology as it provides:
+
+1. Persistent storage for actor state
+2. Distributed actor discovery and routing
+3. Pubsub for actor communication
+
+Here's a more detailed Redis configuration:
+
+```typescript
+import { setup, partitionTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+export const app = setup({
+  actors: { /* your actors */ },
+  topology: partitionTopology({
+    driver: redisDriver({
+      // Redis connection
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      
+      // Key prefix for namespacing in shared Redis
+      prefix: "myapp",
+      
+      // Connection options
+      connectTimeout: 5000,
+      
+      // Optional: Redis Cluster support
+      cluster: process.env.REDIS_CLUSTER === "true" ? {
+        nodes: [
+          { host: "redis-node1", port: 6379 },
+          { host: "redis-node2", port: 6379 },
+          { host: "redis-node3", port: 6379 }
+        ]
+      } : undefined,
+      
+      // Optional: Redis Sentinel support
+      sentinel: process.env.REDIS_SENTINEL === "true" ? {
+        name: "mymaster",
+        sentinels: [
+          { host: "sentinel-1", port: 26379 },
+          { host: "sentinel-2", port: 26379 },
+          { host: "sentinel-3", port: 26379 }
+        ]
+      } : undefined,
+      
+      // Optional: Redis TLS support
+      tls: process.env.REDIS_TLS === "true" ? {
+        enabled: true
+      } : undefined
+    })
+  })
+});
+```
+
+## Actor-to-Actor Communication in Partition Topology
+
+With partition topology, actors can communicate with each other by referencing their IDs:
+
+```typescript
+import { actor } from "actor-core";
+
+export const orderProcessor = actor({
+  state: {
+    orderId: "",
+    customerId: "",
+    items: [],
+    status: "pending"
+  },
+  
+  onCreate: (c, customerId, items) => {
+    c.state.orderId = c.id;
+    c.state.customerId = customerId;
+    c.state.items = items;
+  },
+  
+  actions: {
+    processOrder: async (c) => {
+      // Validate the order
+      if (c.state.items.length === 0) {
+        return { success: false, error: "Order has no items" };
+      }
+      
+      try {
+        // Get the customer actor
+        const customer = await c.client.customer.getWithId(c.state.customerId);
+        
+        // Check customer data
+        const customerData = await customer.getProfile();
+        
+        if (!customerData.paymentMethod) {
+          return { success: false, error: "Customer has no payment method" };
+        }
+        
+        // Process payment
+        const paymentResult = await c.processPayment(
+          customerData.paymentMethod, 
+          c.calculateTotal()
+        );
+        
+        if (paymentResult.success) {
+          // Update order status
+          c.state.status = "completed";
+          
+          // Notify the customer actor
+          await customer.notifyOrderProcessed(c.state.orderId);
+          
+          return { success: true, orderId: c.state.orderId };
+        } else {
+          c.state.status = "failed";
+          return { success: false, error: paymentResult.error };
+        }
+      } catch (error) {
+        c.log.error("Order processing error", { error });
+        c.state.status = "failed";
+        return { success: false, error: "Processing failed" };
+      }
+    },
+    
+    // Helper method for calculating order total
+    calculateTotal: (c) => {
+      return c.state.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    },
+    
+    // Helper method for processing payment
+    processPayment: async (c, paymentMethod, amount) => {
+      // In a real app, this would call an external payment service
+      // This is simplified for the example
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      return { success: true };
+    }
+  }
+});
+```
+
+## Horizontal Scaling with Partition Topology
+
+One of the key benefits of partition topology is horizontal scaling. Here's a simplified example of how to set up multiple nodes:
+
+```typescript
+// node-1.ts
+import { app } from "./app";
+
+const node1 = app.createNode({
+  nodeId: "node-1",
+  listenPort: 3001
+});
+
+node1.start().then(() => {
+  console.log("Node 1 started on port 3001");
+});
+
+// node-2.ts
+import { app } from "./app";
+
+const node2 = app.createNode({
+  nodeId: "node-2",
+  listenPort: 3002
+});
+
+node2.start().then(() => {
+  console.log("Node 2 started on port 3002");
+});
+
+// Repeat for as many nodes as needed
+```
+
+With multiple nodes running, the system will automatically:
+
+1. Distribute actor instances across available nodes
+2. Route requests to the correct node hosting each actor
+3. Handle node failures by recreating actors on other nodes
+4. Balance load across the system
+
+## Testing Partitioned Actors
+
+Testing partitioned actors requires a slightly different approach than standalone actors:
+
+```typescript
+import { test } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+test("user profile functionality", async (t) => {
+  // Set up test environment with the app
+  const { client } = await setupTest(t, app);
+  
+  // Create a test user with a specific ID
+  const testUserId = `test-user-${Date.now()}`;
+  const user = await client.userProfile.create({
+    id: testUserId,
+    params: ["Test User", "test@example.com"]
+  });
+  
+  // Test updating profile
+  await user.updateProfile({ status: "busy" });
+  
+  // Verify the profile was updated
+  const profile = await user.getProfile();
+  
+  // Assertions
+  t.equal(profile.name, "Test User");
+  t.equal(profile.email, "test@example.com");
+  t.equal(profile.status, "busy");
+  
+  // Get the same user by ID to verify persistence
+  const sameUser = await client.userProfile.getWithId(testUserId);
+  const sameProfile = await sameUser.getProfile();
+  
+  t.equal(sameProfile.status, "busy");
+});
+```
+
+## Advanced Partition Configurations
+
+### Custom Partitioning Logic
+
+You can customize how actor IDs are assigned to partitions:
+
+```typescript
+import { setup, partitionTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+export const app = setup({
+  actors: { /* your actors */ },
+  topology: partitionTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      prefix: "myapp"
+    }),
+    
+    // Custom partitioning logic
+    partitioner: {
+      // Custom function to calculate partition key from actor ID
+      getPartitionKey: (actorType, actorId) => {
+        // Example: For user actors, partition by first letter of ID
+        if (actorType === "user") {
+          return actorId.charAt(0).toLowerCase();
+        }
+        
+        // For chat rooms, partition by room type (extract from ID)
+        if (actorType === "chatRoom" && actorId.includes("-")) {
+          return actorId.split("-")[0];
+        }
+        
+        // Default: use the full actor ID
+        return actorId;
+      }
+    }
+  })
+});
+```
+
+### Configuring Actor Affinity
+
+You can control which nodes actors prefer to run on:
+
+```typescript
+import { setup, partitionTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+
+export const app = setup({
+  actors: { /* your actors */ },
+  topology: partitionTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379"
+    }),
+    
+    // Node affinity configuration
+    nodeAffinity: {
+      // Prioritize nodes in the same region
+      preferSameRegion: true,
+      
+      // Sticky sessions: keep actors on the same node unless it fails
+      stickyNodes: true,
+      
+      // Optional: custom function to select preferred node
+      selectNode: (nodes, actorType, actorId) => {
+        // Custom logic to choose a node
+        if (actorType === "highMemory") {
+          // Find nodes with highMemory tag
+          const highMemoryNodes = nodes.filter(
+            node => node.tags.includes("highMemory")
+          );
+          
+          if (highMemoryNodes.length > 0) {
+            return highMemoryNodes[0];
+          }
+        }
+        
+        // Default: return null to use standard selection
+        return null;
+      }
+    }
+  })
+});
+```
+
+## Complete Partition Topology Example
+
+Here's a complete example of a chat application using partition topology:
+
+```typescript
+// src/actors/chat-room.ts
+import { actor, UserError } from "actor-core";
+
+export interface Message {
+  id: string;
+  userId: string;
+  username: string;
+  text: string;
+  timestamp: number;
+}
+
+export const chatRoom = actor({
+  state: {
+    name: "",
+    description: "",
+    messages: [] as Message[],
+    participants: {} as Record<string, {
+      userId: string,
+      username: string,
+      lastActive: number
+    }>
+  },
+  
+  onCreate: (c, name: string, description: string = "") => {
+    c.state.name = name;
+    c.state.description = description;
+  },
+  
+  createConnState: (c, { params }) => {
+    // Connection params should include user info
+    if (!params.userId || !params.username) {
+      throw new UserError("User ID and username are required");
+    }
+    
+    // Add to participants
+    c.state.participants[params.userId] = {
+      userId: params.userId,
+      username: params.username,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast join event
+    c.broadcast("userJoined", {
+      userId: params.userId,
+      username: params.username,
+      timestamp: Date.now()
+    });
+    
+    // Return connection state
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    sendMessage: (c, text: string) => {
+      if (!text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      // Create message
+      const message: Message = {
+        id: crypto.randomUUID(),
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: Date.now()
+      };
+      
+      // Update participant activity
+      c.state.participants[c.conn.state.userId].lastActive = message.timestamp;
+      
+      // Add to messages
+      c.state.messages.push(message);
+      
+      // Limit message history (keep last 100)
+      if (c.state.messages.length > 100) {
+        c.state.messages = c.state.messages.slice(-100);
+      }
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", message);
+      
+      return { messageId: message.id };
+    },
+    
+    getMessages: (c, limit: number = 50) => {
+      // Return most recent messages up to limit
+      return c.state.messages.slice(-Math.min(limit, 100));
+    },
+    
+    getRoomInfo: (c) => {
+      return {
+        id: c.id,
+        name: c.state.name,
+        description: c.state.description,
+        participantCount: Object.keys(c.state.participants).length,
+        messageCount: c.state.messages.length
+      };
+    },
+    
+    getParticipants: (c) => {
+      return Object.values(c.state.participants).map(p => ({
+        userId: p.userId,
+        username: p.username,
+        lastActive: p.lastActive
+      }));
+    }
+  }
+});
+
+// src/app.ts
+import { setup, partitionTopology } from "actor-core";
+import { redisDriver } from "actor-core/drivers/redis";
+import { chatRoom } from "./actors/chat-room";
+
+// Set up the application with partition topology
+export const app = setup({
+  actors: { chatRoom },
+  topology: partitionTopology({
+    driver: redisDriver({
+      url: process.env.REDIS_URL || "redis://localhost:6379",
+      prefix: "chat-app"
+    })
+  })
+});
+
+export type App = typeof app;
+
+// src/index.ts
+import { app } from "./app";
+
+async function main() {
+  // Create a client
+  const client = app.createClient();
+  
+  // Create chat rooms or get existing ones
+  const generalChat = await client.chatRoom.getWithId("room-general");
+  
+  // If room doesn't exist yet, create it
+  try {
+    const roomInfo = await generalChat.getRoomInfo();
+    console.log(`Connected to existing room: ${roomInfo.name}`);
+  } catch (error) {
+    // Room doesn't exist, create it
+    await client.chatRoom.create({
+      id: "room-general",
+      params: ["General Chat", "Public chat room for everyone"]
+    });
+    console.log("Created new General Chat room");
+  }
+  
+  // Create a tech chat room
+  try {
+    const techChat = await client.chatRoom.create({
+      id: "room-tech",
+      params: ["Tech Discussion", "Chat about technology topics"]
+    });
+    console.log(`Created Tech Discussion room with ID: ${techChat.id}`);
+  } catch (error) {
+    console.log("Tech chat room already exists");
+  }
+  
+  // List available rooms (in a real app, would have a room directory actor)
+  const rooms = ["room-general", "room-tech"];
+  for (const roomId of rooms) {
+    try {
+      const room = await client.chatRoom.getWithId(roomId);
+      const info = await room.getRoomInfo();
+      console.log(`Room: ${info.name}, Participants: ${info.participantCount}`);
+    } catch (error) {
+      console.log(`Room ${roomId} not available`);
+    }
+  }
+}
+
+main().catch(console.error);
+```
+
+## Partition Topology Considerations
+
+When using Partition topology, keep these considerations in mind:
+
+1. **Actor ID Consistency**: Actor IDs should be consistent and meaningful, as they are used to route requests
+2. **State Isolation**: Partitioned actors have isolated state; they can't directly share state with other actors
+3. **Redis Dependency**: Production use requires a reliable Redis deployment (ideally a Redis Cluster for high availability)
+4. **Connection Overhead**: Each node must maintain connections to Redis, which can add some overhead
+5. **Fallback Planning**: Consider how your application will behave if Redis becomes temporarily unavailable
+
+## When to Use Partition Topology
+
+Partition topology is ideal for:
+
+- Applications that need to scale horizontally
+- Systems with many independent actors of the same type
+- Multi-node deployments in production environments
+- Applications where each actor handles a specific user, session, or entity
+- Scenarios where actor state needs to persist across node restarts
+
+By understanding and properly configuring partition topology, you can build scalable, distributed ActorCore applications that can grow with your user base and handle increased load effectively.

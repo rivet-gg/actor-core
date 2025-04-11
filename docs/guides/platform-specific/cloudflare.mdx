@@ -1,0 +1,1216 @@
+---
+title: Cloudflare Workers Deployment
+description: Learn how to deploy ActorCore applications on Cloudflare Workers
+---
+
+# Cloudflare Workers Deployment
+
+Cloudflare Workers is a serverless platform that lets you run your ActorCore applications at the edge, offering low latency and global distribution. This guide will help you set up, configure, and deploy ActorCore applications on Cloudflare Workers.
+
+## Understanding ActorCore with Cloudflare Workers
+
+ActorCore integrates with Cloudflare Workers through a dedicated platform adapter. This integration allows actors to run entirely on Cloudflare's global network, with state persistence through Cloudflare Durable Objects.
+
+Key benefits of deploying ActorCore on Cloudflare Workers include:
+
+1. **Global Distribution**: Actors run close to users, reducing latency
+2. **Automatic Scaling**: Handled by Cloudflare's infrastructure
+3. **Built-in Persistence**: Using Durable Objects for actor state
+4. **Cost Efficiency**: Pay only for what you use
+5. **WebSocket Support**: For real-time communication
+
+## Prerequisites
+
+Before getting started, ensure you have:
+
+1. A Cloudflare account
+2. [Wrangler](https://developers.cloudflare.com/workers/wrangler/get-started/) CLI installed and configured
+3. Node.js and npm/yarn installed
+
+## Setting Up a Cloudflare Workers Project
+
+### Using the ActorCore CLI
+
+The easiest way to create a new ActorCore project for Cloudflare Workers is to use the CLI:
+
+```bash
+# Using npx
+npx create-actor my-actor-app --platform cloudflare-workers
+
+# Using yarn
+yarn create actor my-actor-app --platform cloudflare-workers
+```
+
+This creates a new project with the correct configuration for Cloudflare Workers.
+
+### Manual Setup
+
+If you prefer to set up manually:
+
+1. Create a new directory:
+
+```bash
+mkdir my-cf-actor-app
+cd my-cf-actor-app
+```
+
+2. Initialize a new npm/yarn project:
+
+```bash
+npm init -y
+# or
+yarn init -y
+```
+
+3. Install the required dependencies:
+
+```bash
+npm install actor-core actor-core-cloudflare-workers
+# or
+yarn add actor-core actor-core-cloudflare-workers
+```
+
+4. Create a `wrangler.toml` file:
+
+```toml
+name = "my-cf-actor-app"
+main = "src/index.ts"
+compatibility_date = "2023-08-01"
+
+[durable_objects]
+bindings = [
+  { name = "ACTOR_STORAGE", class_name = "ActorDurableObject" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ActorDurableObject"]
+```
+
+5. Create a basic project structure:
+
+```bash
+mkdir -p src/actors
+```
+
+## Project Structure for Cloudflare Workers
+
+A typical ActorCore project for Cloudflare Workers looks like this:
+
+```
+project-root/
+├── node_modules/
+├── src/
+│   ├── actors/             # Actor definitions
+│   │   ├── counter.ts
+│   │   └── chat-room.ts
+│   ├── index.ts            # Worker entry point
+│   └── types.ts            # Type definitions
+├── package.json
+├── tsconfig.json
+└── wrangler.toml           # Cloudflare configuration
+```
+
+## Creating Your First Actor for Cloudflare Workers
+
+Let's create a simple counter actor:
+
+```typescript
+// src/actors/counter.ts
+import { actor } from "actor-core";
+
+export const counter = actor({
+  // Initial state
+  state: { count: 0 },
+  
+  // Actor actions
+  actions: {
+    increment: (c, amount = 1) => {
+      c.state.count += amount;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    },
+    
+    decrement: (c, amount = 1) => {
+      c.state.count -= amount;
+      c.broadcast("countUpdated", c.state.count);
+      return c.state.count;
+    },
+    
+    getCount: (c) => {
+      return c.state.count;
+    },
+    
+    reset: (c) => {
+      const previousCount = c.state.count;
+      c.state.count = 0;
+      c.broadcast("countUpdated", c.state.count);
+      return { previous: previousCount, current: 0 };
+    }
+  }
+});
+```
+
+## Setting Up the Worker Entry Point
+
+Create the main entry point for your Cloudflare Worker:
+
+```typescript
+// src/index.ts
+import { 
+  setup,
+  createCloudflareHandler,
+  createDurableObject
+} from "actor-core-cloudflare-workers";
+
+// Import actors
+import { counter } from "./actors/counter";
+
+// Set up the ActorCore application
+const app = setup({
+  actors: {
+    counter
+  }
+});
+
+// Export the app type
+export type App = typeof app;
+
+// Create and export the Worker handler
+export default {
+  fetch: createCloudflareHandler(app)
+};
+
+// Create and export the Durable Object class
+export const ActorDurableObject = createDurableObject(app);
+```
+
+## Configuring wrangler.toml
+
+Ensure your `wrangler.toml` has the correct configuration:
+
+```toml
+name = "my-cf-actor-app"
+main = "src/index.ts"
+compatibility_date = "2023-08-01"
+workers_dev = true
+
+# For local development
+[dev]
+port = 8787
+
+# Durable Objects for state persistence
+[durable_objects]
+bindings = [
+  { name = "ACTOR_STORAGE", class_name = "ActorDurableObject" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ActorDurableObject"]
+
+# Environment variables (optional)
+[vars]
+LOG_LEVEL = "info"
+```
+
+## Local Development
+
+Run your ActorCore application locally using Wrangler:
+
+```bash
+wrangler dev
+```
+
+This starts a local development server, typically at `http://localhost:8787`.
+
+## Creating a Chat Room Actor
+
+Let's create a more complex chat room actor:
+
+```typescript
+// src/actors/chat-room.ts
+import { actor, UserError } from "actor-core";
+
+export const chatRoom = actor({
+  state: {
+    messages: [] as Array<{
+      id: string;
+      userId: string;
+      username: string;
+      text: string;
+      timestamp: number;
+    }>,
+    users: {} as Record<string, {
+      userId: string;
+      username: string;
+      lastActive: number;
+    }>
+  },
+  
+  // Connection validation
+  createConnState: (c, { params }) => {
+    // Validate params
+    if (!params.userId || !params.username) {
+      throw new UserError("User ID and username are required");
+    }
+    
+    // Add to active users
+    c.state.users[params.userId] = {
+      userId: params.userId,
+      username: params.username,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast user joined
+    c.broadcast("userJoined", {
+      userId: params.userId,
+      username: params.username,
+      timestamp: Date.now()
+    });
+    
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // Send a message
+    sendMessage: (c, text: string) => {
+      if (!text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      const message = {
+        id: crypto.randomUUID(),
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: Date.now()
+      };
+      
+      // Add to history
+      c.state.messages.push(message);
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = message.timestamp;
+      
+      // Limit message history (last 100)
+      if (c.state.messages.length > 100) {
+        c.state.messages = c.state.messages.slice(-100);
+      }
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", message);
+      
+      return { messageId: message.id };
+    },
+    
+    // Get message history
+    getMessages: (c, limit = 50) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return limited history
+      return c.state.messages.slice(-Math.min(limit, 100));
+    },
+    
+    // Get active users
+    getUsers: (c) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return all users
+      return Object.values(c.state.users);
+    }
+  }
+});
+```
+
+Update the app setup to include the chat room actor:
+
+```typescript
+// src/index.ts
+import { 
+  setup,
+  createCloudflareHandler,
+  createDurableObject
+} from "actor-core-cloudflare-workers";
+
+// Import actors
+import { counter } from "./actors/counter";
+import { chatRoom } from "./actors/chat-room";
+
+// Set up the ActorCore application
+const app = setup({
+  actors: {
+    counter,
+    chatRoom
+  }
+});
+
+// Export the app type
+export type App = typeof app;
+
+// Create and export the Worker handler
+export default {
+  fetch: createCloudflareHandler(app)
+};
+
+// Create and export the Durable Object class
+export const ActorDurableObject = createDurableObject(app);
+```
+
+## Adding HTTP API Routes
+
+You can add HTTP API routes to your Cloudflare Worker:
+
+```typescript
+// src/index.ts
+import { 
+  setup,
+  createCloudflareHandler,
+  createDurableObject
+} from "actor-core-cloudflare-workers";
+import { Router } from 'itty-router';
+
+// Import actors
+import { counter } from "./actors/counter";
+import { chatRoom } from "./actors/chat-room";
+
+// Set up the ActorCore application
+const app = setup({
+  actors: {
+    counter,
+    chatRoom
+  }
+});
+
+// Create a router for HTTP endpoints
+const router = Router();
+
+// Define routes
+router.get('/', () => new Response('ActorCore on Cloudflare Workers'));
+
+// Counter API
+router.get('/api/counter', async (request, env) => {
+  try {
+    // Create client
+    const client = app.createClient();
+    
+    // Get counter actor
+    const counter = await client.counter.get();
+    
+    // Get current count
+    const count = await counter.getCount();
+    
+    return new Response(
+      JSON.stringify({ count }),
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+router.post('/api/counter/increment', async (request, env) => {
+  try {
+    const data = await request.json();
+    const amount = data.amount || 1;
+    
+    // Create client
+    const client = app.createClient();
+    
+    // Get counter actor
+    const counter = await client.counter.get();
+    
+    // Increment counter
+    const newCount = await counter.increment(amount);
+    
+    return new Response(
+      JSON.stringify({ count: newCount }),
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+// Chat API
+router.get('/api/chat/:roomId/messages', async (request, env) => {
+  try {
+    const { roomId } = request.params;
+    const client = app.createClient();
+    
+    // Get or create chat room
+    const room = await client.chatRoom.getWithId(roomId, {
+      params: {
+        userId: 'api-user',
+        username: 'API'
+      }
+    });
+    
+    // Get messages
+    const messages = await room.getMessages();
+    
+    return new Response(
+      JSON.stringify({ messages }),
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+// Create the fetch handler that combines ActorCore and HTTP routes
+const fetchHandler = async (request, env, ctx) => {
+  // Handle ActorCore WebSocket and RPC requests
+  const actorHandler = createCloudflareHandler(app);
+  
+  // Check if this is an actor request (WebSocket or RPC)
+  if (
+    request.url.includes('/ws') || 
+    request.headers.get('Upgrade') === 'websocket'
+  ) {
+    return actorHandler(request, env, ctx);
+  }
+  
+  // Otherwise, use the HTTP router
+  return router.handle(request, env, ctx);
+};
+
+// Export the combined fetch handler
+export default { fetch: fetchHandler };
+
+// Export the Durable Object
+export const ActorDurableObject = createDurableObject(app);
+```
+
+## Using Custom Domains
+
+To use a custom domain with your Cloudflare Workers ActorCore application, you need to:
+
+1. Add your domain to Cloudflare (if not already)
+2. Configure a Custom Domain in your Cloudflare Workers settings
+3. Update your `wrangler.toml`:
+
+```toml
+name = "my-cf-actor-app"
+main = "src/index.ts"
+compatibility_date = "2023-08-01"
+
+# Custom domain configuration
+routes = [
+  { pattern = "api.example.com/*", zone_id = "your-zone-id" }
+]
+
+[durable_objects]
+bindings = [
+  { name = "ACTOR_STORAGE", class_name = "ActorDurableObject" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ActorDurableObject"]
+```
+
+## Deploying to Cloudflare Workers
+
+Deploy your ActorCore application to Cloudflare Workers:
+
+```bash
+wrangler publish
+```
+
+This uploads your code to Cloudflare and makes it available on your workers.dev subdomain (e.g., `my-cf-actor-app.your-username.workers.dev`) and any custom domains you've configured.
+
+## Advanced Configuration
+
+### Worker Limits and Optimization
+
+Cloudflare Workers have certain limits you should be aware of:
+
+1. **CPU time**: Limited execution time per request
+2. **Memory**: Limited to 128MB by default (1GB with Unbound Workers)
+3. **WebSocket connections**: Limited by your Cloudflare plan
+4. **Storage**: Durable Objects have size limits
+
+For optimal performance:
+
+1. Keep actor state minimal and focused
+2. Avoid complex computations in actor actions
+3. Use efficient serialization for state
+4. Consider using workers with Unbound resource limits for more demanding workloads
+
+### KV for Additional Storage
+
+You can use Cloudflare KV for additional storage needs:
+
+```toml
+# wrangler.toml
+[kv_namespaces]
+binding = "MY_KV"
+id = "your-kv-namespace-id"
+```
+
+Access KV in your code:
+
+```typescript
+// In your action handler
+const storeLargeData = async (c, key: string, data: any) => {
+  // Access KV from environment
+  const kv = c.env.MY_KV;
+  
+  // Store data
+  await kv.put(key, JSON.stringify(data));
+  
+  return { success: true };
+};
+```
+
+### Authentication with Cloudflare Access
+
+You can secure your ActorCore API with Cloudflare Access:
+
+```typescript
+// Check JWT assertion from Cloudflare Access
+async function isAuthenticated(request) {
+  const jwt = request.headers.get('Cf-Access-Jwt-Assertion');
+  if (!jwt) return false;
+  
+  // Validate JWT (simplified)
+  try {
+    // Use Cloudflare's JWT verification
+    // This is a simplified example
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// In your fetch handler
+const fetchHandler = async (request, env, ctx) => {
+  // Check authentication for API routes
+  if (request.url.includes('/api/') && !await isAuthenticated(request)) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  
+  // Continue with normal handling...
+};
+```
+
+## Monitoring and Debugging
+
+### Logging
+
+Use structured logging for easier debugging:
+
+```typescript
+// src/utils/logger.ts
+const logLevels = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3
+};
+
+export function createLogger(minLevel = 'info') {
+  const minLevelValue = logLevels[minLevel] || 1;
+  
+  return {
+    debug: (message, data) => {
+      if (logLevels.debug >= minLevelValue) {
+        console.debug(JSON.stringify({ level: 'debug', message, data }));
+      }
+    },
+    info: (message, data) => {
+      if (logLevels.info >= minLevelValue) {
+        console.info(JSON.stringify({ level: 'info', message, data }));
+      }
+    },
+    warn: (message, data) => {
+      if (logLevels.warn >= minLevelValue) {
+        console.warn(JSON.stringify({ level: 'warn', message, data }));
+      }
+    },
+    error: (message, data) => {
+      if (logLevels.error >= minLevelValue) {
+        console.error(JSON.stringify({ level: 'error', message, data }));
+      }
+    }
+  };
+}
+```
+
+Use this logger in your application:
+
+```typescript
+// src/index.ts
+import { createLogger } from './utils/logger';
+
+const logger = createLogger(env.LOG_LEVEL || 'info');
+
+// In your code
+logger.info('Actor initialized', { actorType: 'counter' });
+```
+
+### Using Cloudflare Workers Analytics
+
+Enable Analytics in your `wrangler.toml`:
+
+```toml
+[triggers]
+crons = ["*/5 * * * *"] # Run every 5 minutes
+
+[workers_analytics]
+enabled = true
+```
+
+## Complete Cloudflare Workers Example
+
+Here's a complete example of a chat application using ActorCore on Cloudflare Workers:
+
+```typescript
+// src/actors/chat-room.ts
+import { actor, UserError } from "actor-core";
+
+export const chatRoom = actor({
+  state: {
+    name: "",
+    messages: [] as Array<{
+      id: string;
+      userId: string;
+      username: string;
+      text: string;
+      timestamp: number;
+    }>,
+    users: {} as Record<string, {
+      userId: string;
+      username: string;
+      lastActive: number;
+    }>
+  },
+  
+  onCreate: (c, name: string) => {
+    c.state.name = name || "Chat Room";
+  },
+  
+  createConnState: (c, { params }) => {
+    // Validate params
+    if (!params.userId || !params.username) {
+      throw new UserError("User ID and username are required");
+    }
+    
+    // Add to active users
+    c.state.users[params.userId] = {
+      userId: params.userId,
+      username: params.username,
+      lastActive: Date.now()
+    };
+    
+    // Broadcast user joined
+    c.broadcast("userJoined", {
+      userId: params.userId,
+      username: params.username,
+      timestamp: Date.now()
+    });
+    
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  actions: {
+    // Send a message
+    sendMessage: (c, text: string) => {
+      if (!text.trim()) {
+        throw new UserError("Message cannot be empty");
+      }
+      
+      const message = {
+        id: crypto.randomUUID(),
+        userId: c.conn.state.userId,
+        username: c.conn.state.username,
+        text,
+        timestamp: Date.now()
+      };
+      
+      // Add to history
+      c.state.messages.push(message);
+      
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = message.timestamp;
+      
+      // Limit message history (last 100)
+      if (c.state.messages.length > 100) {
+        c.state.messages = c.state.messages.slice(-100);
+      }
+      
+      // Broadcast to all connections
+      c.broadcast("newMessage", message);
+      
+      return { messageId: message.id };
+    },
+    
+    // Get message history
+    getMessages: (c, limit = 50) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return limited history
+      return c.state.messages.slice(-Math.min(limit, 100));
+    },
+    
+    // Get room info
+    getRoomInfo: (c) => {
+      return {
+        name: c.state.name,
+        userCount: Object.keys(c.state.users).length,
+        messageCount: c.state.messages.length
+      };
+    },
+    
+    // Get active users
+    getUsers: (c) => {
+      // Update user activity
+      c.state.users[c.conn.state.userId].lastActive = Date.now();
+      
+      // Return all users
+      return Object.values(c.state.users);
+    }
+  }
+});
+
+// src/actors/room-directory.ts
+import { actor, UserError } from "actor-core";
+
+export const roomDirectory = actor({
+  state: {
+    rooms: {} as Record<string, {
+      id: string;
+      name: string;
+      createdAt: number;
+      createdBy: string;
+    }>
+  },
+  
+  actions: {
+    // Create a new room
+    createRoom: (c, roomId: string, name: string) => {
+      // Validate room ID
+      if (!roomId || !/^[a-zA-Z0-9-_]+$/.test(roomId)) {
+        throw new UserError("Invalid room ID. Use only letters, numbers, hyphens, and underscores");
+      }
+      
+      // Check if room exists
+      if (c.state.rooms[roomId]) {
+        throw new UserError(`Room ${roomId} already exists`);
+      }
+      
+      // Create room
+      c.state.rooms[roomId] = {
+        id: roomId,
+        name: name || roomId,
+        createdAt: Date.now(),
+        createdBy: c.conn?.state?.userId || "system"
+      };
+      
+      // Create chat room actor for this ID
+      c.client.chatRoom.create({
+        id: roomId,
+        params: [name || roomId]
+      }).catch(err => {
+        console.error(`Failed to create chat room actor: ${err.message}`);
+      });
+      
+      return { roomId, name: name || roomId };
+    },
+    
+    // List all rooms
+    listRooms: (c) => {
+      return Object.values(c.state.rooms).map(room => ({
+        id: room.id,
+        name: room.name,
+        createdAt: room.createdAt
+      }));
+    },
+    
+    // Get room details
+    getRoom: (c, roomId: string) => {
+      const room = c.state.rooms[roomId];
+      
+      if (!room) {
+        throw new UserError(`Room ${roomId} not found`);
+      }
+      
+      return room;
+    },
+    
+    // Delete a room
+    deleteRoom: (c, roomId: string) => {
+      if (!c.state.rooms[roomId]) {
+        throw new UserError(`Room ${roomId} not found`);
+      }
+      
+      delete c.state.rooms[roomId];
+      
+      return { success: true };
+    }
+  }
+});
+
+// src/utils/logger.ts
+export function createLogger(minLevel = 'info') {
+  const logLevels = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3
+  };
+  
+  const minLevelValue = logLevels[minLevel] || 1;
+  
+  return {
+    debug: (message, data = {}) => {
+      if (logLevels.debug >= minLevelValue) {
+        console.debug(JSON.stringify({ level: 'debug', message, ...data }));
+      }
+    },
+    info: (message, data = {}) => {
+      if (logLevels.info >= minLevelValue) {
+        console.info(JSON.stringify({ level: 'info', message, ...data }));
+      }
+    },
+    warn: (message, data = {}) => {
+      if (logLevels.warn >= minLevelValue) {
+        console.warn(JSON.stringify({ level: 'warn', message, ...data }));
+      }
+    },
+    error: (message, data = {}) => {
+      if (logLevels.error >= minLevelValue) {
+        console.error(JSON.stringify({ level: 'error', message, ...data }));
+      }
+    }
+  };
+}
+
+// src/index.ts
+import { 
+  setup,
+  createCloudflareHandler,
+  createDurableObject
+} from "actor-core-cloudflare-workers";
+import { Router } from 'itty-router';
+import { chatRoom } from "./actors/chat-room";
+import { roomDirectory } from "./actors/room-directory";
+import { createLogger } from "./utils/logger";
+
+// Create logger
+const logger = createLogger(
+  (typeof process !== 'undefined' && process.env.LOG_LEVEL) || 'info'
+);
+
+// Set up the ActorCore application
+const app = setup({
+  actors: {
+    chatRoom,
+    roomDirectory
+  }
+});
+
+// Create a router for HTTP endpoints
+const router = Router();
+
+// Define routes
+router.get('/', () => new Response('Chat App with ActorCore on Cloudflare Workers'));
+
+// Room directory API
+router.get('/api/rooms', async (request, env) => {
+  try {
+    const client = app.createClient();
+    const directory = await client.roomDirectory.get();
+    const rooms = await directory.listRooms();
+    
+    return new Response(
+      JSON.stringify({ rooms }),
+      {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      }
+    );
+  } catch (error) {
+    logger.error('Failed to list rooms', { error: error.message });
+    
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+router.post('/api/rooms', async (request, env) => {
+  try {
+    const data = await request.json();
+    const { roomId, name } = data;
+    
+    if (!roomId) {
+      return new Response(
+        JSON.stringify({ error: "Room ID is required" }),
+        { 
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+    
+    const client = app.createClient();
+    const directory = await client.roomDirectory.get();
+    const result = await directory.createRoom(roomId, name || roomId);
+    
+    return new Response(
+      JSON.stringify(result),
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  } catch (error) {
+    logger.error('Failed to create room', { error: error.message });
+    
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: error.message.includes("already exists") ? 409 : 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+// Room API
+router.get('/api/rooms/:roomId', async (request, env) => {
+  try {
+    const { roomId } = request.params;
+    
+    const client = app.createClient();
+    const directory = await client.roomDirectory.get();
+    
+    try {
+      // Try to get room info
+      const room = await directory.getRoom(roomId);
+      
+      // Get chat room
+      const chat = await client.chatRoom.getWithId(roomId, {
+        params: {
+          userId: 'api-user',
+          username: 'API'
+        }
+      });
+      
+      // Get room info
+      const roomInfo = await chat.getRoomInfo();
+      
+      return new Response(
+        JSON.stringify({ ...room, ...roomInfo }),
+        {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        }
+      );
+    } catch (error) {
+      // Room doesn't exist
+      return new Response(
+        JSON.stringify({ error: `Room ${roomId} not found` }),
+        { 
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+  } catch (error) {
+    logger.error('Failed to get room', { error: error.message });
+    
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+// Chat messages API
+router.get('/api/rooms/:roomId/messages', async (request, env) => {
+  try {
+    const { roomId } = request.params;
+    
+    const client = app.createClient();
+    
+    try {
+      // Get chat room
+      const chat = await client.chatRoom.getWithId(roomId, {
+        params: {
+          userId: 'api-user',
+          username: 'API'
+        }
+      });
+      
+      // Get messages
+      const messages = await chat.getMessages();
+      
+      return new Response(
+        JSON.stringify({ messages }),
+        {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        }
+      );
+    } catch (error) {
+      // Room doesn't exist
+      return new Response(
+        JSON.stringify({ error: `Room ${roomId} not found` }),
+        { 
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+  } catch (error) {
+    logger.error('Failed to get messages', { error: error.message });
+    
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+});
+
+// Create the fetch handler that combines ActorCore and HTTP routes
+const fetchHandler = async (request, env, ctx) => {
+  // Log incoming request
+  const url = new URL(request.url);
+  logger.info('Received request', { 
+    path: url.pathname,
+    method: request.method
+  });
+  
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400'
+      }
+    });
+  }
+  
+  // Handle ActorCore WebSocket and RPC requests
+  const actorHandler = createCloudflareHandler(app);
+  
+  // Check if this is an actor request (WebSocket or RPC)
+  if (
+    request.url.includes('/ws') || 
+    request.headers.get('Upgrade') === 'websocket'
+  ) {
+    return actorHandler(request, env, ctx);
+  }
+  
+  // Add CORS headers to all responses
+  const response = await router.handle(request, env, ctx) || new Response('Not found', { status: 404 });
+  
+  // Add CORS headers
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  };
+  
+  // Clone the response to add headers
+  const corsResponse = new Response(response.body, response);
+  
+  // Add CORS headers
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    corsResponse.headers.set(key, value);
+  });
+  
+  return corsResponse;
+};
+
+// Export the combined fetch handler
+export default { fetch: fetchHandler };
+
+// Export the Durable Object
+export const ActorDurableObject = createDurableObject(app);
+```
+
+## Optimizing for Production
+
+Here are some best practices for production-ready ActorCore applications on Cloudflare Workers:
+
+1. **Minimize Actor State Size**: Keep state small to improve performance
+2. **Use Efficient Serialization**: Actor state is serialized/deserialized frequently
+3. **Cache Computation Results**: For expensive operations
+4. **Implement Proper Error Handling**: Catch and log errors appropriately
+5. **Version Your Durable Objects**: Use migrations for schema changes
+6. **Add Monitoring**: Use Cloudflare Analytics and custom metrics
+7. **Include Proper Logging**: For debugging production issues
+8. **Set Up CI/CD**: Automate deployments with GitHub Actions or similar tools
+9. **Implement Rate Limiting**: Protect against abuse
+10. **Use Custom Domains**: For production applications
+
+## Best Practices for Cloudflare Workers
+
+1. **Handle CORS Properly**: For browser-based clients
+2. **Optimize for Cold Starts**: Minimize initialization code
+3. **Use Efficient Storage Patterns**: Optimize Durable Object usage
+4. **Implement Proper Authentication**: Secure your application
+5. **Set Up Monitoring**: Monitor performance and errors
+6. **Use Custom Error Pages**: For better user experience
+7. **Implement Caching**: Use Cloudflare's edge cache when appropriate
+8. **Test Thoroughly**: Ensure your application works reliably
+9. **Document Your API**: For easy integration and maintenance
+10. **Stay Within Limits**: Be aware of Cloudflare Workers limits
+
+By following these best practices, you can build robust, scalable ActorCore applications on Cloudflare Workers that take full advantage of the global edge network.

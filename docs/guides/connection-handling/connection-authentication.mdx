@@ -1,0 +1,393 @@
+---
+title: Connection Authentication
+description: Validate clients before allowing connections to actors
+---
+
+# Connection Authentication
+
+Securing your actors is essential for production applications. ActorCore provides several hooks to validate client connections and enforce authentication.
+
+## Basic Connection Validation
+
+Use `onBeforeConnect` to validate connection parameters:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+const secureActor = actor({
+  state: { /* ... */ },
+  
+  // Validate connection parameters
+  onBeforeConnect: (c, { params }) => {
+    // Check for required auth token
+    if (!params.authToken) {
+      throw new Error("Authentication token required");
+    }
+    
+    // Validate token (implement your validation logic)
+    const isValid = validateToken(params.authToken);
+    if (!isValid) {
+      throw new Error("Invalid authentication token");
+    }
+    
+    // If we get here, the connection is allowed
+  },
+  
+  actions: {
+    // Only authenticated users can call these actions
+    getData: (c) => {
+      return { sensitive: "data" };
+    }
+  }
+});
+
+// Simplified token validation function
+function validateToken(token) {
+  // In a real app, this would verify JWT signatures, check expiration, etc.
+  return token === "valid-token";
+}
+```
+
+## Connection State with User Information
+
+Use `createConnState` to store user information with the connection:
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { verifyJWT } from "./auth";
+
+interface UserData {
+  id: string;
+  username: string;
+  email: string;
+  roles: string[];
+}
+
+const userPortal = actor({
+  state: {
+    // Global actor state
+    users: {},
+    resources: {}
+  },
+  
+  // Validate and extract user data from token
+  onBeforeConnect: async (c, { params }) => {
+    if (!params.token) {
+      throw new UserError("Authentication required", { code: "auth_required" });
+    }
+    
+    try {
+      // Verify JWT token and extract payload
+      const userData = await verifyJWT(params.token);
+      
+      // We'll store this in connection state in createConnState
+      return userData;
+    } catch (error) {
+      throw new UserError("Invalid authentication token", { 
+        code: "invalid_token", 
+        meta: { message: error.message } 
+      });
+    }
+  },
+  
+  // Set up connection state with user data
+  createConnState: (c, { params, authData }) => {
+    // authData contains the data returned from onBeforeConnect
+    const userData: UserData = authData;
+    
+    return {
+      userId: userData.id,
+      username: userData.username,
+      roles: userData.roles,
+      lastActivity: Date.now()
+    };
+  },
+  
+  actions: {
+    // Action that checks permissions
+    accessResource: (c, resourceId) => {
+      // Get the resource
+      const resource = c.state.resources[resourceId];
+      if (!resource) {
+        throw new UserError("Resource not found", { code: "not_found" });
+      }
+      
+      // Check if user has required role
+      if (resource.requiredRole && !c.conn.state.roles.includes(resource.requiredRole)) {
+        throw new UserError("Access denied", { 
+          code: "forbidden",
+          meta: { requiredRole: resource.requiredRole }
+        });
+      }
+      
+      // Update last activity
+      c.conn.state.lastActivity = Date.now();
+      
+      return resource.data;
+    }
+  }
+});
+```
+
+## Role-Based Access Control
+
+Implement role-based authorization:
+
+```typescript
+import { actor, UserError } from "actor-core";
+
+// Define permission checking helper
+function checkPermission(conn, requiredRole) {
+  if (!conn.state.roles.includes(requiredRole)) {
+    throw new UserError("Permission denied", {
+      code: "forbidden",
+      meta: { requiredRole }
+    });
+  }
+}
+
+const adminPortal = actor({
+  state: {
+    settings: {
+      maintenanceMode: false,
+      userRegistration: true,
+      logLevel: "info"
+    },
+    auditLog: []
+  },
+  
+  createConnState: (c, { params }) => {
+    // In a real app, verify the token and extract data
+    // This is simplified for the example
+    return {
+      userId: params.userId,
+      username: params.username,
+      roles: params.roles || ["user"]
+    };
+  },
+  
+  actions: {
+    // Regular user action
+    getSettings: (c) => {
+      // All authenticated users can view settings
+      return c.state.settings;
+    },
+    
+    // Admin-only action
+    updateSettings: (c, newSettings) => {
+      // Check if user has admin role
+      checkPermission(c.conn, "admin");
+      
+      // Update settings
+      c.state.settings = {
+        ...c.state.settings,
+        ...newSettings
+      };
+      
+      // Log the action
+      c.state.auditLog.push({
+        action: "updateSettings",
+        user: c.conn.state.username,
+        changes: newSettings,
+        timestamp: Date.now()
+      });
+      
+      return c.state.settings;
+    },
+    
+    // Super-admin action
+    enableMaintenanceMode: (c) => {
+      // Require super-admin role
+      checkPermission(c.conn, "super-admin");
+      
+      c.state.settings.maintenanceMode = true;
+      
+      // Notify all users
+      c.broadcast("maintenanceModeEnabled", {
+        message: "System entering maintenance mode",
+        estimatedDuration: "1 hour"
+      });
+      
+      return true;
+    }
+  }
+});
+```
+
+## Authentication with External Service
+
+Integrate with an external auth service:
+
+```typescript
+import { actor, UserError } from "actor-core";
+import { auth } from "./auth-service";
+
+const secureService = actor({
+  state: { /* application state */ },
+  
+  createVars: () => ({
+    // Cache for token validation results
+    tokenCache: new Map(),
+    // Time-to-live for cache entries (10 minutes)
+    cacheTTL: 10 * 60 * 1000
+  }),
+  
+  onBeforeConnect: async (c, { params }) => {
+    const token = params.token;
+    
+    if (!token) {
+      throw new UserError("Authentication required");
+    }
+    
+    try {
+      // Check cache first
+      const cachedData = c.vars.tokenCache.get(token);
+      if (cachedData && cachedData.expires > Date.now()) {
+        return cachedData.userData;
+      }
+      
+      // Validate with external service
+      const userData = await auth.verifyToken(token);
+      
+      // Cache the result
+      c.vars.tokenCache.set(token, {
+        userData,
+        expires: Date.now() + c.vars.cacheTTL
+      });
+      
+      return userData;
+    } catch (error) {
+      throw new UserError("Authentication failed", {
+        code: "auth_failed",
+        meta: { message: error.message }
+      });
+    }
+  },
+  
+  createConnState: (c, { authData }) => {
+    return {
+      user: authData,
+      connectedAt: Date.now()
+    };
+  },
+  
+  // Clean expired cache entries periodically
+  onStart: (c) => {
+    c.schedule.after(c.vars.cacheTTL, "cleanTokenCache");
+  },
+  
+  actions: {
+    cleanTokenCache: (c) => {
+      const now = Date.now();
+      for (const [token, data] of c.vars.tokenCache.entries()) {
+        if (data.expires <= now) {
+          c.vars.tokenCache.delete(token);
+        }
+      }
+      
+      // Schedule next cleanup
+      c.schedule.after(c.vars.cacheTTL, "cleanTokenCache");
+    }
+  }
+});
+```
+
+## JWT Authentication Example
+
+A complete example using JWT tokens:
+
+```typescript
+import { actor, UserError } from "actor-core";
+import jwt from "jsonwebtoken";
+
+const authSecret = process.env.JWT_SECRET || "your-secret-key";
+
+const secureAPI = actor({
+  state: {
+    data: {},
+    users: {}
+  },
+  
+  onBeforeConnect: (c, { params }) => {
+    const token = params.token;
+    
+    if (!token) {
+      throw new UserError("Authentication required");
+    }
+    
+    try {
+      // Verify JWT token
+      const decoded = jwt.verify(token, authSecret);
+      
+      // Check if user exists
+      if (!c.state.users[decoded.sub]) {
+        throw new UserError("User not found");
+      }
+      
+      // Check if token is expired
+      if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+        throw new UserError("Token expired");
+      }
+      
+      return decoded;
+    } catch (err) {
+      if (err instanceof jwt.JsonWebTokenError) {
+        throw new UserError("Invalid token");
+      }
+      throw err;
+    }
+  },
+  
+  createConnState: (c, { authData }) => {
+    return {
+      userId: authData.sub,
+      permissions: authData.permissions || [],
+      exp: authData.exp
+    };
+  },
+  
+  actions: {
+    // Action to create a new JWT token (usually called by a login endpoint)
+    createToken: (c, userId, password) => {
+      // This would normally be part of a separate auth service
+      const user = c.state.users[userId];
+      
+      if (!user || user.password !== hashPassword(password)) {
+        throw new UserError("Invalid credentials");
+      }
+      
+      // Create token payload
+      const payload = {
+        sub: userId,
+        name: user.name,
+        permissions: user.permissions,
+        exp: Math.floor(Date.now() / 1000) + (60 * 60) // 1 hour
+      };
+      
+      // Sign token
+      const token = jwt.sign(payload, authSecret);
+      
+      return { token };
+    }
+  }
+});
+
+// Simplified password hashing
+function hashPassword(password) {
+  // In a real app, use a proper hashing algorithm
+  return password;
+}
+```
+
+## Best Practices
+
+1. **Always validate connections**: Use `onBeforeConnect` for all production actors
+2. **Return minimal info**: Only expose necessary user info in connection state
+3. **Use proper token validation**: Verify signatures, check expiration, and validate claims
+4. **Cache validation results**: For external auth services, cache validation results to improve performance
+5. **Use secure tokens**: Use JWTs or similar tokens with proper signatures and expirations
+6. **Check permissions in actions**: Validate that users have the required permissions for each action
+7. **Keep secrets secure**: Store auth secrets in environment variables, not in code
+8. **Implement token refresh**: For long-lived connections, implement token refresh mechanics
+
+By implementing proper authentication, you can secure your actors and ensure that only authorized clients can access your application's functionality.

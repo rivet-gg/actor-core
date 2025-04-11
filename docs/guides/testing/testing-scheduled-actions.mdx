@@ -1,0 +1,585 @@
+---
+title: Testing Scheduled Actions
+description: Test that scheduled actions execute as expected
+---
+
+# Testing Scheduled Actions
+
+Scheduled actions are a key feature of ActorCore, allowing you to defer operations to a later time. Testing that these scheduled actions execute correctly is essential for building reliable applications. This guide shows how to effectively test scheduled tasks and time-based operations.
+
+## Testing Delayed Actions
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test simple delayed action
+test("reminder should trigger after delay", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to reminder service
+  const reminderService = await client.reminderService.get();
+  
+  // Create promise to capture reminder event
+  const reminderPromise = new Promise(resolve => {
+    reminderService.once("reminderTriggered", (reminder) => {
+      resolve(reminder);
+    });
+  });
+  
+  // Create a reminder for 5 minutes from now
+  const message = "Test reminder";
+  const delayMs = 5 * 60 * 1000; // 5 minutes
+  
+  const reminderId = await reminderService.createReminder(message, delayMs);
+  expect(reminderId).toBeTruthy();
+  
+  // Fast-forward time to trigger the reminder
+  await vi.advanceTimersByTimeAsync(delayMs);
+  
+  // Get the triggered reminder
+  const reminder = await reminderPromise;
+  
+  // Verify reminder details
+  expect(reminder).toEqual({
+    id: reminderId,
+    message,
+    triggeredAt: expect.any(Number)
+  });
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Multiple Scheduled Actions
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test multiple scheduled actions
+test("scheduler should execute tasks in the correct order", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to task scheduler
+  const scheduler = await client.taskScheduler.get();
+  
+  // Collect executed tasks in order
+  const executedTasks = [];
+  
+  // Listen for task execution events
+  scheduler.on("taskExecuted", (taskId, taskName) => {
+    executedTasks.push({ taskId, taskName });
+  });
+  
+  // Schedule several tasks with different delays
+  const task1Id = await scheduler.scheduleTask("Task 1", 1000); // 1 second
+  const task2Id = await scheduler.scheduleTask("Task 2", 3000); // 3 seconds
+  const task3Id = await scheduler.scheduleTask("Task 3", 2000); // 2 seconds
+  
+  // Fast-forward time to trigger all tasks
+  await vi.advanceTimersByTimeAsync(500); // No tasks yet
+  expect(executedTasks).toHaveLength(0);
+  
+  await vi.advanceTimersByTimeAsync(600); // Triggers Task 1 (at 1.1s)
+  expect(executedTasks).toHaveLength(1);
+  expect(executedTasks[0].taskName).toBe("Task 1");
+  
+  await vi.advanceTimersByTimeAsync(1000); // Triggers Task 3 (at 2.1s)
+  expect(executedTasks).toHaveLength(2);
+  expect(executedTasks[1].taskName).toBe("Task 3");
+  
+  await vi.advanceTimersByTimeAsync(1000); // Triggers Task 2 (at 3.1s)
+  expect(executedTasks).toHaveLength(3);
+  expect(executedTasks[2].taskName).toBe("Task 2");
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Recurring Tasks
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test recurring tasks
+test("recurring task should execute on schedule", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to recurring task manager
+  const taskManager = await client.recurringTaskManager.get();
+  
+  // Count executions
+  let executionCount = 0;
+  
+  // Listen for task execution events
+  taskManager.on("taskExecuted", () => {
+    executionCount++;
+  });
+  
+  // Create a recurring task that runs every minute
+  const interval = 60 * 1000; // 1 minute
+  const taskId = await taskManager.createRecurringTask("Hourly Task", interval);
+  
+  // Advance time to trigger the task multiple times
+  for (let i = 0; i < 5; i++) {
+    await vi.advanceTimersByTimeAsync(interval);
+    expect(executionCount).toBe(i + 1);
+  }
+  
+  // Pause the task
+  await taskManager.pauseTask(taskId);
+  
+  // Advance time again - should not trigger while paused
+  await vi.advanceTimersByTimeAsync(interval * 2);
+  expect(executionCount).toBe(5); // Still 5, no new executions
+  
+  // Resume the task
+  await taskManager.resumeTask(taskId);
+  
+  // Advance time once more - should trigger again
+  await vi.advanceTimersByTimeAsync(interval);
+  expect(executionCount).toBe(6);
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Specific Timestamps
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test scheduling at specific timestamps
+test("calendar should trigger events at specific times", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  // Set a fixed "now" time for testing
+  const now = new Date("2023-05-15T12:00:00Z").getTime();
+  vi.setSystemTime(now);
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to calendar
+  const calendar = await client.calendar.get();
+  
+  // Listen for events
+  const triggeredEvents = [];
+  calendar.on("eventTriggered", (event) => {
+    triggeredEvents.push(event);
+  });
+  
+  // Schedule events at specific times
+  const event1Time = new Date("2023-05-15T14:00:00Z").getTime(); // 2 hours from now
+  const event2Time = new Date("2023-05-15T13:30:00Z").getTime(); // 1.5 hours from now
+  const event3Time = new Date("2023-05-16T09:00:00Z").getTime(); // Next day
+  
+  await calendar.scheduleEvent("Meeting", "Team Meeting", event1Time);
+  await calendar.scheduleEvent("Lunch", "Lunch Break", event2Time);
+  await calendar.scheduleEvent("Presentation", "Client Presentation", event3Time);
+  
+  // Advance to first event (Lunch at 13:30)
+  await vi.advanceTimersByTimeAsync(event2Time - now);
+  expect(triggeredEvents).toHaveLength(1);
+  expect(triggeredEvents[0].title).toBe("Lunch");
+  
+  // Advance to second event (Meeting at 14:00)
+  await vi.advanceTimersByTimeAsync(event1Time - event2Time);
+  expect(triggeredEvents).toHaveLength(2);
+  expect(triggeredEvents[1].title).toBe("Meeting");
+  
+  // Advance to third event (Presentation next day)
+  await vi.advanceTimersByTimeAsync(event3Time - event1Time);
+  expect(triggeredEvents).toHaveLength(3);
+  expect(triggeredEvents[2].title).toBe("Presentation");
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Task Cancellation
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test cancellation of scheduled tasks
+test("scheduled tasks should be cancellable", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to task manager
+  const taskManager = await client.taskManager.get();
+  
+  // Listen for task execution
+  const executedTasks = [];
+  taskManager.on("taskExecuted", (taskId) => {
+    executedTasks.push(taskId);
+  });
+  
+  // Schedule several tasks
+  const task1 = await taskManager.scheduleTask("Task 1", 1000);
+  const task2 = await taskManager.scheduleTask("Task 2", 2000);
+  const task3 = await taskManager.scheduleTask("Task 3", 3000);
+  
+  // Cancel the second task
+  await taskManager.cancelTask(task2);
+  
+  // Advance time past all scheduled times
+  await vi.advanceTimersByTimeAsync(4000);
+  
+  // Should execute tasks 1 and 3, but not 2
+  expect(executedTasks).toHaveLength(2);
+  expect(executedTasks).toContain(task1);
+  expect(executedTasks).toContain(task3);
+  expect(executedTasks).not.toContain(task2);
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Rescheduling
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test rescheduling of tasks
+test("tasks should be reschedulable", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to scheduler
+  const scheduler = await client.scheduler.get();
+  
+  // Listen for task execution
+  const executionTimes = [];
+  scheduler.on("taskExecuted", (taskId, executedAt) => {
+    executionTimes.push({ taskId, executedAt });
+  });
+  
+  // Schedule a task for 1 minute from now
+  const now = Date.now();
+  const originalTime = now + 60000; // 1 minute
+  
+  const taskId = await scheduler.scheduleAtTime("Original Task", originalTime);
+  
+  // Reschedule to 30 seconds from now
+  const newTime = now + 30000; // 30 seconds
+  await scheduler.rescheduleTask(taskId, newTime);
+  
+  // Advance time to just after new scheduled time
+  await vi.advanceTimersByTimeAsync(31000);
+  
+  // Should have executed at the new time
+  expect(executionTimes).toHaveLength(1);
+  expect(executionTimes[0].taskId).toBe(taskId);
+  
+  // Should not execute again at the original time
+  await vi.advanceTimersByTimeAsync(30000); // Advance to just after original time
+  expect(executionTimes).toHaveLength(1); // Still just one execution
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Actor Restart with Scheduled Tasks
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test that scheduled tasks survive actor restarts
+test("scheduled tasks should persist through actor restart", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client, restartActor } = await setupTest(t, app);
+  
+  // Connect to reminder service
+  const reminderService = await client.reminderService.get();
+  
+  // Create promise to capture reminder event
+  const reminderPromise = new Promise(resolve => {
+    reminderService.once("reminderTriggered", (reminder) => {
+      resolve(reminder);
+    });
+  });
+  
+  // Schedule a reminder for 5 minutes from now
+  const message = "Persistent reminder";
+  const delayMs = 5 * 60 * 1000; // 5 minutes
+  
+  const reminderId = await reminderService.createReminder(message, delayMs);
+  
+  // Simulate actor restart
+  await restartActor(reminderService);
+  
+  // Re-connect to the actor after restart
+  const reconnectedService = await client.reminderService.get();
+  
+  // Set up event listener again (the connection is new)
+  reconnectedService.once("reminderTriggered", (reminder) => {
+    reminderPromise.resolve(reminder);
+  });
+  
+  // Advance time to trigger the reminder
+  await vi.advanceTimersByTimeAsync(delayMs);
+  
+  // Get the triggered reminder
+  const reminder = await reminderPromise;
+  
+  // Verify reminder was triggered despite restart
+  expect(reminder).toEqual({
+    id: reminderId,
+    message,
+    triggeredAt: expect.any(Number)
+  });
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Time Zones
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test scheduling with time zones
+test("scheduler should handle time zone conversions", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  // Set a fixed time for testing
+  const now = new Date("2023-05-15T12:00:00Z").getTime(); // Noon UTC
+  vi.setSystemTime(now);
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to timezone-aware scheduler
+  const tzScheduler = await client.timezoneScheduler.get();
+  
+  // Listen for events
+  const executedTasks = [];
+  tzScheduler.on("taskExecuted", (task) => {
+    executedTasks.push(task);
+  });
+  
+  // Schedule tasks in different time zones
+  // 1. New York (EDT) - 3pm local time (7pm UTC)
+  await tzScheduler.scheduleInTimezone(
+    "New York Meeting", 
+    "15:00", 
+    "America/New_York"
+  );
+  
+  // 2. London (BST) - 5pm local time (4pm UTC)
+  await tzScheduler.scheduleInTimezone(
+    "London Call", 
+    "17:00", 
+    "Europe/London"
+  );
+  
+  // 3. Tokyo (JST) - 9am local time (midnight UTC)
+  await tzScheduler.scheduleInTimezone(
+    "Tokyo Breakfast", 
+    "09:00", 
+    "Asia/Tokyo"
+  );
+  
+  // Advance to London event time (4pm UTC)
+  const londonEventTime = new Date("2023-05-15T16:00:00Z").getTime();
+  await vi.advanceTimersByTimeAsync(londonEventTime - now);
+  
+  expect(executedTasks).toHaveLength(1);
+  expect(executedTasks[0].name).toBe("London Call");
+  
+  // Advance to New York event time (7pm UTC)
+  const nyEventTime = new Date("2023-05-15T19:00:00Z").getTime();
+  await vi.advanceTimersByTimeAsync(nyEventTime - londonEventTime);
+  
+  expect(executedTasks).toHaveLength(2);
+  expect(executedTasks[1].name).toBe("New York Meeting");
+  
+  // Advance to Tokyo event time (midnight UTC, next day)
+  const tokyoEventTime = new Date("2023-05-16T00:00:00Z").getTime();
+  await vi.advanceTimersByTimeAsync(tokyoEventTime - nyEventTime);
+  
+  expect(executedTasks).toHaveLength(3);
+  expect(executedTasks[2].name).toBe("Tokyo Breakfast");
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Task Dependencies
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test tasks with dependencies
+test("workflow tasks should execute in dependency order", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to workflow manager
+  const workflowManager = await client.workflowManager.get();
+  
+  // Track execution order
+  const executedTasks = [];
+  workflowManager.on("taskCompleted", (taskId, taskName) => {
+    executedTasks.push({ taskId, taskName });
+  });
+  
+  // Create a workflow with dependent tasks
+  const workflowId = await workflowManager.createWorkflow("Test Workflow", [
+    { id: "task1", name: "First Task" },
+    { id: "task2", name: "Second Task", dependsOn: ["task1"] },
+    { id: "task3", name: "Third Task", dependsOn: ["task1"] },
+    { id: "task4", name: "Fourth Task", dependsOn: ["task2", "task3"] }
+  ]);
+  
+  // Start the workflow
+  await workflowManager.startWorkflow(workflowId);
+  
+  // Advance time a bit to let tasks execute
+  await vi.advanceTimersByTimeAsync(100);
+  
+  // Only the first task should execute immediately
+  expect(executedTasks).toHaveLength(1);
+  expect(executedTasks[0].taskName).toBe("First Task");
+  
+  // Advance more to let dependent tasks execute
+  await vi.advanceTimersByTimeAsync(100);
+  
+  // Tasks 2 and 3 should execute (in any order) after task 1
+  expect(executedTasks).toHaveLength(3);
+  
+  const task2Index = executedTasks.findIndex(t => t.taskName === "Second Task");
+  const task3Index = executedTasks.findIndex(t => t.taskName === "Third Task");
+  
+  expect(task2Index).toBeGreaterThan(0);
+  expect(task3Index).toBeGreaterThan(0);
+  
+  // Advance more to let the final dependent task execute
+  await vi.advanceTimersByTimeAsync(100);
+  
+  // Task 4 should execute last
+  expect(executedTasks).toHaveLength(4);
+  expect(executedTasks[3].taskName).toBe("Fourth Task");
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Testing Task Execution Time
+
+```typescript
+import { test, expect, vi } from "vitest";
+import { setupTest } from "actor-core/test";
+import { app } from "../src/app";
+
+// Test exact execution timing
+test("tasks should execute at exact scheduled times", async (t) => {
+  // Setup test with mock timers
+  vi.useFakeTimers();
+  
+  // Set initial time
+  const startTime = 1000000000000; // A nice round number
+  vi.setSystemTime(startTime);
+  
+  const { client } = await setupTest(t, app);
+  
+  // Connect to precision scheduler
+  const scheduler = await client.precisionScheduler.get();
+  
+  // Track execution timestamps
+  const executions = [];
+  scheduler.on("taskExecuted", (taskId, executionTime) => {
+    executions.push({ taskId, executionTime });
+  });
+  
+  // Schedule tasks with precise timing
+  const task1Time = startTime + 5000; // 5 seconds from now
+  const task2Time = startTime + 7500; // 7.5 seconds from now
+  
+  const task1 = await scheduler.scheduleAtExactTime("Precise Task 1", task1Time);
+  const task2 = await scheduler.scheduleAtExactTime("Precise Task 2", task2Time);
+  
+  // Advance to just before first task
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(executions).toHaveLength(0);
+  
+  // Advance to exactly first task time
+  await vi.advanceTimersByTimeAsync(1);
+  expect(executions).toHaveLength(1);
+  expect(executions[0].taskId).toBe(task1);
+  expect(executions[0].executionTime).toBe(task1Time);
+  
+  // Advance to just before second task
+  await vi.advanceTimersByTimeAsync(2499);
+  expect(executions).toHaveLength(1);
+  
+  // Advance to exactly second task time
+  await vi.advanceTimersByTimeAsync(1);
+  expect(executions).toHaveLength(2);
+  expect(executions[1].taskId).toBe(task2);
+  expect(executions[1].executionTime).toBe(task2Time);
+  
+  // Clean up
+  vi.useRealTimers();
+});
+```
+
+## Best Practices
+
+1. **Use mock timers**: Use Vitest's mock timers to test time-based functionality
+2. **Test specific timestamps**: Verify tasks execute at the correct times
+3. **Test task order**: Ensure multiple tasks execute in the expected order
+4. **Verify cancellation**: Test that cancelled tasks don't execute
+5. **Check rescheduling**: Verify that rescheduled tasks execute at the new time
+6. **Test dependencies**: Ensure tasks with dependencies execute in the correct order
+7. **Test persistence**: Verify tasks survive actor restarts
+8. **Handle time zones**: Test time zone conversions for scheduled tasks
+9. **Test recurring tasks**: Verify recurring tasks execute repeatedly at the correct intervals
+10. **Be precise**: Test exact execution timing for time-critical applications
+
+By thoroughly testing scheduled actions, you can ensure that your time-based features work reliably, even across actor restarts and in different time zones.

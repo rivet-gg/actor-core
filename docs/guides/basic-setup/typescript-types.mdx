@@ -1,0 +1,240 @@
+---
+title: Basic TypeScript Types
+description: Use TypeScript for end-to-end type safety with ActorCore
+---
+
+# Basic TypeScript Types
+
+ActorCore is designed with TypeScript in mind, providing end-to-end type safety from your server to client applications. This guide shows best practices for typing your actors and clients.
+
+## Defining State Types
+
+```typescript
+import { actor, setup } from "actor-core";
+
+// Define explicit interface for state
+interface GameState {
+  players: Record<string, {
+    score: number;
+    position: { x: number; y: number };
+    lastActive: number;
+  }>;
+  gameStatus: "waiting" | "playing" | "finished";
+  startTime?: number;
+  endTime?: number;
+}
+
+// Use the interface in your actor definition
+const gameRoom = actor({
+  // Initial state with proper typing
+  state: {
+    players: {},
+    gameStatus: "waiting"
+  } as GameState,
+  
+  actions: {
+    // Actions now have typed state access
+    addPlayer: (c, playerId: string) => {
+      c.state.players[playerId] = {
+        score: 0,
+        position: { x: 0, y: 0 },
+        lastActive: Date.now()
+      };
+      return Object.keys(c.state.players).length;
+    }
+  }
+});
+```
+
+## Exporting App Type
+
+```typescript
+import { setup } from "actor-core";
+import { chatRoom } from "./actors/chat-room";
+import { userProfile } from "./actors/user-profile";
+
+// Create the app
+export const app = setup({
+  actors: {
+    chatRoom,
+    userProfile
+  }
+});
+
+// Export the app type for clients
+export type App = typeof app;
+```
+
+## Type-Safe Client Access
+
+```typescript
+import { createClient } from "actor-core/client";
+import type { App } from "./app";
+
+// Create type-safe client
+const client = createClient<App>("http://localhost:6420");
+
+// TypeScript knows which actors are available
+const chatRoom = await client.chatRoom.get();
+
+// TypeScript knows which actions are available and their parameter types
+await chatRoom.sendMessage("Hello, world!"); // ✅ Correct
+await chatRoom.sendMessage(123); // ❌ Type error - expected string
+await chatRoom.invalidAction(); // ❌ Type error - action does not exist
+```
+
+## Typing Connection State
+
+```typescript
+import { actor } from "actor-core";
+
+// Define connection state type
+interface ChatConnection {
+  userId: string;
+  username: string;
+  joinedAt: number;
+  lastActivity: number;
+}
+
+const chatRoom = actor({
+  state: { messages: [] },
+  
+  // Type-safe connection state
+  createConnState: (c, { params }): ChatConnection => {
+    if (!params.userId || !params.username) {
+      throw new Error("Missing user information");
+    }
+    
+    return {
+      userId: params.userId,
+      username: params.username,
+      joinedAt: Date.now(),
+      lastActivity: Date.now()
+    };
+  },
+  
+  // Actions now have typed connection state
+  actions: {
+    sendMessage: (c, message: string) => {
+      // TypeScript knows the shape of c.conn.state
+      const { username } = c.conn.state;
+      c.broadcast("newMessage", username, message);
+    }
+  }
+});
+```
+
+## Using Type Utilities
+
+ActorCore provides utility types for working with actor contexts:
+
+```typescript
+import { actor, ActionContextOf } from "actor-core";
+
+const gameRoom = actor({
+  state: { /* ... */ },
+  actions: { /* ... */ }
+});
+
+// Helper function with properly typed context
+function updatePlayerScore(
+  context: ActionContextOf<typeof gameRoom>, 
+  playerId: string, 
+  points: number
+) {
+  if (!context.state.players[playerId]) {
+    throw new Error("Player not found");
+  }
+  
+  context.state.players[playerId].score += points;
+  context.broadcast("scoreUpdated", playerId, context.state.players[playerId].score);
+}
+
+// Use in an action
+gameRoom.actions.addPoints = (c, playerId: string, points: number) => {
+  updatePlayerScore(c, playerId, points);
+};
+```
+
+## Complete Type-Safe Actor Example
+
+```typescript
+import { actor, setup, UserError } from "actor-core";
+
+// Event types
+type ChatEvents = {
+  "messageReceived": [message: string, sender: string, timestamp: number];
+  "userJoined": [username: string];
+  "userLeft": [username: string];
+};
+
+// Connection state type
+interface ChatConnState {
+  username: string;
+  joinedAt: number;
+}
+
+// Actor state type
+interface ChatState {
+  messages: Array<{
+    sender: string;
+    content: string;
+    timestamp: number;
+  }>;
+  userCount: number;
+}
+
+// Fully typed actor
+const chatRoom = actor({
+  state: {
+    messages: [],
+    userCount: 0
+  } as ChatState,
+  
+  createConnState: (c, { params }): ChatConnState => {
+    if (!params.username) {
+      throw new UserError("Username is required");
+    }
+    
+    return {
+      username: params.username,
+      joinedAt: Date.now()
+    };
+  },
+  
+  onConnect: (c) => {
+    c.state.userCount++;
+    c.broadcast<ChatEvents["userJoined"]>("userJoined", c.conn.state.username);
+  },
+  
+  onDisconnect: (c) => {
+    c.state.userCount--;
+    c.broadcast<ChatEvents["userLeft"]>("userLeft", c.conn.state.username);
+  },
+  
+  actions: {
+    sendMessage: (c, content: string) => {
+      const message = {
+        sender: c.conn.state.username,
+        content,
+        timestamp: Date.now()
+      };
+      
+      c.state.messages.push(message);
+      c.broadcast<ChatEvents["messageReceived"]>(
+        "messageReceived", 
+        message.content, 
+        message.sender, 
+        message.timestamp
+      );
+      
+      return message;
+    }
+  }
+});
+
+export const app = setup({ actors: { chatRoom } });
+export type App = typeof app;
+```
+
+With proper TypeScript types, you get compile-time validation, better IDE support, and reduce runtime errors in your ActorCore applications.
