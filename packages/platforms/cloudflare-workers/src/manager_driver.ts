@@ -7,6 +7,7 @@ import type {
 } from "actor-core/driver-helpers";
 import { Bindings } from "./mod";
 import { logger } from "./log";
+import { ManagerInspector } from "actor-core/inspector";
 
 // Define metadata type for CloudflareKV
 interface KVMetadata {
@@ -40,6 +41,11 @@ const KEYS = {
 };
 
 export class CloudflareWorkersManagerDriver implements ManagerDriver {
+	inspector: ManagerInspector = new ManagerInspector(this, {
+		getAllActors: async () => [],
+		getAllTypesOfActors: async () => [],
+	});
+
 	async getForId({
 		c,
 		baseUrl,
@@ -186,6 +192,8 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 			tags,
 		});
 
+		this.inspector.onActorsChange([]);
+
 		// Store combined actor metadata (name and tags)
 		const actorData: ActorData = { name, tags };
 		await c.env.ACTOR_KV.put(
@@ -240,4 +248,3 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 function buildActorEndpoint(baseUrl: string, actorId: string) {
 	return `${baseUrl}/actors/${actorId}`;
 }
-
