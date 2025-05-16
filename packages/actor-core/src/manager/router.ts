@@ -1,9 +1,11 @@
-import { ActorsRequestSchema } from "@/manager/protocol/mod";
-import { Hono, type Context as HonoContext } from "hono";
+import { Hono, Next, type Context as HonoContext } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "./log";
-import { assertUnreachable } from "@/common/utils";
-import { handleRouteError, handleRouteNotFound } from "@/common/router";
+import {
+	handleRouteError,
+	handleRouteNotFound,
+	loggerMiddleware,
+} from "@/common/router";
 import type { DriverConfig } from "@/driver-helpers/config";
 import type { AppConfig } from "@/app/config";
 import {
@@ -11,10 +13,59 @@ import {
 	type ManagerInspectorConnHandler,
 } from "@/inspector/manager";
 import type { UpgradeWebSocket } from "hono/ws";
+import { ConnectQuerySchema } from "./protocol/query";
+import * as errors from "@/actor/errors";
+import type { ActorQuery, ConnectQuery } from "./protocol/query";
+import { assertUnreachable } from "@/actor/utils";
+import invariant from "invariant";
+import {
+	type ConnectionHandlers,
+	handleSseConnect,
+	handleRpc,
+	handleConnectionMessage,
+	getRequestEncoding,
+	handleWebSocketConnect,
+} from "@/actor/router_endpoints";
+import { ManagerDriver } from "./driver";
+import { setUncaughtExceptionCaptureCallback } from "process";
+import { Encoding, serialize } from "@/actor/protocol/serde";
+import { deconstructError } from "@/common/utils";
+import { WSContext } from "hono/ws";
+import { ToClient } from "@/actor/protocol/message/to-client";
+import { upgradeWebSocket } from "hono/deno";
+
+type ProxyMode =
+	| {
+			inline: {
+				handlers: ConnectionHandlers;
+			};
+	  }
+	| {
+			custom: {
+				onProxyRequest: OnProxyRequest;
+				onProxyWebSocket: OnProxyWebSocket;
+			};
+	  };
+
+export type BuildProxyEndpoint = (c: HonoContext, actorId: string) => string;
+
+export type OnProxyRequest = (
+	c: HonoContext,
+	actorRequest: Request,
+	actorId: string,
+	meta?: unknown,
+) => Promise<Response>;
+
+export type OnProxyWebSocket = (
+	c: HonoContext,
+	path: string,
+	actorId: string,
+	meta?: unknown,
+) => Promise<Response>;
 
 type ManagerRouterHandler = {
 	onConnectInspector?: ManagerInspectorConnHandler;
-	upgradeWebSocket?: UpgradeWebSocket;
+	proxyMode: ProxyMode;
 };
 
 export function createManagerRouter(
@@ -29,9 +80,21 @@ export function createManagerRouter(
 	const driver = driverConfig.drivers.manager;
 	const app = new Hono();
 
-	// Apply CORS middleware if configured
+	const upgradeWebSocket = driverConfig.getUpgradeWebSocket?.(app);
+
+	app.use("*", loggerMiddleware(logger()));
+
 	if (appConfig.cors) {
-		app.use("*", cors(appConfig.cors));
+		app.use("*", async (c, next) => {
+			const path = c.req.path;
+
+			// Don't apply to WebSocket routes
+			if (path === "/actors/connect/websocket") {
+				return next();
+			}
+
+			return cors(appConfig.cors)(c, next);
+		});
 	}
 
 	app.get("/", (c) => {
@@ -44,92 +107,320 @@ export function createManagerRouter(
 		return c.text("ok");
 	});
 
-	app.post("/manager/actors", async (c: HonoContext) => {
-		const { query } = ActorsRequestSchema.parse(await c.req.json());
-		logger().debug("query", { query });
+	app.get("/actors/connect/websocket", async (c) => {
+		invariant(upgradeWebSocket, "WebSockets not supported");
 
-		const url = new URL(c.req.url);
+		let encoding: Encoding | undefined;
+		try {
+			encoding = getRequestEncoding(c.req);
+			logger().debug("websocket connection request received", { encoding });
 
-		// Determine base URL to build endpoints from
-		//
-		// This is used to build actor endpoints
-		let baseUrl = url.origin;
-		if (appConfig.basePath) {
-			const basePath = appConfig.basePath;
-			if (!basePath.startsWith("/"))
-				throw new Error("config.basePath must start with /");
-			if (basePath.endsWith("/"))
-				throw new Error("config.basePath must not end with /");
-			baseUrl += basePath;
-		}
-
-		// Get the actor from the manager
-		let actorOutput: { endpoint: string };
-		if ("getForId" in query) {
-			const output = await driver.getForId({
-				c,
-				baseUrl: baseUrl,
-				actorId: query.getForId.actorId,
+			const params = ConnectQuerySchema.safeParse({
+				query: parseQuery(c),
+				encoding: c.req.query("encoding"),
+				params: c.req.query("params"),
 			});
-			if (!output)
-				throw new Error(
-					`Actor does not exist for ID: ${query.getForId.actorId}`,
-				);
-			actorOutput = output;
-		} else if ("getForKey" in query) {
-			const existingActor = await driver.getWithKey({
-				c,
-				baseUrl: baseUrl,
-				name: query.getForKey.name,
-				key: query.getForKey.key,
-			});
-			if (!existingActor) {
-				throw new Error("Actor not found with key.");
-			}
-			actorOutput = existingActor;
-		} else if ("getOrCreateForKey" in query) {
-			const existingActor = await driver.getWithKey({
-				c,
-				baseUrl: baseUrl,
-				name: query.getOrCreateForKey.name,
-				key: query.getOrCreateForKey.key,
-			});
-			if (existingActor) {
-				// Actor exists
-				actorOutput = existingActor;
-			} else {
-				// Create if needed
-				actorOutput = await driver.createActor({
-					c,
-					baseUrl: baseUrl,
-					name: query.getOrCreateForKey.name,
-					key: query.getOrCreateForKey.key,
-					region: query.getOrCreateForKey.region,
+			if (!params.success) {
+				logger().error("invalid connection parameters", {
+					error: params.error,
 				});
+				throw new errors.InvalidQueryFormat(params.error);
 			}
-		} else if ("create" in query) {
-			actorOutput = await driver.createActor({
-				c,
-				baseUrl: baseUrl,
-				name: query.create.name,
-				key: query.create.key,
-				region: query.create.region,
-			});
-		} else {
-			assertUnreachable(query);
-		}
 
-		return c.json({
-			endpoint: actorOutput.endpoint,
-			supportedTransports: ["websocket", "sse"],
-		});
+			// Get the actor ID and meta
+			const { actorId, meta } = await queryActor(c, params.data.query, driver);
+			logger().debug("found actor for websocket connection", { actorId, meta });
+			invariant(actorId, "missing actor id");
+
+			if ("inline" in handler.proxyMode) {
+				logger().debug("using inline proxy mode for websocket connection");
+				invariant(
+					handler.proxyMode.inline.handlers.onConnectWebSocket,
+					"onConnectWebSocket not provided",
+				);
+
+				const onConnectWebSocket =
+					handler.proxyMode.inline.handlers.onConnectWebSocket;
+				return upgradeWebSocket((c) => {
+					return handleWebSocketConnect(
+						c,
+						appConfig,
+						driverConfig,
+						onConnectWebSocket,
+						actorId,
+					)();
+				})(c, noopNext());
+			} else if ("custom" in handler.proxyMode) {
+				logger().debug("using custom proxy mode for websocket connection");
+				let pathname = `/connect/websocket?encoding=${params.data.encoding}`;
+				if (params.data.params) {
+					pathname += `&params=${params.data.params}`;
+				}
+				return await handler.proxyMode.custom.onProxyWebSocket(
+					c,
+					pathname,
+					actorId,
+					meta,
+				);
+			} else {
+				assertUnreachable(handler.proxyMode);
+			}
+		} catch (error) {
+			// If we receive an error during setup, we send the error and close the socket immediately
+			//
+			// We have to return the error over WS since WebSocket clients cannot read vanilla HTTP responses
+
+			const { code, message, metadata } = deconstructError(error, logger(), {
+				wsEvent: "setup",
+			});
+
+			return await upgradeWebSocket(() => ({
+				onOpen: async (_evt: unknown, ws: WSContext) => {
+					if (encoding) {
+						try {
+							// Serialize and send the connection error
+							const errorMsg: ToClient = {
+								b: {
+									ce: {
+										c: code,
+										m: message,
+										md: metadata,
+									},
+								},
+							};
+
+							// Send the error message to the client
+							invariant(encoding, "encoding should be defined");
+							const serialized = serialize(errorMsg, encoding);
+							ws.send(serialized);
+
+							// Close the connection with an error code
+							ws.close(1011, code);
+						} catch (serializeError) {
+							logger().error("failed to send error to websocket client", {
+								error: serializeError,
+							});
+							ws.close(1011, "internal error during error handling");
+						}
+					} else {
+						// We don't know the encoding so we send what we can
+						ws.close(1011, code);
+					}
+				},
+			}))(c, noopNext());
+		}
+	});
+
+	// Proxy SSE connection to actor
+	app.get("/actors/connect/sse", async (c) => {
+		logger().debug("sse connection request received");
+		try {
+			const params = ConnectQuerySchema.safeParse({
+				query: parseQuery(c),
+				encoding: c.req.query("encoding"),
+				params: c.req.query("params"),
+			});
+
+			if (!params.success) {
+				logger().error("invalid connection parameters", {
+					error: params.error,
+				});
+				throw new errors.InvalidQueryFormat(params.error);
+			}
+
+			const query = params.data.query;
+
+			// Get the actor ID and meta
+			const { actorId, meta } = await queryActor(c, query, driver);
+			invariant(actorId, "Missing actor ID");
+			logger().debug("sse connection to actor", { actorId, meta });
+
+			// Handle based on mode
+			if ("inline" in handler.proxyMode) {
+				logger().debug("using inline proxy mode for sse connection");
+				// Use the shared SSE handler
+				return handleSseConnect(
+					c,
+					appConfig,
+					driverConfig,
+					handler.proxyMode.inline.handlers.onConnectSse,
+					actorId,
+				);
+			} else if ("custom" in handler.proxyMode) {
+				logger().debug("using custom proxy mode for sse connection");
+				const url = new URL("http://actor/connect/sse");
+				url.searchParams.set("encoding", params.data.encoding);
+				if (params.data.params) {
+					url.searchParams.set("params", params.data.params);
+				}
+				const proxyRequest = new Request(url, c.req.raw);
+				return await handler.proxyMode.custom.onProxyRequest(
+					c,
+					proxyRequest,
+					actorId,
+					meta,
+				);
+			} else {
+				assertUnreachable(handler.proxyMode);
+			}
+		} catch (error) {
+			logger().error("error setting up sse proxy", { error });
+
+			// Use ProxyError if it's not already an ActorError
+			if (!(error instanceof errors.ActorError)) {
+				throw new errors.ProxyError("SSE connection", error);
+			} else {
+				throw error;
+			}
+		}
+	});
+
+	// Proxy RPC calls to actor
+	app.post("/actors/rpc/:rpc", async (c) => {
+		try {
+			const rpcName = c.req.param("rpc");
+			logger().debug("rpc call received", { rpcName });
+
+			// Get query parameters for actor lookup
+			const queryParam = c.req.query("query");
+			if (!queryParam) {
+				logger().error("missing query parameter for rpc");
+				throw new errors.MissingRequiredParameters(["query"]);
+			}
+
+			// Parse the query JSON and validate with schema
+			let parsedQuery: ActorQuery;
+			try {
+				parsedQuery = JSON.parse(queryParam as string);
+			} catch (error) {
+				logger().error("invalid query json for rpc", { error });
+				throw new errors.InvalidQueryJSON(error);
+			}
+
+			// Get the actor ID and meta
+			const { actorId, meta } = await queryActor(c, parsedQuery, driver);
+			logger().debug("found actor for rpc", { actorId, meta });
+			invariant(actorId, "Missing actor ID");
+
+			// Handle based on mode
+			if ("inline" in handler.proxyMode) {
+				logger().debug("using inline proxy mode for rpc call");
+				// Use shared RPC handler with direct parameter
+				return handleRpc(
+					c,
+					appConfig,
+					driverConfig,
+					handler.proxyMode.inline.handlers.onRpc,
+					rpcName,
+					actorId,
+				);
+			} else if ("custom" in handler.proxyMode) {
+				logger().debug("using custom proxy mode for rpc call");
+				const url = new URL(`http://actor/rpc/${encodeURIComponent(rpcName)}`);
+				const proxyRequest = new Request(url, c.req.raw);
+				return await handler.proxyMode.custom.onProxyRequest(
+					c,
+					proxyRequest,
+					actorId,
+					meta,
+				);
+			} else {
+				assertUnreachable(handler.proxyMode);
+			}
+		} catch (error) {
+			logger().error("error in rpc handler", { error });
+
+			// Use ProxyError if it's not already an ActorError
+			if (!(error instanceof errors.ActorError)) {
+				throw new errors.ProxyError("RPC call", error);
+			} else {
+				throw error;
+			}
+		}
+	});
+
+	// Proxy connection messages to actor
+	app.post("/actors/connections/:conn/message", async (c) => {
+		logger().debug("connection message request received");
+		try {
+			const connId = c.req.param("conn");
+			const connToken = c.req.query("connectionToken");
+			const encoding = c.req.query("encoding");
+
+			// Get query parameters for actor lookup
+			const queryParam = c.req.query("query");
+			if (!queryParam) {
+				throw new errors.MissingRequiredParameters(["query"]);
+			}
+
+			// Check other required parameters
+			const missingParams: string[] = [];
+			if (!connToken) missingParams.push("connectionToken");
+			if (!encoding) missingParams.push("encoding");
+
+			if (missingParams.length > 0) {
+				throw new errors.MissingRequiredParameters(missingParams);
+			}
+
+			// Parse the query JSON and validate with schema
+			let parsedQuery: ActorQuery;
+			try {
+				parsedQuery = JSON.parse(queryParam as string);
+			} catch (error) {
+				logger().error("invalid query json", { error });
+				throw new errors.InvalidQueryJSON(error);
+			}
+
+			// Get the actor ID and meta
+			const { actorId, meta } = await queryActor(c, parsedQuery, driver);
+			invariant(actorId, "Missing actor ID");
+			logger().debug("connection message to actor", { connId, actorId, meta });
+
+			// Handle based on mode
+			if ("inline" in handler.proxyMode) {
+				logger().debug("using inline proxy mode for connection message");
+				// Use shared connection message handler with direct parameters
+				return handleConnectionMessage(
+					c,
+					appConfig,
+					handler.proxyMode.inline.handlers.onConnMessage,
+					connId,
+					connToken as string,
+					actorId,
+				);
+			} else if ("custom" in handler.proxyMode) {
+				logger().debug("using custom proxy mode for connection message");
+				const url = new URL(`http://actor/connections/${connId}/message`);
+				url.searchParams.set("connectionToken", connToken!);
+				url.searchParams.set("encoding", encoding!);
+				const proxyRequest = new Request(url, c.req.raw);
+				return await handler.proxyMode.custom.onProxyRequest(
+					c,
+					proxyRequest,
+					actorId,
+					meta,
+				);
+			} else {
+				assertUnreachable(handler.proxyMode);
+			}
+		} catch (error) {
+			logger().error("error proxying connection message", { error });
+
+			// Use ProxyError if it's not already an ActorError
+			if (!(error instanceof errors.ActorError)) {
+				throw new errors.ProxyError("connection message", error);
+			} else {
+				throw error;
+			}
+		}
 	});
 
 	if (appConfig.inspector.enabled) {
+		logger().debug("setting up inspector routes");
 		app.route(
-			"/manager/inspect",
+			"/inspect",
 			createManagerInspectorRouter(
-				handler.upgradeWebSocket,
+				upgradeWebSocket,
 				handler.onConnectInspector,
 				appConfig.inspector,
 			),
@@ -140,4 +431,100 @@ export function createManagerRouter(
 	app.onError(handleRouteError);
 
 	return app;
+}
+
+/**
+ * Query the manager driver to get or create an actor based on the provided query
+ */
+export async function queryActor(
+	c: HonoContext,
+	query: ActorQuery,
+	driver: ManagerDriver,
+): Promise<{ actorId: string; meta?: unknown }> {
+	logger().debug("querying actor", { query });
+	let actorOutput: { actorId: string; meta?: unknown };
+	if ("getForId" in query) {
+		const output = await driver.getForId({
+			c,
+			actorId: query.getForId.actorId,
+		});
+		if (!output) throw new errors.ActorNotFound(query.getForId.actorId);
+		actorOutput = output;
+	} else if ("getForKey" in query) {
+		const existingActor = await driver.getWithKey({
+			c,
+			name: query.getForKey.name,
+			key: query.getForKey.key,
+		});
+		if (!existingActor) {
+			throw new errors.ActorNotFound(
+				`${query.getForKey.name}:${JSON.stringify(query.getForKey.key)}`,
+			);
+		}
+		actorOutput = existingActor;
+	} else if ("getOrCreateForKey" in query) {
+		const existingActor = await driver.getWithKey({
+			c,
+			name: query.getOrCreateForKey.name,
+			key: query.getOrCreateForKey.key,
+		});
+		if (existingActor) {
+			// Actor exists
+			actorOutput = existingActor;
+		} else {
+			// Create if needed
+			const createOutput = await driver.createActor({
+				c,
+				name: query.getOrCreateForKey.name,
+				key: query.getOrCreateForKey.key,
+				region: query.getOrCreateForKey.region,
+			});
+			actorOutput = {
+				actorId: createOutput.actorId,
+				meta: createOutput.meta,
+			};
+		}
+	} else if ("create" in query) {
+		const createOutput = await driver.createActor({
+			c,
+			name: query.create.name,
+			key: query.create.key,
+			region: query.create.region,
+		});
+		actorOutput = {
+			actorId: createOutput.actorId,
+			meta: createOutput.meta,
+		};
+	} else {
+		throw new errors.InvalidQueryFormat("Invalid query format");
+	}
+
+	logger().debug("actor query result", {
+		actorId: actorOutput.actorId,
+		meta: actorOutput.meta,
+	});
+	return { actorId: actorOutput.actorId, meta: actorOutput.meta };
+}
+
+/** Generates a `Next` handler to pass to middleware in order to be able to call arbitrary middleware. */
+function noopNext(): Next {
+	return async () => {};
+}
+
+function parseQuery(c: HonoContext): unknown {
+	// Get query parameters for actor lookup
+	const queryParam = c.req.query("query");
+	if (!queryParam) {
+		logger().error("missing query parameter for rpc");
+		throw new errors.MissingRequiredParameters(["query"]);
+	}
+
+	// Parse the query JSON and validate with schema
+	try {
+		const parsed = JSON.parse(queryParam as string);
+		return parsed;
+	} catch (error) {
+		logger().error("invalid query json for rpc", { error });
+		throw new errors.InvalidQueryJSON(error);
+	}
 }

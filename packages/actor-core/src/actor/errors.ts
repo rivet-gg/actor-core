@@ -15,6 +15,7 @@ interface ActorErrorOptions extends ErrorOptions {
 export class ActorError extends Error {
 	public public: boolean;
 	public metadata?: unknown;
+	public statusCode: number = 500;
 
 	constructor(
 		public readonly code: string,
@@ -24,6 +25,22 @@ export class ActorError extends Error {
 		super(message, { cause: opts?.cause });
 		this.public = opts?.public ?? false;
 		this.metadata = opts?.metadata;
+		
+		// Set status code based on error type
+		if (opts?.public) {
+			this.statusCode = 400; // Bad request for public errors
+		}
+	}
+
+	/**
+	 * Serialize error for HTTP response
+	 */
+	serializeForHttp() {
+		return {
+			type: this.code,
+			message: this.message,
+			metadata: this.metadata,
+		};
 	}
 }
 
@@ -192,5 +209,75 @@ export class UserError extends ActorError {
 			public: true,
 			metadata: opts?.metadata,
 		});
+	}
+}
+
+// Proxy-related errors
+
+export class MissingRequiredParameters extends ActorError {
+	constructor(missingParams: string[]) {
+		super(
+			"missing_required_parameters", 
+			`Missing required parameters: ${missingParams.join(", ")}`,
+			{ public: true }
+		);
+	}
+}
+
+export class InvalidQueryJSON extends ActorError {
+	constructor(error?: unknown) {
+		super(
+			"invalid_query_json", 
+			`Invalid query JSON: ${error}`,
+			{ public: true, cause: error }
+		);
+	}
+}
+
+export class InvalidQueryFormat extends ActorError {
+	constructor(error?: unknown) {
+		super(
+			"invalid_query_format", 
+			`Invalid query format: ${error}`,
+			{ public: true, cause: error }
+		);
+	}
+}
+
+export class ActorNotFound extends ActorError {
+	constructor(identifier?: string) {
+		super(
+			"actor_not_found", 
+			identifier ? `Actor not found: ${identifier}` : "Actor not found",
+			{ public: true }
+		);
+	}
+}
+
+export class ProxyError extends ActorError {
+	constructor(operation: string, error?: unknown) {
+		super(
+			"proxy_error", 
+			`Error proxying ${operation}: ${error}`,
+			{ public: true, cause: error }
+		);
+	}
+}
+
+export class InvalidRpcRequest extends ActorError {
+	constructor(message: string) {
+		super("invalid_rpc_request", message, { public: true });
+	}
+}
+
+export class InvalidRequest extends ActorError {
+	constructor(message: string) {
+		super("invalid_request", message, { public: true });
+	}
+}
+
+export class InvalidParams extends ActorError {
+	constructor(message: string) {
+		super("invalid_params", message, { public: true });
 	}
 }
