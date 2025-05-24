@@ -1,0 +1,40 @@
+{
+  "name": "chat-app",
+  "version": "1.0.0",
+  "description": "Chat application using ActorCore",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "yarn build && node dist/index.js",
+    "dev": "npx @actor-core/cli@latest dev src/app.ts",
+    "client": "tsx src/client.ts",
+    "frontend": "cd frontend && yarn dev",
+    "test": "vitest",
+    "deploy": "rivet deploy",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@actor-core/file-system": "^0.7.9",
+    "@actor-core/memory": "^0.7.9",
+    "@actor-core/nodejs": "^0.7.9",
+    "@actor-core/rivet": "^0.7.9",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "actor-core": "^0.7.9",
+    "ai": "^4.3.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "hono": "^4.6.0",
+    "mime-types": "^2.1.35",
+    "readline": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^18.15.11",
+    "tsx": "^3.12.6",
+    "typescript": "^5.0.4",
+    "vitest": "^1.3.1"
+  },
+  "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
+}

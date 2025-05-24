@@ -1,0 +1,22 @@
+[project]
+name = "chat-app"
+version = "0.1.0"
+
+[actors]
+chat_room = { source = "src/chat-room.ts" }
+web_server = { source = "src/web-server-actor.ts" }
+
+[build]
+command = "yarn build"
+output = "dist"
+
+[deploy]
+topology = "coordinate"
+min_instances = 1
+max_instances = 10
+target_load = 0.75
+
+[env]
+ACTOR_CORE_LOG_LEVEL = "info"
+CORS_ORIGIN = "https://${PROJECT_DOMAIN}"
+NODE_ENV = "production" 
