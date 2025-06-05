@@ -2,15 +2,15 @@
 title: "prompt.txt"
 ---
 
-## Using `prompt.txt` for ActorCore
+## Using `prompt.txt` for RivetKit
 
-The `prompt.txt` file provides LLMs with comprehensive information about ActorCore's conventions, terminology, and best practices. To use it:
+The `prompt.txt` file provides LLMs with comprehensive information about RivetKit's conventions, terminology, and best practices. To use it:
 
 1. Copy the contents below to your clipboard
 2. Paste it into your preferred AI assistant (Claude, ChatGPT, Cursor rules, Windsurf Rules, etc.)
-3. Ask your ActorCore development questions after the prompt
+3. Ask your RivetKit development questions after the prompt
 
-This structured information helps AI tools provide more accurate and contextually relevant guidance for your ActorCore development tasks.
+This structured information helps AI tools provide more accurate and contextually relevant guidance for your RivetKit development tasks.
 
 ## AI Editor Guides
 
@@ -25,14 +25,14 @@ Read the integration guide for your editor of choice:
 ## `prompt.txt`
 
 ````markdown prompt.txt
-# ActorCore Development Guide
+# RivetKit Development Guide
 
-This guide contains essential information for working with the ActorCore project.
+This guide contains essential information for working with the RivetKit project.
 
 ## Project Naming and Terminology
 
-- Use `ActorCore` when referring to the project in documentation and plain English
-- Use `actor-core` (kebab-case) when referring to the project in code, package names, and imports
+- Use `RivetKit` when referring to the project in documentation and plain English
+- Use `rivetkit` (kebab-case) when referring to the project in code, package names, and imports
 
 ### Core Concepts
 
@@ -45,9 +45,9 @@ This guide contains essential information for working with the ActorCore project
 ## Build Commands
 
 - **Type Check:** `yarn check-types` - Verify TypeScript types
-- **Check specific package:** `yarn check-types -F actor-core` - Check only specified package
+- **Check specific package:** `yarn check-types -F rivetkit` - Check only specified package
 - **Build:** `yarn build` - Production build using Turbopack
-- **Build specific package:** `yarn build -F actor-core` - Build only specified package
+- **Build specific package:** `yarn build -F rivetkit` - Build only specified package
 - **Format:** `yarn fmt` - Format code with Biome
 
 ## Driver Implementations
@@ -61,7 +61,7 @@ Available driver implementations:
 
 ## Platform Support
 
-ActorCore supports multiple runtime environments:
+RivetKit supports multiple runtime environments:
 
 - **NodeJS**: Standard Node.js server environment
 - **Cloudflare Workers**: Edge computing environment
@@ -92,7 +92,7 @@ When importing from workspace packages, always check the package's `package.json
 ## Project Structure
 
 - Monorepo with Yarn workspaces and Turborepo
-- Core code in `packages/actor-core/`
+- Core code in `packages/rivetkit/`
 - Platform implementations in `packages/platforms/`
 - Driver implementations in `packages/drivers/`
 

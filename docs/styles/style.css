@@ -1,4 +1,4 @@
-/* ActorCore custom styles */
+/* RivetKit custom styles */
 
 .landing-root {
   text-align: center;
@@ -16,32 +16,6 @@
   width: 100%;
   max-width: 1800px;
   margin: 0 auto;
-}
-
-/* At 1025px and below, the nav bar starts overlapping with content
-   Add margin-top to offset the nav bar height */
-@media (max-width: 1025px) {
-  .landing-root {
-    margin-top: 120px;
-  }
-}
-
-@media (max-width: 1024px) {
-  .landing-root {
-    padding: 0 40px;
-  }
-}
-
-@media (max-width: 768px) {
-  .landing-root {
-    padding: 0 32px;
-  }
-}
-
-@media (max-width: 480px) {
-  .landing-root {
-    padding: 0 20px;
-  }
 }
 
 .landing-section-heading {
@@ -73,12 +47,11 @@
 }
 
 .landing-hero {
-  padding-top: 120px;
-  padding-bottom: 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
+  min-height: calc(100vh - 200px);
 }
 
 @media (max-width: 768px) {
@@ -312,6 +285,165 @@
   overflow: hidden;
   text-overflow: ellipsis;
   margin-right: 12px;
+}
+
+/* Libraries grid */
+.libraries-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 48px;
+}
+
+.library-box {
+  position: relative;
+  background: rgb(10, 10, 10);
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0.5rem 0;
+  width: 100%;
+  aspect-ratio: 0.75 / 1; /* Taller than wide */
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.library-box-purple {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-box-blue {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-box-orange {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-box-green {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-box-purple:hover, .library-box-purple:focus {
+  background: rgba(168, 85, 247, 0.07);
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+.library-box-blue:hover, .library-box-blue:focus {
+  background: rgba(59, 130, 246, 0.07);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.library-box-orange:hover, .library-box-orange:focus {
+  background: rgba(255, 79, 0, 0.07);
+  border-color: rgba(255, 79, 0, 0.5);
+}
+
+.library-box-green:hover, .library-box-green:focus {
+  background: rgba(16, 185, 129, 0.07);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.library-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+}
+
+.library-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.library-icon {
+  flex-shrink: 0;
+}
+
+.library-text {
+  text-align: left;
+  flex: 1;
+}
+
+.library-box h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  color: white;
+  text-align: left;
+}
+
+.library-description {
+  margin-top: 0;
+  flex: 1;
+}
+
+.library-description p {
+  font-size: 0.9rem;
+  line-height: 1.5rem;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+  text-align: left;
+}
+
+.library-description p + p {
+  margin-top: 0.75rem;
+}
+
+.library-replaces {
+  font-size: 0.8rem !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.library-description .highlight {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+/* Remove hover color change for highlights */
+
+.library-arrow {
+  align-self: flex-end;
+  margin-top: 16px;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.library-box:hover .library-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (max-width: 1200px) {
+  .libraries-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .libraries-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .libraries-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .library-box {
+    aspect-ratio: auto;
+    min-height: 180px;
+    padding: 1.5rem;
+  }
 }
 
 /* Feature icons */
@@ -645,6 +777,69 @@
 
 .text-center {
   text-align: center;
+}
+
+/* Platform icons row */
+.platform-icons-container {
+  margin: 24px 0;
+  text-align: center;
+}
+
+.platform-icons-label {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+.platform-icons-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.platform-icon-wrapper {
+  position: relative;
+  cursor: pointer;
+  padding: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.platform-icon {
+  width: 36px;
+  height: 36px;
+  filter: grayscale(100%) brightness(70%);
+  opacity: 0.7;
+  transition: all 0.25s ease;
+}
+
+.platform-icon-wrapper:hover .platform-icon {
+  filter: grayscale(0%) brightness(100%);
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.platform-icon-tooltip {
+  position: absolute;
+  bottom: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.platform-icon-wrapper:hover .platform-icon-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .comparison-table-footnotes {

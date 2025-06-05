@@ -9,7 +9,7 @@ import StepRunStudio from "/snippets/step-run-studio.mdx";
 import StepDeploy from "/snippets/step-deploy.mdx";
 import SetupNextSteps from "/snippets/setup-next-steps.mdx";
 
-The ActorCore Python client provides a way to connect to and interact with actors from Python applications.
+The RivetKit Python client provides a way to connect to and interact with actors from Python applications.
 
 <MvpWarning />
 
@@ -32,10 +32,10 @@ The ActorCore Python client provides a way to connect to and interact with actor
   </Step>
 
   <Step title="Add dependencies">
-    Install the ActorCore client package:
+    Install the RivetKit client package:
     
     ```sh
-    pip install actor-core-client
+    pip install rivetkit-client
     ```
   </Step>
 
@@ -104,7 +104,7 @@ The ActorCore Python client provides a way to connect to and interact with actor
 
     In the code above, subscription is done with `on_event` callbacks, but you can also
     subscribe directly with `receive()` calls, using the `SimpleClient` (and `AsyncSimpleClient`)
-    interfaces. See our [sample usage](https://github.com/rivet-gg/actor-core/tree/main/clients/python/tests/test_e2e_simple_async.py) for more details.
+    interfaces. See our [sample usage](https://github.com/rivet-gg/rivetkit/tree/main/clients/python/tests/test_e2e_simple_async.py) for more details.
   </Step>
 
   <StepRunStudio />

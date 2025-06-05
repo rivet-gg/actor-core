@@ -70,7 +70,7 @@ This starts the ActorCore server that hosts the coding agent:
 ```
 npm run dev
 # Or using the ActorCore CLI
-npx @actor-core/cli dev src/actors/app.ts
+npx rivetkit/cli dev src/actors/app.ts
 ```
 
 ##### Running the Webhook Server (for Linear integration)
