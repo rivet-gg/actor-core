@@ -1,22 +1,22 @@
 // CTA titles array
 const CTA_TITLES = [
-  "Performance in every act - thanks to ActorCore.",
-  "Scale without drama - only with ActorCore.",
-  "It's time your backend took center-stage - with ActorCore.",
-  "SQLite the spotlight on performance - with ActorCore.",
-  "Backend scalability: the SQL - starring ActorCore.",
-  "Take your state to the edge - ActorCore makes it easy.",
-  "No state fright - just scalability with ActorCore.",
-  "Act now, deploy at the edge - with ActorCore.",
-  "Lights, camera, serverless - powered by ActorCore.",
-  "Your backend deserves a standing ovation - ActorCore delivers.",
-  "Cue your backend's best performance - enter ActorCore.",
-  "Backend performance worth applauding - only with ActorCore.",
-  "Put your backend center-stage - with ActorCore.",
-  "Make your backend the main actor - with ActorCore.",
-  "Give your backend its big break - use ActorCore.",
-  "Serverless, with no intermissions - powered by ActorCore.",
-  "Set the stage for serverless success - with ActorCore."
+  "Performance in every act - thanks to RivetKit.",
+  "Scale without drama - only with RivetKit.",
+  "It's time your backend took center-stage - with RivetKit.",
+  "SQLite the spotlight on performance - with RivetKit.",
+  "Backend scalability: the SQL - starring RivetKit.",
+  "Take your state to the edge - RivetKit makes it easy.",
+  "No state fright - just scalability with RivetKit.",
+  "Act now, deploy at the edge - with RivetKit.",
+  "Lights, camera, serverless - powered by RivetKit.",
+  "Your backend deserves a standing ovation - RivetKit delivers.",
+  "Cue your backend's best performance - enter RivetKit.",
+  "Backend performance worth applauding - only with RivetKit.",
+  "Put your backend center-stage - with RivetKit.",
+  "Make your backend the main actor - with RivetKit.",
+  "Give your backend its big break - use RivetKit.",
+  "Serverless, with no intermissions - powered by RivetKit.",
+  "Set the stage for serverless success - with RivetKit."
 ];
 
 function initializeAllCTAs() {

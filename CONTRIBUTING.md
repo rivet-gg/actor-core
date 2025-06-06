@@ -25,6 +25,6 @@ $ ./scripts/e2e-publish.ts
    - Modifies yarnrc to point to the local registry, publishes the package, and then restores the original yarnrc.
 
 5. ```bash
-$ yarn workspace @actor-core/cli run test
+$ yarn workspace rivetkit/cli run test
 ```
    - Runs the tests for the CLI, which includes running the CLI (inside Docker) with different arguments and checking the output.
