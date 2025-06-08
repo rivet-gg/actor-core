@@ -1,4 +1,4 @@
-import { ActorDriver, AnyActorInstance } from "actor-core/driver-helpers";
+import { ActorDriver, AnyActorInstance } from "@rivetkit/actor/driver-helpers";
 import invariant from "invariant";
 import { KEYS } from "./actor-handler-do";
 

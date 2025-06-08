@@ -5,8 +5,8 @@ import type {
 	ActorOutput,
 	CreateInput,
 	GetOrCreateWithKeyInput,
-} from "actor-core/driver-helpers";
-import { ActorAlreadyExists } from "actor-core/errors";
+} from "@rivetkit/actor/driver-helpers";
+import { ActorAlreadyExists } from "@rivetkit/actor/errors";
 import { Bindings } from "./mod";
 import { logger } from "./log";
 import { serializeNameAndKey, serializeKey } from "./util";

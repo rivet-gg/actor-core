@@ -8,7 +8,7 @@ import ExtraNotes from "/snippets/platform-extra-notes.mdx";
 import StepStartFramework from "/snippets/step-start-framework.mdx";
 import StepUpdateClient from "/snippets/step-update-client.mdx";
 
-Bun provides a fast runtime environment for running ActorCore, with excellent performance for both development and production.
+Bun provides a fast runtime environment for running RivetKit, with excellent performance for both development and production.
 
 <MvpWarning />
 
@@ -21,15 +21,15 @@ Bun provides a fast runtime environment for running ActorCore, with excellent pe
     Install the Bun platform package:
     
     ```sh
-    bun add @actor-core/bun
+    bun add rivetkit/bun
     ```
   </Step>
 
   <Step title="Define your server">
-    Create a file `src/index.ts` to start your ActorCore server:
+    Create a file `src/index.ts` to start your RivetKit server:
 
     ```typescript src/index.ts
-    import { serve } from "@actor-core/bun";
+    import { serve } from "@rivetkit/bun";
     import { app } from "../actors/app";
 
     // Start the server with file-system driver (default)
@@ -55,7 +55,7 @@ Bun provides a fast runtime environment for running ActorCore, with excellent pe
 
 ## Using Different Drivers
 
-By default, ActorCore for Bun uses the file-system driver, which persists state between restarts.
+By default, RivetKit for Bun uses the file-system driver, which persists state between restarts.
 
 For simple deployments, you can switch between drivers with:
 

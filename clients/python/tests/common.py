@@ -42,7 +42,7 @@ def start_mock_server():
     # Build actor-core
     logger.info("Building actor-core")
     subprocess.run(
-        ["yarn", "build", "-F", "actor-core"],
+        ["yarn", "build", "-F", "@rivetkit/actor"],
         cwd=repo_root,
         check=True
     )
@@ -58,7 +58,7 @@ def start_mock_server():
     
     # Pack packages
     packages = [
-        ("actor-core", repo_root / "packages/actor-core"),
+        ("@rivetkit/actor", repo_root / "packages/actor-core"),
         ("nodejs", repo_root / "packages/platforms/nodejs"),
         ("memory", repo_root / "packages/drivers/memory"),
         ("file-system", repo_root / "packages/drivers/file-system")
@@ -66,7 +66,7 @@ def start_mock_server():
     
     logger.info("Packing packages (3 total)")
     for name, path in packages:
-        output_path = vendor_dir / f"actor-core-{name}.tgz"
+        output_path = vendor_dir / f"@rivetkit/actor-{name}.tgz"
         subprocess.run(
             ["yarn", "pack", "--out", str(output_path)],
             cwd=path,
@@ -88,7 +88,7 @@ def start_mock_server():
     port = get_free_port()
     server_script = f"""
 import {{ app }} from "./actors/app.ts";
-import {{ serve }} from "@actor-core/nodejs";
+import {{ serve }} from "@rivetkit/nodejs";
 
 serve(app, {{ port: {port}, mode: "memory" }});
 """
@@ -98,15 +98,15 @@ serve(app, {{ port: {port}, mode: "memory" }});
     # Create package.json
     logger.info("Creating package.json")
     package_json = {
-        "name": "actor-core-python-test",
+        "name": "@rivetkit/actor-python-test",
         "packageManager": "yarn@4.2.2",
         "private": True,
         "type": "module",
         "dependencies": {
-            "actor-core": f"file:{vendor_dir}/actor-core-actor-core.tgz",
-            "@actor-core/nodejs": f"file:{vendor_dir}/actor-core-nodejs.tgz",
-            "@actor-core/memory": f"file:{vendor_dir}/actor-core-memory.tgz",
-            "@actor-core/file-system": f"file:{vendor_dir}/actor-core-file-system.tgz",
+            "@rivetkit/actor": f"file:{vendor_dir}/actor-core-actor-core.tgz",
+            "@rivetkit/nodejs": f"file:{vendor_dir}/actor-core-nodejs.tgz",
+            "@rivetkit/memory": f"file:{vendor_dir}/actor-core-memory.tgz",
+            "@rivetkit/file-system": f"file:{vendor_dir}/actor-core-file-system.tgz",
         },
         "devDependencies": {
             "tsx": "^3.12.7"

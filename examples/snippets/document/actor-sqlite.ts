@@ -1,5 +1,5 @@
-import { actor } from "actor-core";
-import { drizzle } from "@actor-core/drizzle";
+import { actor } from "@rivetkit/actor";
+import { drizzle } from "@rivetkit/drizzle";
 import { documents, cursors } from "./schema";
 
 export type Cursor = { x: number, y: number, userId: string };

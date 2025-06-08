@@ -4,12 +4,12 @@ import {
 	createActorDurableObject,
 } from "./actor-handler-do";
 import { ConfigSchema, type InputConfig } from "./config";
-import { assertUnreachable } from "actor-core/utils";
+import { assertUnreachable } from "@rivetkit/actor/utils";
 import type { Hono } from "hono";
-import { PartitionTopologyManager } from "actor-core/topologies/partition";
+import { PartitionTopologyManager } from "@rivetkit/actor/topologies/partition";
 import { logger } from "./log";
 import { CloudflareWorkersManagerDriver } from "./manager-driver";
-import { ActorCoreApp } from "actor-core";
+import { ActorCoreApp } from "@rivetkit/actor";
 import { upgradeWebSocket } from "./websocket";
 
 /** Cloudflare Workers env */

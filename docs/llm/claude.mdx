@@ -1,19 +1,19 @@
 ---
-title: "Using Claude Code with ActorCore"
+title: "Using Claude Code with RivetKit"
 sidebarTitle: "Claude Code"
 ---
 
-[Claude Code](https://claude.ai/code) is a powerful CLI tool from Anthropic that integrates Claude directly into your development workflow. When working with ActorCore, you can enhance Claude's understanding of the codebase by providing project-specific context.
+[Claude Code](https://claude.ai/code) is a powerful CLI tool from Anthropic that integrates Claude directly into your development workflow. When working with RivetKit, you can enhance Claude's understanding of the codebase by providing project-specific context.
 
-## Setting Up CLAUDE.md for ActorCore
+## Setting Up CLAUDE.md for RivetKit
 
 The `CLAUDE.md` file serves as a memory file for Claude Code, containing important information about your project that persists between sessions.
 
-To set up an effective `CLAUDE.md` file for ActorCore:
+To set up an effective `CLAUDE.md` file for RivetKit:
 
 <Steps>
   <Step title="Get the template">
-    Copy the ActorCore [prompt.txt](/llm/prompt)
+    Copy the RivetKit [prompt.txt](/llm/prompt)
   </Step>
   <Step title="Create file">
     Create a `CLAUDE.md` file in your project root
@@ -26,15 +26,15 @@ To set up an effective `CLAUDE.md` file for ActorCore:
   </Step>
 </Steps>
 
-## Example Commands for ActorCore
+## Example Commands for RivetKit
 
-Here are some useful ways to leverage Claude Code with ActorCore:
+Here are some useful ways to leverage Claude Code with RivetKit:
 
 ### Understand the Codebase
 
 ```bash
-# Get an overview of ActorCore's architecture
-claude "explain the architecture of ActorCore and how the different topologies work"
+# Get an overview of RivetKit's architecture
+claude "explain the architecture of RivetKit and how the different topologies work"
 
 # Understand how actors communicate
 claude "explain how actors communicate with each other in the coordinate topology"

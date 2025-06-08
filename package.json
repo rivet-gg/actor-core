@@ -1,7 +1,7 @@
 {
   "private": true,
   "packageManager": "yarn@4.2.2",
-  "name": "@actor-core/workspace",
+  "name": "@rivetkit/workspace",
   "workspaces": [
     "packages/*",
     "packages/platforms/*",

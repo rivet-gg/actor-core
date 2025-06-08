@@ -1,4 +1,4 @@
-import type { ActorKey } from "actor-core";
+import type { ActorKey } from "@rivetkit/actor";
 
 export interface ActorState {
 	id: string;

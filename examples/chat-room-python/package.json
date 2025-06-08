@@ -4,14 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx @actor-core/cli@latest dev actors/app.ts",
+    "dev": "npx rivetkit/cli@latest dev actors/app.ts",
     "check-types": "tsc --noEmit",
     "pytest": "pytest tests/test_chat_room.py -v"
   },
   "devDependencies": {
-    "@actor-core/cli": "workspace:*",
+    "@rivetkit/actor": "workspace:*",
     "@types/node": "^22.13.9",
-    "actor-core": "workspace:*",
     "tsx": "^3.12.7",
     "typescript": "^5.5.2"
   },

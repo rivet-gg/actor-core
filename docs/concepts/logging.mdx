@@ -46,7 +46,7 @@ Consider this example:
 <CodeGroup>
 
 ```typescript structured_logging.ts
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const counter = actor({
   state: { count: 0 },
@@ -64,7 +64,7 @@ const counter = actor({
 ```
 
 ```typescript unstructured_logging.ts
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const counter = actor({
   state: { count: 0 },
@@ -92,7 +92,7 @@ Additionally, structured logs can be parsed and queried at scale using tools lik
 The logger is available in all lifecycle hooks:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const loggingExample = actor({
   state: { events: [] },

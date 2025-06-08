@@ -307,7 +307,7 @@
 
 ### Features
 
-* **@actor-core/cli:** add cli ([#642](https://github.com/rivet-gg/actor-core/issues/642)) ([d919f1a](https://github.com/rivet-gg/actor-core/commit/d919f1aa11972f0513f6ad5851965b7f469624cd))
+* **rivetkit/cli:** add cli ([#642](https://github.com/rivet-gg/actor-core/issues/642)) ([d919f1a](https://github.com/rivet-gg/actor-core/commit/d919f1aa11972f0513f6ad5851965b7f469624cd))
 * add config validation ([#648](https://github.com/rivet-gg/actor-core/issues/648)) ([3323988](https://github.com/rivet-gg/actor-core/commit/3323988f6ab3d5d9ba99ba113f6b8e4a7f4c5ec7))
 * add cors support ([#647](https://github.com/rivet-gg/actor-core/issues/647)) ([ef13939](https://github.com/rivet-gg/actor-core/commit/ef13939f57c333d19b1cafc29b003bce1ccb8cf9))
 * add release candidate support to publish script ([#660](https://github.com/rivet-gg/actor-core/issues/660)) ([f6c6adc](https://github.com/rivet-gg/actor-core/commit/f6c6adc8dd8fe9ceb237ba55be7f5953fe8047ec))

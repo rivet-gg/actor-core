@@ -1,12 +1,12 @@
-import { setupLogging } from "actor-core/log";
-import { stringifyError } from "actor-core/utils";
+import { setupLogging } from "@rivetkit/actor/log";
+import { stringifyError } from "@rivetkit/actor/utils";
 import type { ActorContext } from "@rivet-gg/actor-core";
 import { logger } from "./log";
 import { GetActorMeta, RivetManagerDriver } from "./manager-driver";
 import type { RivetClientConfig } from "./rivet-client";
 import type { RivetHandler } from "./util";
 import { createWebSocketProxy } from "./ws-proxy";
-import { PartitionTopologyManager } from "actor-core/topologies/partition";
+import { PartitionTopologyManager } from "@rivetkit/actor/topologies/partition";
 import { type InputConfig, ConfigSchema } from "./config";
 import { proxy } from "hono/proxy";
 import invariant from "invariant";

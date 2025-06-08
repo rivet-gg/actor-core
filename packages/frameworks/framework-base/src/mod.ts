@@ -5,7 +5,7 @@
 //	ExtractActorsFromApp,
 //	ClientRaw,
 //	AnyActorDefinition,
-//} from "actor-core/client";
+//} from "@rivetkit/actor/client";
 //
 ///**
 // * Shallow compare objects.

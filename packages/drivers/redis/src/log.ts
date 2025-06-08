@@ -1,4 +1,4 @@
-import { getLogger } from "actor-core/log";
+import { getLogger } from "@rivetkit/actor/log";
 
 export const LOGGER_NAME = "driver-redis";
 

@@ -1,11 +1,11 @@
-import { setupLogging } from "actor-core/log";
-import { stringifyError } from "actor-core/utils";
+import { setupLogging } from "@rivetkit/actor/log";
+import { stringifyError } from "@rivetkit/actor/utils";
 import type { ActorContext } from "@rivet-gg/actor-core";
 import { upgradeWebSocket } from "hono/deno";
 import { logger } from "./log";
 import type { RivetHandler } from "./util";
 import { deserializeKeyFromTag } from "./util";
-import { PartitionTopologyActor } from "actor-core/topologies/partition";
+import { PartitionTopologyActor } from "@rivetkit/actor/topologies/partition";
 import { ConfigSchema, type InputConfig } from "./config";
 import { RivetActorDriver } from "./actor-driver";
 import { rivetRequest } from "./rivet-client";
@@ -41,7 +41,7 @@ function createActorHandlerInner(inputConfig: InputConfig): RivetHandler {
 
 			// Initialization promise
 			const initializedPromise = Promise.withResolvers<void>();
-			if ((await ctx.kv.get(["actor-core", "initialized"])) === true) {
+			if ((await ctx.kv.get(["@rivetkit/actor", "initialized"])) === true) {
 				initializedPromise.resolve(undefined);
 			}
 
@@ -126,8 +126,8 @@ function createActorHandlerInner(inputConfig: InputConfig): RivetHandler {
 				if (body.input) {
 					await ctx.kv.putBatch(
 						new Map([
-							[["actor-core", "input", "exists"], true],
-							[["actor-core", "input", "data"], body.input],
+							[["@rivetkit/actor", "input", "exists"], true],
+							[["@rivetkit/actor", "input", "data"], body.input],
 						]),
 					);
 				}

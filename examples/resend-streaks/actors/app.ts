@@ -1,5 +1,5 @@
 import { TZDate } from "@date-fns/tz";
-import { UserError, actor, setup } from "actor-core";
+import { UserError, actor, setup } from "@rivetkit/actor";
 import { addDays, set } from "date-fns";
 import { Resend } from "resend";
 

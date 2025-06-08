@@ -5,8 +5,8 @@
 //	ExtractAppFromClient,
 //	ExtractActorsFromApp,
 //	ClientRaw,
-//} from "actor-core/client";
-//import { ActorManager } from "@actor-core/framework-base";
+//} from "@rivetkit/actor/client";
+//import { ActorManager } from "@rivetkit/framework-base";
 //import {
 //	useCallback,
 //	useEffect,

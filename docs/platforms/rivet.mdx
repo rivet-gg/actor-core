@@ -8,7 +8,7 @@ import StepUpdateClient from "/snippets/step-update-client.mdx";
 import ExtraNotes from "/snippets/platform-extra-notes.mdx";
 import SetupNextSteps from "/snippets/setup-next-steps.mdx";
 
-Rivet provides a fully managed cloud service for running ActorCore, with automatic scaling, global deployment, and built-in monitoring.
+Rivet provides a fully managed cloud service for running RivetKit, with automatic scaling, global deployment, and built-in monitoring.
 
 <MvpWarning />
 
@@ -22,41 +22,41 @@ Rivet provides a fully managed cloud service for running ActorCore, with automat
     
     <CodeGroup>
       ```sh npm
-      npm install @actor-core/rivet
+      npm install rivetkit/rivet
       ```
       
       ```sh pnpm
-      pnpm add @actor-core/rivet
+      pnpm add rivetkit/rivet
       ```
       
       ```sh yarn
-      yarn add @actor-core/rivet
+      yarn add rivetkit/rivet
       ```
       
       ```sh bun
-      bun add @actor-core/rivet
+      bun add rivetkit/rivet
       ```
     </CodeGroup>
   </Step>
 
   <Step title="Deploy to production">
-    Deploy your ActorCore application to Rivet:
+    Deploy your RivetKit application to Rivet:
 
 	<CodeGroup>
 	```sh npm
-	npx @actor-core/cli@latest deploy rivet actors/app.ts
+	npx rivetkit/cli@latest deploy rivet actors/app.ts
 	```
 
 	```sh pnpm
-	pnpm exec @actor-core/cli@latest deploy rivet actors/app.ts
+	pnpm exec rivetkit/cli@latest deploy rivet actors/app.ts
 	```
 
 	```sh yarn
-	yarn @actor-core/cli@latest deploy rivet actors/app.ts
+	yarn rivetkit/cli@latest deploy rivet actors/app.ts
 	```
 
 	```sh bun
-	bunx @actor-core/cli@latest deploy rivet actors/app.ts
+	bunx rivetkit/cli@latest deploy rivet actors/app.ts
 	```
 	</CodeGroup>
 
@@ -79,7 +79,7 @@ Rivet provides a fully managed cloud service for running ActorCore, with automat
 [Rivet's `ActorContext`](https://rivet.gg/docs/javascript-runtime#the-actor-context-object) can be accessed from `createVars`.
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const myActor = actor({
   // Load Rivet-specific variables

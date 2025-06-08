@@ -1,17 +1,17 @@
 import type { Serve, Server, ServerWebSocket, WebSocketHandler } from "bun";
-import { assertUnreachable } from "actor-core/utils";
-import { CoordinateTopology } from "actor-core/topologies/coordinate";
+import { assertUnreachable } from "@rivetkit/actor/utils";
+import { CoordinateTopology } from "@rivetkit/actor/topologies/coordinate";
 import { ConfigSchema, type InputConfig } from "./config";
 import { logger } from "./log";
 import { createBunWebSocket } from "hono/bun";
 import type { Hono } from "hono";
-import { type ActorCoreApp, StandaloneTopology } from "actor-core";
+import { type ActorCoreApp, StandaloneTopology } from "@rivetkit/actor";
 import {
 	MemoryGlobalState,
 	MemoryManagerDriver,
 	MemoryActorDriver,
-} from "@actor-core/memory";
-import { FileSystemActorDriver, FileSystemGlobalState, FileSystemManagerDriver } from "@actor-core/file-system";
+} from "@rivetkit/memory";
+import { FileSystemActorDriver, FileSystemGlobalState, FileSystemManagerDriver } from "@rivetkit/file-system";
 
 export { InputConfig as Config } from "./config";
 

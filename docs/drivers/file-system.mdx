@@ -30,22 +30,22 @@ The File System Driver is a simple file-based implementation designed for develo
     <Tabs>
       <Tab title="npm">
         ```bash
-        npm install @actor-core/file-system @actor-core/nodejs
+        npm install rivetkit/file-system rivetkit/nodejs
         ```
       </Tab>
       <Tab title="yarn">
         ```bash
-        yarn add @actor-core/file-system @actor-core/nodejs
+        yarn add rivetkit/file-system rivetkit/nodejs
         ```
       </Tab>
       <Tab title="pnpm">
         ```bash
-        pnpm add @actor-core/file-system @actor-core/nodejs
+        pnpm add rivetkit/file-system rivetkit/nodejs
         ```
       </Tab>
       <Tab title="bun">
         ```bash
-        bun add @actor-core/file-system @actor-core/nodejs
+        bun add rivetkit/file-system rivetkit/nodejs
         ```
       </Tab>
     </Tabs>
@@ -55,8 +55,8 @@ The File System Driver is a simple file-based implementation designed for develo
     Create a simple server using the File System driver:
 
     ```typescript src/index.ts
-    import { serve } from "@actor-core/nodejs"
-    import { FileSystemManagerDriver, FileSystemActorDriver, FileSystemGlobalState } from "@actor-core/file-system";
+    import { serve } from "@rivetkit/nodejs"
+    import { FileSystemManagerDriver, FileSystemActorDriver, FileSystemGlobalState } from "@rivetkit/file-system";
 
     const fsState = new FileSystemGlobalState();
     serve(app, {

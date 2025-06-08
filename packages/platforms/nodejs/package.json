@@ -1,5 +1,5 @@
 {
-  "name": "@actor-core/nodejs",
+  "name": "@rivetkit/nodejs",
   "version": "0.9.0-rc.1",
   "files": [
     "src",
@@ -26,14 +26,14 @@
     "check-types": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@actor-core/file-system": "*",
-    "@actor-core/memory": "*",
-    "actor-core": "*"
+    "@rivetkit/actor": "*",
+    "@rivetkit/file-system": "*",
+    "@rivetkit/memory": "*"
   },
   "devDependencies": {
-    "@actor-core/file-system": "workspace:*",
-    "@actor-core/memory": "workspace:*",
-    "actor-core": "workspace:*",
+    "@rivetkit/actor": "workspace:*",
+    "@rivetkit/file-system": "workspace:*",
+    "@rivetkit/memory": "workspace:*",
     "hono": "^4.7.0",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2"

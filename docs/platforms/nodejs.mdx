@@ -8,7 +8,7 @@ import ExtraNotes from "/snippets/platform-extra-notes.mdx";
 import StepStartFramework from "/snippets/step-start-framework.mdx";
 import StepUpdateClient from "/snippets/step-update-client.mdx";
 
-Node.js provides a robust environment for running ActorCore, ideal for development and production deployments.
+Node.js provides a robust environment for running RivetKit, ideal for development and production deployments.
 
 <MvpWarning />
 
@@ -22,28 +22,28 @@ Node.js provides a robust environment for running ActorCore, ideal for developme
     
     <CodeGroup>
       ```sh npm
-      npm install @actor-core/nodejs
+      npm install rivetkit/nodejs
       ```
       
       ```sh pnpm
-      pnpm add @actor-core/nodejs
+      pnpm add rivetkit/nodejs
       ```
       
       ```sh yarn
-      yarn add @actor-core/nodejs
+      yarn add rivetkit/nodejs
       ```
       
       ```sh bun
-      bun add @actor-core/nodejs
+      bun add rivetkit/nodejs
       ```
     </CodeGroup>
   </Step>
 
   <Step title="Define your server">
-    Create a file `src/index.ts` to start your ActorCore server:
+    Create a file `src/index.ts` to start your RivetKit server:
 
     ```typescript src/index.ts
-    import { serve } from "@actor-core/nodejs";
+    import { serve } from "@rivetkit/nodejs";
     import { app } from "../actors/app";
 
     // Start the server with file-system driver (default)
@@ -70,7 +70,7 @@ Node.js provides a robust environment for running ActorCore, ideal for developme
 
 ## Using Different Drivers
 
-By default, ActorCore for Node.js uses the file-system driver, which persists state between restarts.
+By default, RivetKit for Node.js uses the file-system driver, which persists state between restarts.
 
 For simple deployments, you can switch between drivers with:
 

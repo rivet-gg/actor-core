@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Simple counter actor definition to deploy
 const COUNTER_ACTOR = `
-import { actor, setup } from "actor-core";
+import { actor, setup } from "@rivetkit/actor";
 
 const counter = actor({
   state: { count: 0 },

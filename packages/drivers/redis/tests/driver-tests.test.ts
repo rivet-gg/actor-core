@@ -2,7 +2,7 @@
 //import {
 //	runDriverTests,
 //	createTestRuntime,
-//} from "actor-core/driver-test-suite";
+//} from "@rivetkit/actor/driver-test-suite";
 //import {
 //	RedisActorDriver,
 //	RedisCoordinateDriver,
@@ -11,7 +11,7 @@
 //import Redis from "ioredis";
 //import { $ } from "zx";
 //import { expect, test } from "vitest";
-//import { getPort } from "actor-core/test";
+//import { getPort } from "@rivetkit/actor/test";
 //
 //async function startValkeyContainer(): Promise<{
 //	port: number;

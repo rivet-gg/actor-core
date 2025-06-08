@@ -1,5 +1,5 @@
-import type { ActorCoreApp } from "actor-core";
-import { DriverConfigSchema } from "actor-core/driver-helpers";
+import type { ActorCoreApp } from "@rivetkit/actor";
+import { DriverConfigSchema } from "@rivetkit/actor/driver-helpers";
 import { z } from "zod";
 
 export const ConfigSchema = DriverConfigSchema.extend({

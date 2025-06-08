@@ -2,14 +2,14 @@
 title: Hono
 ---
 
-[Hono](https://hono.dev/) is a lightweight web framework that works well with ActorCore across multiple deployment platforms. This guide explains how to integrate ActorCore with Hono on different platforms.
+[Hono](https://hono.dev/) is a lightweight web framework that works well with RivetKit across multiple deployment platforms. This guide explains how to integrate RivetKit with Hono on different platforms.
 
-## Mounting The ActorCore Router
+## Mounting The RivetKit Router
 
-When mounting the ActorCore router at a custom path, you **must** specify the same path in the router configuration using `basePath`:
+When mounting the RivetKit router at a custom path, you **must** specify the same path in the router configuration using `basePath`:
 
 ```typescript
-// Setup the ActorCore app
+// Setup the RivetKit app
 const app = setup({
   actors: { counter },
   // IMPORTANT: Must specify the same basePath where your router is mounted
@@ -27,13 +27,13 @@ This ensures that WebSocket connections and other functionality work correctly w
 
 ## Platform-Specific Examples
 
-Each platform has specific requirements for integrating Hono with ActorCore.
+Each platform has specific requirements for integrating Hono with RivetKit.
 
 ### Cloudflare Workers
 
 ```typescript
-import { createRouter } from "@actor-core/cloudflare-workers";
-import { setup } from "actor-core";
+import { createRouter } from "@rivetkit/cloudflare-workers";
+import { setup } from "@rivetkit/actor";
 import { Hono } from "hono";
 import counter from "./counter";
 
@@ -44,7 +44,7 @@ const honoApp = new Hono();
 honoApp.get("/", (c) => c.text("Welcome to my app!"));
 honoApp.get("/hello", (c) => c.text("Hello, world!"));
 
-// Setup the ActorCore app
+// Setup the RivetKit app
 const app = setup({
   actors: { counter },
   // IMPORTANT: Must specify the same basePath where your router is mounted
@@ -54,7 +54,7 @@ const app = setup({
 // Create a router and handler from the app
 const { router: actorRouter, ActorHandler } = createRouter(app);
 
-// Mount the ActorCore router at /my-path
+// Mount the RivetKit router at /my-path
 honoApp.route("/my-path", actorRouter);
 
 // Export the app type for client usage
@@ -67,14 +67,14 @@ export { honoApp as default, ActorHandler };
 Make sure to update your client connection URL to include the custom path:
 
 ```typescript
-// If you mounted ActorCore at /my-path
-import { createClient } from "actor-core/client";
+// If you mounted RivetKit at /my-path
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "./src/index";
 
 const client = createClient<App>("https://your-worker.workers.dev/my-path");
 ```
 
-For this to work with Cloudflare Workers, your `wrangler.json` **must** include specific Durable Object and KV namespace bindings with the exact names expected by ActorCore:
+For this to work with Cloudflare Workers, your `wrangler.json` **must** include specific Durable Object and KV namespace bindings with the exact names expected by RivetKit:
 
 ```json
 {
@@ -110,7 +110,7 @@ For this to work with Cloudflare Workers, your `wrangler.json` **must** include 
 ```typescript
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { setup, createRouter } from "@actor-core/nodejs";
+import { setup, createRouter } from "@rivetkit/nodejs";
 import counter from "./counter";
 
 // Create your Hono app
@@ -120,7 +120,7 @@ const honoApp = new Hono();
 honoApp.get("/", (c) => c.text("Welcome to my app!"));
 honoApp.get("/hello", (c) => c.text("Hello, world!"));
 
-// Setup the ActorCore app
+// Setup the RivetKit app
 const app = setup({
   actors: { counter },
   // IMPORTANT: Must specify the same basePath where your router is mounted
@@ -130,7 +130,7 @@ const app = setup({
 // Create a router from the app
 const { router: actorRouter, injectWebSocket } = createRouter(app);
 
-// Mount the ActorCore router at /my-path
+// Mount the RivetKit router at /my-path
 honoApp.route("/my-path", actorRouter);
 
 // Export the app type for client usage
@@ -151,8 +151,8 @@ console.log("Server running at http://localhost:6420");
 Make sure to update your client connection URL to include the custom path:
 
 ```typescript
-// If you mounted ActorCore at /my-path
-import { createClient } from "actor-core/client";
+// If you mounted RivetKit at /my-path
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "./src/index";
 
 const client = createClient<App>("http://localhost:6420/my-path");
@@ -162,7 +162,7 @@ const client = createClient<App>("http://localhost:6420/my-path");
 
 ```typescript
 import { Hono } from "hono";
-import { setup, createRouter } from "@actor-core/bun";
+import { setup, createRouter } from "@rivetkit/bun";
 import counter from "./counter";
 
 // Create your Hono app
@@ -172,7 +172,7 @@ const honoApp = new Hono();
 honoApp.get("/", (c) => c.text("Welcome to my app!"));
 honoApp.get("/hello", (c) => c.text("Hello, world!"));
 
-// Setup the ActorCore app
+// Setup the RivetKit app
 const app = setup({
   actors: { counter },
   // IMPORTANT: Must specify the same basePath where your router is mounted
@@ -182,7 +182,7 @@ const app = setup({
 // Create a router from the app
 const { router: actorRouter, webSocketHandler } = createRouter(app);
 
-// Mount the ActorCore router at /my-path
+// Mount the RivetKit router at /my-path
 honoApp.route("/my-path", actorRouter);
 
 // Export the app type for client usage
@@ -200,8 +200,8 @@ export default {
 Make sure to update your client connection URL to include the custom path:
 
 ```typescript
-// If you mounted ActorCore at /my-path
-import { createClient } from "actor-core/client";
+// If you mounted RivetKit at /my-path
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "./src/index";
 
 const client = createClient<App>("http://localhost:6420/my-path");

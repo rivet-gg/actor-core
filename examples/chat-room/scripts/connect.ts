@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { createClient } from "actor-core/client";
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "../actors/app";
 
 async function main() {

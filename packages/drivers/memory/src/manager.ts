@@ -5,12 +5,12 @@ import type {
 	GetOrCreateWithKeyInput,
 	ActorOutput,
 	ManagerDriver,
-} from "actor-core/driver-helpers";
-import { ActorAlreadyExists } from "actor-core/errors";
+} from "@rivetkit/actor/driver-helpers";
+import { ActorAlreadyExists } from "@rivetkit/actor/errors";
 import type { MemoryGlobalState } from "./global-state";
 import * as crypto from "node:crypto";
-import { ManagerInspector } from "actor-core/inspector";
-import type { ActorCoreApp } from "actor-core";
+import { ManagerInspector } from "@rivetkit/actor/inspector";
+import type { ActorCoreApp } from "@rivetkit/actor";
 
 export class MemoryManagerDriver implements ManagerDriver {
 	#state: MemoryGlobalState;

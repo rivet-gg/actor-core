@@ -26,7 +26,7 @@ impl MockServer {
 
         // Run `yarn build -F actor-core` in the root of this repo
         let status = Command::new("yarn")
-            .args(["build", "-F", "actor-core"])
+            .args(["build", "-F", "@rivetkit/actor"])
             .current_dir(&repo_root)
             .status()
             .expect("Failed to build actor-core");
@@ -46,7 +46,7 @@ impl MockServer {
 
         // Define packages to pack
         let packages = [
-            ("actor-core", repo_root.join("packages/actor-core")),
+            ("@rivetkit/actor", repo_root.join("packages/actor-core")),
             ("nodejs", repo_root.join("packages/platforms/nodejs")),
             ("memory", repo_root.join("packages/drivers/memory")),
             ("file-system", repo_root.join("packages/drivers/file-system")),
@@ -54,7 +54,7 @@ impl MockServer {
 
         // Pack each package to the vendor directory
         for (name, path) in packages.iter() {
-            let output_path = vendor_dir.join(format!("actor-core-{}.tgz", name));
+            let output_path = vendor_dir.join(format!("@rivetkit/actor-{}.tgz", name));
             println!(
                 "Packing {} from {} to {}",
                 name,
@@ -86,7 +86,7 @@ impl MockServer {
         // Write the server script
         let server_script = r#"
 import { app } from "./actors/app.ts";
-import { serve } from "@actor-core/nodejs";
+import { serve } from "@rivetkit/nodejs";
 
 serve(app, { port: PORT, mode: "memory" });
 "#
@@ -98,24 +98,24 @@ serve(app, { port: PORT, mode: "memory" });
         let package_json_path = server_dir.join("package.json");
         let package_json = format!(
             r#"{{
-    "name": "actor-core-rust-test",
+    "name": "@rivetkit/actor-rust-test",
     "packageManager": "yarn@4.2.2",
     "private": true,
     "type": "module",
     "dependencies": {{
-        "actor-core": "file:{}",
-        "@actor-core/nodejs": "file:{}",
-        "@actor-core/memory": "file:{}",
-        "@actor-core/file-system": "file:{}"
+        "@rivetkit/actor": "file:{}",
+        "@rivetkit/nodejs": "file:{}",
+        "@rivetkit/memory": "file:{}",
+        "@rivetkit/file-system": "file:{}"
     }},
     "devDependencies": {{
         "tsx": "^3.12.7"
     }}
 }}"#,
-            vendor_dir.join("actor-core-actor-core.tgz").display(),
-            vendor_dir.join("actor-core-nodejs.tgz").display(),
-            vendor_dir.join("actor-core-memory.tgz").display(),
-            vendor_dir.join("actor-core-file-system.tgz").display()
+            vendor_dir.join("@rivetkit/actor-actor-core.tgz").display(),
+            vendor_dir.join("@rivetkit/actor-nodejs.tgz").display(),
+            vendor_dir.join("@rivetkit/actor-memory.tgz").display(),
+            vendor_dir.join("@rivetkit/actor-file-system.tgz").display()
         );
 
         std::fs::write(&package_json_path, package_json).expect("Failed to write package.json");

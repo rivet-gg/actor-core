@@ -1,19 +1,19 @@
 import { DurableObject } from "cloudflare:workers";
-import type { ActorCoreApp, ActorKey } from "actor-core";
+import type { ActorCoreApp, ActorKey } from "@rivetkit/actor";
 import { logger } from "./log";
 import type { Config } from "./config";
-import { PartitionTopologyActor } from "actor-core/topologies/partition";
+import { PartitionTopologyActor } from "@rivetkit/actor/topologies/partition";
 import {
 	CloudflareDurableObjectGlobalState,
 	CloudflareWorkersActorDriver,
 } from "./actor-driver";
 
 export const KEYS = {
-	INITIALIZED: "actor-core:initialized",
-	NAME: "actor-core:name",
-	KEY: "actor-core:key",
-	INPUT: "actor-core:input",
-	PERSISTED_DATA: "actor-core:data",
+	INITIALIZED: "@rivetkit/actor:initialized",
+	NAME: "@rivetkit/actor:name",
+	KEY: "@rivetkit/actor:key",
+	INPUT: "@rivetkit/actor:input",
+	PERSISTED_DATA: "@rivetkit/actor:data",
 };
 
 export interface ActorHandlerInterface extends DurableObject {

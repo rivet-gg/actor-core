@@ -1,5 +1,5 @@
 {
-  "name": "@actor-core/react",
+  "name": "@rivetkit/react",
   "version": "0.9.0-rc.1",
   "license": "Apache-2.0",
   "sideEffects": false,
@@ -24,15 +24,15 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@actor-core/framework-base": "workspace:*"
+    "@rivetkit/framework-base": "workspace:*"
   },
   "peerDependencies": {
-    "actor-core": "*",
+    "@rivetkit/actor": "*",
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19"
   },
   "devDependencies": {
-    "actor-core": "workspace:^",
+    "@rivetkit/actor": "workspace:^",
     "tsup": "^8.3.6",
     "typescript": "^5.5.2",
     "vitest": "^3.1.1"

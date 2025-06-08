@@ -9,7 +9,7 @@ import ExtraNotes from "/snippets/platform-extra-notes.mdx";
 import StepStartFramework from "/snippets/step-start-framework.mdx";
 import StepUpdateClient from "/snippets/step-update-client.mdx";
 
-The Cloudflare Workers platform with Durable Objects provides a robust environment for running ActorCore at the edge.
+The Cloudflare Workers platform with Durable Objects provides a robust environment for running RivetKit at the edge.
 
 <MvpWarning />
 
@@ -23,19 +23,19 @@ The Cloudflare Workers platform with Durable Objects provides a robust environme
     
     <CodeGroup>
       ```sh npm
-      npm install @actor-core/cloudflare-workers
+      npm install rivetkit/cloudflare-workers
       ```
       
       ```sh pnpm
-      pnpm add @actor-core/cloudflare-workers
+      pnpm add rivetkit/cloudflare-workers
       ```
       
       ```sh yarn
-      yarn add @actor-core/cloudflare-workers
+      yarn add rivetkit/cloudflare-workers
       ```
       
       ```sh bun
-      bun add @actor-core/cloudflare-workers
+      bun add rivetkit/cloudflare-workers
       ```
     </CodeGroup>
   </Step>
@@ -44,7 +44,7 @@ The Cloudflare Workers platform with Durable Objects provides a robust environme
     Create a file `src/index.ts` to handle Cloudflare Workers integration:
 
     ```typescript src/index.ts
-    import { createHandler } from "@actor-core/cloudflare-workers";
+    import { createHandler } from "@rivetkit/cloudflare-workers";
     import { app } from "../actors/app";
 
     // Create handlers for Cloudflare Workers
@@ -108,7 +108,7 @@ The Cloudflare Workers platform with Durable Objects provides a robust environme
     npx wrangler deploy
     ```
 
-    Your ActorCore application will be available at your Cloudflare Workers URL.
+    Your RivetKit application will be available at your Cloudflare Workers URL.
   </Step>
 
   <StepUpdateClient />
@@ -121,7 +121,7 @@ The Cloudflare Workers platform with Durable Objects provides a robust environme
 You can access Cloudflare-specific features like the [DurableObjectState](https://developers.cloudflare.com/durable-objects/api/state/) and environment bindings from your actor:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const myActor = actor({
   // Load Cloudflare-specific variables

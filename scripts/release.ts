@@ -153,7 +153,7 @@ async function publishRustClient(version: string) {
 		// Check if package already exists
 		const { exitCode } = await $({
 			nothrow: true,
-		})`cargo search actor-core-client --limit 1 | grep "actor-core-client = \\"${version}\\""`;
+		})`cargo search actor-core-client --limit 1 | grep "@rivetkit/actor-client = \\"${version}\\""`;
 
 		if (exitCode === 0) {
 			console.log(
@@ -352,9 +352,9 @@ async function getPublicPackages() {
 function validatePackages(publicPackages: any[]) {
 	const nonActorCorePackages = publicPackages.filter(
 		(pkg) =>
-			pkg.name !== "actor-core" &&
+			pkg.name !== "@rivetkit/actor" &&
 			pkg.name !== "create-actor" &&
-			!pkg.name.startsWith("@actor-core/"),
+			!pkg.name.startsWith("@rivetkit/"),
 	);
 
 	if (nonActorCorePackages.length > 0) {

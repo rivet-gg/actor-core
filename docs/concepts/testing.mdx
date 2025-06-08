@@ -3,11 +3,11 @@ title: Testing
 icon: vial-circle-check
 ---
 
-ActorCore provides a straightforward testing framework to build reliable and maintainable applications. This guide covers how to write effective tests for your actor-based services.
+RivetKit provides a straightforward testing framework to build reliable and maintainable applications. This guide covers how to write effective tests for your actor-based services.
 
 ## Setup
 
-To set up testing with ActorCore:
+To set up testing with RivetKit:
 
 ```bash
 # Install Vitest
@@ -19,12 +19,12 @@ npm test
 
 ## Basic Testing Setup
 
-ActorCore includes a test helper called `setupTest` that configures a test environment with in-memory drivers for your actors. This allows for fast, isolated tests without external dependencies.
+RivetKit includes a test helper called `setupTest` that configures a test environment with in-memory drivers for your actors. This allows for fast, isolated tests without external dependencies.
 
 <CodeGroup>
 ```ts tests/my-actor.test.ts
 import { test, expect } from "vitest";
-import { setupTest } from "actor-core/test";
+import { setupTest } from "@rivetkit/actor/test";
 import { app } from "../src/index";
 
 test("my actor test", async (test) => {
@@ -43,7 +43,7 @@ test("my actor test", async (test) => {
 ```
 
 ```ts src/index.ts
-import { actor, setup } from "actor-core";
+import { actor, setup } from "@rivetkit/actor";
 
 const myActor = actor({
   state: { value: "initial" },
@@ -73,7 +73,7 @@ The test framework uses in-memory drivers that persist state within each test, a
 <CodeGroup>
 ```ts tests/counter.test.ts
 import { test, expect } from "vitest";
-import { setupTest } from "actor-core/test";
+import { setupTest } from "@rivetkit/actor/test";
 import { app } from "../src/index";
 
 test("actor should persist state", async (test) => {
@@ -92,7 +92,7 @@ test("actor should persist state", async (test) => {
 ```
 
 ```ts src/index.ts
-import { setup } from "actor-core";
+import { setup } from "@rivetkit/actor";
 
 const counter = actor({
   state: { count: 0 },
@@ -123,7 +123,7 @@ For actors that emit events, you can verify events are correctly triggered by su
 <CodeGroup>
 ```ts tests/chat-room.test.ts
 import { test, expect, vi } from "vitest";
-import { setupTest } from "actor-core/test";
+import { setupTest } from "@rivetkit/actor/test";
 import { app } from "../src/index";
 
 test("actor should emit events", async (test) => {
@@ -145,7 +145,7 @@ test("actor should emit events", async (test) => {
 ```
 
 ```ts src/index.ts
-import { actor, setup } from "actor-core";
+import { actor, setup } from "@rivetkit/actor";
 
 export const chatRoom = actor({
   state: { 
@@ -174,12 +174,12 @@ export type App = typeof app;
 
 ## Testing Schedules
 
-ActorCore's schedule functionality can be tested using Vitest's time manipulation utilities:
+RivetKit's schedule functionality can be tested using Vitest's time manipulation utilities:
 
 <CodeGroup>
 ```ts tests/scheduler.test.ts
 import { test, expect, vi } from "vitest";
-import { setupTest } from "actor-core/test";
+import { setupTest } from "@rivetkit/actor/test";
 import { app } from "../src/index";
 
 test("scheduled tasks should execute", async (test) => {
@@ -199,7 +199,7 @@ test("scheduled tasks should execute", async (test) => {
 ```
 
 ```ts src/index.ts
-import { actor, setup } from "actor-core";
+import { actor, setup } from "@rivetkit/actor";
 
 const scheduler = actor({
   state: { 
@@ -241,4 +241,4 @@ The `setupTest` function automatically calls `vi.useFakeTimers()`, allowing you 
 3. **Mock time**: Use Vitest's timer mocks for testing scheduled operations.
 4. **Use realistic data**: Test with data that resembles production scenarios.
 
-ActorCore's testing framework automatically handles server setup and teardown, so you can focus on writing effective tests for your business logic.
+RivetKit's testing framework automatically handles server setup and teardown, so you can focus on writing effective tests for your business logic.

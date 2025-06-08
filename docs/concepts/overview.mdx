@@ -18,7 +18,7 @@ Run this to get started:
 Here's a complete chat room actor that maintains state and handles messages. We'll explore each component in depth throughout this document:
 
 ```typescript chat_room.ts
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 // Define a chat room actor
 const chatRoom = actor({
@@ -53,7 +53,7 @@ export default chatRoom;
 To start using your actor, create an app and serve it:
 
 ```typescript app.ts
-import { setup, serve } from "actor-core";
+import { setup, serve } from "@rivetkit/actor";
 import chatRoom from "./chat_room";
 
 // Create the application
@@ -75,7 +75,7 @@ export type App = typeof app;
 Actors maintain state that's stored in memory and automatically persisted. State is defined either as a constant or via a `createState` function:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 // Method 1: State constant
 const counter1 = actor({
@@ -97,7 +97,7 @@ const counter2 = actor({
 Update state by modifying `c.state` in your actions:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const counter = actor({
   state: { count: 0 },
@@ -120,7 +120,7 @@ Learn more about [state management](/concepts/state).
 Actions are functions defined in your actor configuration that clients & other actors can call:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const mathUtils = actor({
   state: {},
@@ -141,7 +141,7 @@ Learn more about [actions](/concepts/actions).
 Actors can broadcast events to connected clients:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const inventory = actor({
   createState: () => ({ 
@@ -163,7 +163,7 @@ const inventory = actor({
 You can also send events to specific clients:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const messageService = actor({
   state: {},
@@ -197,7 +197,7 @@ await client.chatRoom.get({ channel: "random" });
 ### Common Tag Patterns
 
 ```typescript
-import { createClient } from "actor-core/client";
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "./src/index";
 
 const client = createClient<App>("http://localhost:6420");
@@ -222,7 +222,7 @@ Actors are created automatically when needed and persist until explicitly shutdo
 To shut down an actor, use `c.shutdown()` from within an action:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const chatRoom = actor({
   createState: () => ({

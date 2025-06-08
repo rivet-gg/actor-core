@@ -1,4 +1,4 @@
-import { runDriverTests } from "actor-core/driver-test-suite";
+import { runDriverTests } from "@rivetkit/actor/driver-test-suite";
 import { deployToRivet, RIVET_CLIENT_CONFIG } from "./rivet-deploy";
 import { type RivetClientConfig, rivetRequest } from "../src/rivet-client";
 import invariant from "invariant";

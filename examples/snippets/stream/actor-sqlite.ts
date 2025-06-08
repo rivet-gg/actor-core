@@ -1,5 +1,5 @@
-import { actor } from "actor-core";
-import { drizzle } from "@actor-core/drizzle";
+import { actor } from "@rivetkit/actor";
+import { drizzle } from "@rivetkit/drizzle";
 import { streams, streamValues } from "./schema";
 
 export type StreamState = { topValues: number[]; };

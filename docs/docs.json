@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "name": "ActorCore",
-  "description": "Stateful Serverless that runs anywhere. The easiest way to build stateful, AI agent, collaborative, or local-first applications.",
-  "theme": "palm",
+  "name": "RivetKit",
+  "description": "Lightweight libraries for backends",
+  "theme": "maple",
   "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "dark": "/images/logo/dark.svg",
+    "light": "/images/logo/light.svg"
   },
   "styling": {
     "eyebrows": "breadcrumbs",
@@ -25,30 +25,59 @@
     "links": [
       {
         "label": "Changelog",
-        "href": "https://github.com/rivet-gg/actor-core/releases"
+        "href": "https://github.com/rivet-gg/rivetkit/releases"
       },
       {
         "label": "Discussions",
-        "href": "https://github.com/rivet-gg/actor-core/discussions"
+        "href": "https://github.com/rivet-gg/rivetkit/discussions"
       }
     ],
     "primary": {
       "type": "github",
-      "href": "https://github.com/rivet-gg/actor-core"
+      "href": "https://github.com/rivet-gg/rivetkit"
     }
   },
   "navigation": {
-    "tabs": [
+    "groups": [
       {
-        "tab": "Home",
-        "pages": ["introduction"]
+        "group": "Getting Started",
+        "pages": [
+          "introduction"
+        ]
       },
       {
-        "tab": "Documentation",
+        "group": "Actors",
         "pages": [
-          "overview",
+"actor/overview",
+"actor/quickstart",
+"actor/state",
+"actor/actions",
+"actor/events",
           {
-            "group": "Get Started",
+            "group": "More",
+            "pages": [
+"actor/schedule",
+
+"actor/lifecycle",
+"actor/connections",
+"actor/authentication",
+              {
+                "group": "Advanced",
+                "pages": [
+"actor/metadata",
+"actor/types"
+
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "group": "Integrations",
+        "pages": [
+          {
+            "group": "Frameworks",
             "pages": [
               "frameworks/react",
               "clients/javascript",
@@ -66,60 +95,7 @@
             ]
           },
           {
-            "group": "Concepts",
-            "pages": [
-              "concepts/overview",
-              "concepts/interacting-with-actors",
-              "concepts/state",
-              "concepts/actions",
-              "concepts/events",
-              "concepts/lifecycle",
-              "concepts/schedule",
-              "concepts/authentication",
-              {
-                "group": "More",
-                "pages": [
-                  "concepts/connections",
-                  "concepts/metadata",
-                  "concepts/testing",
-                  "concepts/logging",
-                  "concepts/cors",
-                  "concepts/scaling",
-                  "concepts/external-sql",
-                  {
-                    "group": "Advanced",
-                    "pages": ["concepts/types", "concepts/topology"]
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "group": "Reference",
-            "pages": [
-              {
-                "group": "LLM Prompts",
-                "pages": [
-                  "llm/cursor",
-                  "llm/windsurf",
-                  "llm/claude",
-                  "llm/docs-as-markdown",
-                  "llm/prompt",
-                  "llm/llms",
-                  "llm/llms-full"
-                ]
-              },
-              "support/enterprise"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Integrations",
-        "pages": [
-          "integrations/overview",
-          {
-            "group": "Integrations",
+            "group": "Libraries & Services",
             "pages": [
               "integrations/hono",
               "integrations/resend"
@@ -138,14 +114,61 @@
             ]
           }
         ]
-      }
+      },
+          {
+            "group": "Reference",
+            "pages": [
+              {
+                "group": "Common Concepts",
+                "pages": [
+                  "concepts/cors",
+                  "concepts/external-sql",
+                  "concepts/interacting-with-actors",
+                  "concepts/logging",
+                  "concepts/overview",
+                  "concepts/scaling",
+                  "concepts/testing",
+                  "concepts/edge",
+                  "concepts/topology"
+                ]
+              },
+              {
+                "group": "LLM Prompts",
+                "pages": [
+                  "llm/cursor",
+                  "llm/windsurf",
+                  "llm/claude",
+                  "llm/docs-as-markdown",
+                  "llm/prompt",
+                  "llm/llms",
+                  "llm/llms-full"
+                ]
+              },
+          {
+            "group": "API",
+            "openapi": {
+              "source": "./openapi.json",
+              "directory": "api"
+            }
+          },
+              "support/enterprise"
+            ]
+          }
     ]
   },
+   "contextual": {
+   "options": [
+     "copy",
+     "view",
+     "chatgpt",
+     "claude"
+   ]
+ },
   "footer": {
     "socials": {
       "bluesky": "https://bsky.app/profile/rivet.gg",
       "x": "https://x.com/rivet_gg",
-      "github": "https://github.com/rivet-gg/actor-core",
+      "github": "https://github.com/rivet-gg/rivetkit",
       "discord": "https://rivet.gg/discord"
     }
   },
@@ -158,7 +181,7 @@
   "redirects": [
     {
       "source": "/changelog/overview",
-      "destination": "https://github.com/rivet-gg/actor-core/releases"
+      "destination": "https://github.com/rivet-gg/rivetkit/releases"
     },
     {
       "source": "/concepts/manage",

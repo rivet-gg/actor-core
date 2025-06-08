@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach } from "vitest";
-import { setupTest } from "actor-core/test";
+import { setupTest } from "@rivetkit/actor/test";
 import { app } from "../actors/app";
 
 // Create mock for send method

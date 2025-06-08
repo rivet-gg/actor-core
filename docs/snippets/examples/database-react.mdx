@@ -1,10 +1,10 @@
 ```typescript
-import { createClient } from "actor-core/client";
-import { createReactActorCore } from "@actor-core/react";
+import { createClient } from "@rivetkit/actor/client";
+import { createReactRivetKit } from "@rivetkit/react";
 import { useState, useEffect } from "react";
 
 const client = createClient("http://localhost:6420");
-const { useActor, useActorEvent } = createReactActorCore(client);
+const { useActor, useActorEvent } = createReactRivetKit(client);
 
 export function NotesApp({ userId }: { userId: string }) {
   const [notes, setNotes] = useState<Array<{ id: string, content: string }>>([]);

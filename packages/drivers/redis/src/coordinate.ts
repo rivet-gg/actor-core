@@ -5,7 +5,7 @@ import type {
 	NodeMessageCallback,
 	CoordinateDriver,
 	StartActorAndAcquireLeaseOutput,
-} from "actor-core/driver-helpers";
+} from "@rivetkit/actor/driver-helpers";
 import type Redis from "ioredis";
 import { KEYS, PUBSUB } from "./keys";
 import dedent from "dedent";

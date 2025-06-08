@@ -1,5 +1,5 @@
-import { assertUnreachable } from "actor-core/utils";
-import { ActorAlreadyExists, InternalError } from "actor-core/errors";
+import { assertUnreachable } from "@rivetkit/actor/utils";
+import { ActorAlreadyExists, InternalError } from "@rivetkit/actor/errors";
 import type {
 	ManagerDriver,
 	GetForIdInput,
@@ -7,7 +7,7 @@ import type {
 	ActorOutput,
 	GetOrCreateWithKeyInput,
 	CreateInput,
-} from "actor-core/driver-helpers";
+} from "@rivetkit/actor/driver-helpers";
 import { logger } from "./log";
 import { type RivetClientConfig, rivetRequest } from "./rivet-client";
 import { serializeKeyForTag, deserializeKeyFromTag } from "./util";
@@ -49,7 +49,7 @@ export class RivetManagerDriver implements ManagerDriver {
 			if (res.actor.tags.role !== "actor") {
 				throw new Error(`Actor ${res.actor.id} does not have an actor role.`);
 			}
-			if (res.actor.tags.framework !== "actor-core") {
+			if (res.actor.tags.framework !== "@rivetkit/actor") {
 				throw new Error(`Actor ${res.actor.id} is not an ActorCore actor.`);
 			}
 
@@ -153,7 +153,7 @@ export class RivetManagerDriver implements ManagerDriver {
 			build_tags: {
 				name,
 				role: "actor",
-				framework: "actor-core",
+				framework: "@rivetkit/actor",
 				current: "true",
 			},
 			region,
@@ -235,7 +235,7 @@ export class RivetManagerDriver implements ManagerDriver {
 			name,
 			key: serializeKeyForTag(key),
 			role: "actor",
-			framework: "actor-core",
+			framework: "@rivetkit/actor",
 		};
 	}
 

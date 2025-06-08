@@ -9,7 +9,7 @@ import StepRunStudio from "/snippets/step-run-studio.mdx";
 import StepDeploy from "/snippets/step-deploy.mdx";
 import SetupNextSteps from "/snippets/setup-next-steps.mdx";
 
-The ActorCore JavaScript client allows you to connect to and interact with actors from browser and Node.js applications.
+The RivetKit JavaScript client allows you to connect to and interact with actors from browser and Node.js applications.
 
 <MvpWarning />
 
@@ -49,24 +49,24 @@ The ActorCore JavaScript client allows you to connect to and interact with actor
     </CodeGroup>
   </Step>
 
-  <Step title="Install ActorCore packages">
-    Install the ActorCore client and Node.js platform packages:
+  <Step title="Install RivetKit packages">
+    Install the RivetKit client and Node.js platform packages:
     
     <CodeGroup>
       ```sh npm
-      npm install actor-core
+      npm install rivetkit
       ```
       
       ```sh pnpm
-      pnpm add actor-core
+      pnpm add rivetkit
       ```
       
       ```sh yarn
-      yarn add actor-core
+      yarn add rivetkit
       ```
       
       ```sh bun
-      bun add actor-core
+      bun add rivetkit
       ```
     </CodeGroup>
   </Step>
@@ -77,7 +77,7 @@ The ActorCore JavaScript client allows you to connect to and interact with actor
     Create a file `src/client.ts` in your project to connect to your actor:
 
     ```typescript src/client.ts
-    import { createClient } from "actor-core/client";
+    import { createClient } from "@rivetkit/actor/client";
     import type { App } from "../actors/app";
 
     async function main() {

@@ -9,7 +9,7 @@ import StepRunStudio from "/snippets/step-run-studio.mdx";
 import StepDeploy from "/snippets/step-deploy.mdx";
 import SetupNextSteps from "/snippets/setup-next-steps.mdx";
 
-Learn how to create realtime, stateful React applications with ActorCore's actor model.
+Learn how to create realtime, stateful React applications with RivetKit's actor model.
 
 <MvpWarning />
 
@@ -38,28 +38,28 @@ Learn how to create realtime, stateful React applications with ActorCore's actor
     </CodeGroup>
   </Step>
 
-  <Step title="Install ActorCore packages">
-    Navigate to your React project and install the ActorCore client and React packages:
+  <Step title="Install RivetKit packages">
+    Navigate to your React project and install the RivetKit client and React packages:
     
     <CodeGroup>
       ```sh npm
       cd my-app
-      npm install actor-core @actor-core/react
+      npm install rivetkit rivetkit/react
       ```
       
       ```sh pnpm
       cd my-app
-      pnpm add actor-core @actor-core/react
+      pnpm add rivetkit rivetkit/react
       ```
       
       ```sh yarn
       cd my-app
-      yarn add actor-core @actor-core/react
+      yarn add rivetkit rivetkit/react
       ```
       
       ```sh bun
       cd my-app
-      bun add actor-core @actor-core/react
+      bun add rivetkit rivetkit/react
       ```
     </CodeGroup>
   </Step>
@@ -67,17 +67,17 @@ Learn how to create realtime, stateful React applications with ActorCore's actor
   <StepDefineActor />
 
   <Step title="Build your React frontend">
-    Now modify your `src/App.tsx` file to connect to your ActorCore backend:
+    Now modify your `src/App.tsx` file to connect to your RivetKit backend:
       
     ```tsx src/App.tsx
-    import { createClient } from "actor-core/client";
-    import { createReactActorCore } from "@actor-core/react";
+    import { createClient } from "@rivetkit/actor/client";
+    import { createReactRivetKit } from "@rivetkit/react";
     import type { App } from "../actors/app";
     import React, { useState } from "react";
 
     // Replace with your endpoint URL after deployment
     const client = createClient<App>("http://localhost:6420");
-    const { useActor, useActorEvent } = createReactActorCore(client);
+    const { useActor, useActorEvent } = createReactRivetKit(client);
 
     function App() {
       // Connect to counter actor
@@ -136,26 +136,26 @@ Learn how to create realtime, stateful React applications with ActorCore's actor
       ```
     </CodeGroup>
     
-    Your React app should now be running and connected to your ActorCore backend. Open your browser to the URL shown in the terminal (typically http://localhost:5173) to see your application.
+    Your React app should now be running and connected to your RivetKit backend. Open your browser to the URL shown in the terminal (typically http://localhost:5173) to see your application.
   </Step>
   <StepDeploy />
 </Steps>
 
 ## API Reference
 
-The React integration leverages React's hooks system to provide an idiomatic way to interact with ActorCore in React applications.
+The React integration leverages React's hooks system to provide an idiomatic way to interact with RivetKit in React applications.
 
-### `createReactActorCore`
+### `createReactRivetKit`
 
-The main function that creates React hooks for interacting with ActorCore. It takes a client instance and returns hook functions.
+The main function that creates React hooks for interacting with RivetKit. It takes a client instance and returns hook functions.
 
 ```tsx
-const { useActor, useActorEvent } = createReactActorCore(client);
+const { useActor, useActorEvent } = createReactRivetKit(client);
 ```
 
 #### Parameters
 
-- `client`: The ActorCore client created with `createClient`.
+- `client`: The RivetKit client created with `createClient`.
 
 #### Returns
 
@@ -212,14 +212,14 @@ This hook doesn't return a value. The subscription is automatically managed by t
 ### Simple Counter
 
 ```tsx
-import { createClient } from "actor-core/client";
-import { createReactActorCore } from "@actor-core/react";
+import { createClient } from "@rivetkit/actor/client";
+import { createReactRivetKit } from "@rivetkit/react";
 import type { App } from "../actors/app";
 import { useState } from "react";
 
-// Connect to ActorCore
+// Connect to RivetKit
 const client = createClient<App>("http://localhost:6420");
-const { useActor, useActorEvent } = createReactActorCore(client);
+const { useActor, useActorEvent } = createReactRivetKit(client);
 
 function Counter() {
   // Get actor and track count

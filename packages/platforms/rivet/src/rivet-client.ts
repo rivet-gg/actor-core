@@ -1,4 +1,4 @@
-import { httpUserAgent } from "actor-core/utils";
+import { httpUserAgent } from "@rivetkit/actor/utils";
 
 export interface RivetClientConfig {
 	endpoint: string;

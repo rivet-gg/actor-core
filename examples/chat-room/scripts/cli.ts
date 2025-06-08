@@ -1,4 +1,4 @@
-import { createClient } from "actor-core/client";
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "../actors/app";
 import prompts from "prompts";
 

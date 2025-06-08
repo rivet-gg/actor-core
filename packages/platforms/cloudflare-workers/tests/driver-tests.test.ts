@@ -1,11 +1,11 @@
-import { runDriverTests } from "actor-core/driver-test-suite";
+import { runDriverTests } from "@rivetkit/actor/driver-test-suite";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { spawn, exec } from "node:child_process";
 import crypto from "node:crypto";
 import { promisify } from "node:util";
-import { getPort } from "actor-core/test";
+import { getPort } from "@rivetkit/actor/test";
 
 const execPromise = promisify(exec);
 
@@ -25,7 +25,7 @@ runDriverTests({
 
 		// Create package.json with workspace dependencies
 		const packageJson = {
-			name: "actor-core-test",
+			name: "@rivetkit/actor-test",
 			private: true,
 			version: "1.0.0",
 			type: "module",
@@ -34,8 +34,8 @@ runDriverTests({
 			},
 			dependencies: {
 				wrangler: "4.8.0",
-				"@actor-core/cloudflare-workers": "workspace:*",
-				"actor-core": "workspace:*",
+				"@rivetkit/cloudflare-workers": "workspace:*",
+				"@rivetkit/actor": "workspace:*",
 			},
 			packageManager:
 				"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
@@ -58,7 +58,7 @@ runDriverTests({
 
 		// Create a wrangler.json file
 		const wranglerConfig = {
-			name: "actor-core-test",
+			name: "@rivetkit/actor-test",
 			main: "src/index.ts",
 			compatibility_date: "2025-01-29",
 			compatibility_flags: ["nodejs_compat"],
@@ -99,7 +99,7 @@ runDriverTests({
 		await fs.mkdir(srcDir, { recursive: true });
 
 		// Write the index.ts file based on the app path
-		const indexContent = `import { createHandler } from "@actor-core/cloudflare-workers";
+		const indexContent = `import { createHandler } from "@rivetkit/cloudflare-workers";
 import { app } from "${appPath.replace(/\.ts$/, "")}";
 
 // Create handlers for Cloudflare Workers

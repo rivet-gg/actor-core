@@ -5,18 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently --raw \"yarn dev:actors\" \"yarn dev:server\" \"yarn dev:ngrok\"",
-    "dev:actors": "npx @actor-core/cli@latest dev src/actors/app.ts",
+    "dev:actors": "npx rivetkit/cli@latest dev src/actors/app.ts",
     "dev:server": "tsx --watch src/server/index.ts",
     "dev:ngrok": "ngrok http 3000",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
-    "@actor-core/cli": "workspace:*",
+    "@rivetkit/actor": "workspace:*",
     "@types/dotenv": "^8.2.3",
     "@types/express": "^5",
     "@types/node": "^22.13.9",
     "@types/prompts": "^2",
-    "actor-core": "workspace:*",
     "concurrently": "^9.1.2",
     "prompts": "^2.4.2",
     "tsx": "^3.12.7",

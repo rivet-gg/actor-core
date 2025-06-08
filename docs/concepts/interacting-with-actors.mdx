@@ -11,7 +11,7 @@ The first step is to create a client that will connect to your actor service:
 
 <CodeGroup>
 ```typescript TypeScript
-import { createClient } from "actor-core/client";
+import { createClient } from "@rivetkit/actor/client";
 import type { App } from "../src/index";
 
 // Create a client with the connection address and app type
@@ -41,7 +41,7 @@ client = ActorClient("http://localhost:6420")
 
 ## Finding & Connecting to Actors
 
-ActorCore provides several methods to connect to actors:
+RivetKit provides several methods to connect to actors:
 
 ### `get(tags, opts)` - Find or Create
 
@@ -414,7 +414,7 @@ chat_room = await client.get(
 The actor can access these parameters in the `onBeforeConnect` or `createConnState` hook:
 
 ```typescript
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 
 const chatRoom = actor({
   state: { messages: [] },
@@ -519,7 +519,7 @@ Default is `["websocket", "sse"]`, which automatically negotiates the best avail
 
 ## Error Handling
 
-ActorCore provides specific error types to help you handle different failure scenarios:
+RivetKit provides specific error types to help you handle different failure scenarios:
 
 ### Action Errors
 
@@ -540,7 +540,7 @@ try {
 These errors can be thrown from within the actor with `UserError`:
 
 ```typescript
-import { actor, UserError } from "actor-core";
+import { actor, UserError } from "@rivetkit/actor";
 
 const documentActor = actor({
   state: { content: "" },
@@ -561,7 +561,7 @@ const documentActor = actor({
 });
 ```
 
-ActorCore doesn't expose internal errors to clients for security, helping to prevent the exposure of sensitive information or internal implementation details.
+RivetKit doesn't expose internal errors to clients for security, helping to prevent the exposure of sensitive information or internal implementation details.
 
 ### Other Errors
 

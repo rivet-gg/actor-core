@@ -1,5 +1,5 @@
 {
-  "name": "@actor-core/file-system",
+  "name": "@rivetkit/file-system",
   "version": "0.9.0-rc.1",
   "files": [
     "src",
@@ -24,12 +24,12 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "actor-core": "*"
+    "@rivetkit/actor": "*"
   },
   "devDependencies": {
+    "@rivetkit/actor": "workspace:*",
     "@types/invariant": "^2",
     "@types/node": "^22.14.0",
-    "actor-core": "workspace:*",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2",
     "vitest": "^3.1.1"

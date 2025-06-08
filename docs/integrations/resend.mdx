@@ -2,13 +2,13 @@
 title: Resend
 ---
 
-[Resend](https://resend.com) is an email API service that works seamlessly with ActorCore for handling emails and notifications.
+[Resend](https://resend.com) is an email API service that works seamlessly with RivetKit for handling emails and notifications.
 
 ## Example
 
-See how ActorCore and Resend can power engagement with daily streak notifications.
+See how RivetKit and Resend can power engagement with daily streak notifications.
 
-<Card icon="fire" title="Streaks" href="https://github.com/rivet-gg/actor-core/tree/main/examples/resend-streaks">View on GitHub</Card>
+<Card icon="fire" title="Streaks" href="https://github.com/rivet-gg/rivetkit/tree/main/examples/resend-streaks">View on GitHub</Card>
 
 ## Quickstart
 
@@ -21,7 +21,7 @@ npm install resend
 
 <Step title="Create an actor with Resend">
 ```typescript actors.ts
-import { actor, setup } from "actor-core";
+import { actor, setup } from "@rivetkit/actor";
 import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -58,7 +58,7 @@ export type App = typeof app;
 
 <Step title="Call your actor">
 ```typescript client.ts
-import { createClient } from "actor-core";
+import { createClient } from "@rivetkit/actor";
 import { App } from "./actors/app.ts";
 
 const client = createClient<App>("http://localhost:8787");
@@ -74,7 +74,7 @@ await userActor.sendExampleEmail();
 
 ### Scheduling Emails
 
-ActorCore's scheduling capabilities with Resend make it easy to send emails at specific times:
+RivetKit's scheduling capabilities with Resend make it easy to send emails at specific times:
 
 <CodeGroup>
 ```typescript actors.ts
@@ -212,11 +212,11 @@ await systemMonitor.configure("admin@example.com");
 
 ## Testing
 
-When testing actors that use Resend, you should mock the Resend API to avoid sending real emails during tests. ActorCore's testing utilities combined with Vitest make this straightforward:
+When testing actors that use Resend, you should mock the Resend API to avoid sending real emails during tests. RivetKit's testing utilities combined with Vitest make this straightforward:
 
 ```typescript
 import { test, expect, vi, beforeEach } from "vitest";
-import { setupTest } from "actor-core/test";
+import { setupTest } from "@rivetkit/actor/test";
 import { app } from "../actors/app";
 
 // Create mock for send method

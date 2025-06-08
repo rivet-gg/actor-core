@@ -1,5 +1,5 @@
-import { actor } from "actor-core";
-import { drizzle } from "@actor-core/drizzle";
+import { actor } from "@rivetkit/actor";
+import { drizzle } from "@rivetkit/drizzle";
 import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { getWeather } from "./my-utils";

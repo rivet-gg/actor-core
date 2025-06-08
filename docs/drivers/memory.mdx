@@ -30,22 +30,22 @@ The Memory Driver is a simple in-memory implementation designed for development 
     <Tabs>
       <Tab title="npm">
         ```bash
-        npm install @actor-core/memory @actor-core/nodejs
+        npm install rivetkit/memory rivetkit/nodejs
         ```
       </Tab>
       <Tab title="yarn">
         ```bash
-        yarn add @actor-core/memory @actor-core/nodejs
+        yarn add rivetkit/memory rivetkit/nodejs
         ```
       </Tab>
       <Tab title="pnpm">
         ```bash
-        pnpm add @actor-core/memory @actor-core/nodejs
+        pnpm add rivetkit/memory rivetkit/nodejs
         ```
       </Tab>
       <Tab title="bun">
         ```bash
-        bun add @actor-core/memory @actor-core/nodejs
+        bun add rivetkit/memory rivetkit/nodejs
         ```
       </Tab>
     </Tabs>
@@ -55,8 +55,8 @@ The Memory Driver is a simple in-memory implementation designed for development 
     Create a simple server using the Memory driver:
 
     ```typescript src/index.ts
-    import { serve } from "@actor-core/nodejs"
-    import { MemoryManagerDriver, MemoryActorDriver, MemoryGlobalState } from "@actor-core/memory";
+    import { serve } from "@rivetkit/nodejs"
+    import { MemoryManagerDriver, MemoryActorDriver, MemoryGlobalState } from "@rivetkit/memory";
 
     const memoryState = new MemoryGlobalState();
     serve(app, {

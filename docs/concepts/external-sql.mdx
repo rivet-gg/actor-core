@@ -36,7 +36,7 @@ There are several options for places to host your SQL database:
 Here's a basic example of how you might set up a connection to a PostgreSQL database using the `pg` library:
 
 ```typescript actor.ts
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 import { Pool } from "pg";
 
 // Create a database connection pool
@@ -106,7 +106,7 @@ export default databaseActor;
 Here's an example using Drizzle ORM for more type-safe database operations:
 
 ```typescript actor.ts
-import { actor } from "actor-core";
+import { actor } from "@rivetkit/actor";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { Pool } from "pg";

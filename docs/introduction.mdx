@@ -1,7 +1,7 @@
 ---
-title: ActorCore
-description: Stateful Serverless That Runs Anywhere
-sidebarTitle: Introduction
+title: Welcome to RivetKit
+description: Lightweight libraries for backends
+sidebarTitle: Welcome
 mode: custom
 ---
 
@@ -12,30 +12,30 @@ import Quotes from "/snippets/landing-quotes.mdx";
 import Manifesto from "/snippets/landing-manifesto.mdx";
 import FAQ from "/snippets/landing-faq.mdx";
 
-<div className="particle-container"></div>
+{/*<div className="particle-container"></div>*/}
 
 <div className="landing-root">
 	<div className="landing-hero landing-section">
+        {/*<h1 className="landing-title">
+            Open-source libraries for<br/>modern backend primitives
+		</h1>*/}
+
 		<h1 className="landing-title">
-			Stateful Serverless That Runs Anywhere
+            Lightweight Libraries for Backends
 		</h1>
 
     	<p className="landing-subtitle">
-    		The easiest way to build{" "}
-    		<span className="landing-subtitle-highlight">stateful</span>,{" "}
-    		<span className="landing-subtitle-highlight">AI agent</span>,{" "}
-    		<span className="landing-subtitle-highlight">collaborative</span>, or{" "}
-    		<span className="landing-subtitle-highlight">local-first</span>{" "}
-    		applications.<br/>
-    		Deploy to Rivet, Cloudflare, Bun, Node.js, and more.
+			Simply install one package to get up and running.<br/>
+            Connect your database and scale to production.<br/>
+            **Just a library, no SaaS.**
     	</p>
 
-    	<div className="landing-buttons">
-    		<a href="/overview" className="landing-button landing-button-primary">
+        <div className="landing-buttons">
+    		<a href="/actors/overview" className="landing-button landing-button-primary">
     			Get Started
     		</a>
     		<a
-    			href="https://github.com/rivet-gg/actor-core"
+    			href="https://github.com/rivet-gg/rivetkit"
     			className="landing-button landing-button-secondary"
     			target="_blank"
     			rel="noopener noreferrer"
@@ -44,18 +44,141 @@ import FAQ from "/snippets/landing-faq.mdx";
     		</a>
     	</div>
 
-    	<div className="copy-command-container" onClick={(e) => window.copyCommand && window.copyCommand(e.currentTarget)}>
+		<div style={{ height: '60px' }} />
+
+        <div className="platform-icons-container">
+            <div className="platform-icons-label">Supports</div>
+            <div className="platform-icons-row">
+                {/* Platforms (all-in-one) */}
+                <a href="/platforms/rivet" className="platform-icon-wrapper">
+                    <img src="/images/platforms/rivet-white.svg" alt="Rivet Platform" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Rivet</div>
+                </a>
+                <a href="/platforms/cloudflare-workers" className="platform-icon-wrapper">
+                    <img src="/images/platforms/cloudflare-workers.svg" alt="Cloudflare Workers" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Cloudflare Workers</div>
+                </a>
+                
+                {/* Compute */}
+                <a href="/platforms/nodejs" className="platform-icon-wrapper">
+                    <img src="/images/platforms/nodejs.svg" alt="Node.js" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Node.js</div>
+                </a>
+                <a href="/platforms/bun" className="platform-icon-wrapper">
+                    <img src="/images/platforms/bun.svg" alt="Bun" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Bun</div>
+                </a>
+                
+                {/* Databases */}
+                <a href="/drivers/redis" className="platform-icon-wrapper">
+                    <img src="/images/platforms/redis.svg" alt="Redis" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Redis</div>
+                </a>
+                <a href="/drivers/file-system" className="platform-icon-wrapper">
+                    <img src="/images/platforms/file-system.svg" alt="File System" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">File System</div>
+                </a>
+                <a href="/drivers/memory" className="platform-icon-wrapper">
+                    <img src="/images/platforms/memory.svg" alt="Memory" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Memory</div>
+                </a>
+                
+                {/* Languages & Frameworks */}
+                <a href="/clients/javascript" className="platform-icon-wrapper">
+                    <img src="/images/clients/typescript.svg" alt="TypeScript" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">TypeScript</div>
+                </a>
+                <a href="/clients/python" className="platform-icon-wrapper">
+                    <img src="/images/clients/python.svg" alt="Python" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Python (Client)</div>
+                </a>
+                <a href="/clients/rust" className="platform-icon-wrapper">
+                    <img src="/images/clients/rust.svg" alt="Rust" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Rust (Client)</div>
+                </a>
+                <a href="/frameworks/react" className="platform-icon-wrapper">
+                    <img src="/images/clients/react.svg" alt="React" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">React</div>
+                </a>
+                
+                {/* Integrations */}
+                <a href="/integrations/hono" className="platform-icon-wrapper">
+                    <img src="/images/integrations/hono.svg" alt="Hono" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Hono</div>
+                </a>
+                <a href="/concepts/testing" className="platform-icon-wrapper">
+                    <img src="/images/integrations/vitest.svg" alt="Vitest" className="platform-icon" noZoom />
+                    <div className="platform-icon-tooltip">Vitest</div>
+                </a>
+            </div>
+        </div>
+
+        {/*<div className="copy-command-container" onClick={(e) => window.copyCommand && window.copyCommand(e.currentTarget)}>
     		<div className="copy-command-icon"><Icon icon="arrow-right" iconType="solid" color="white" /></div>
     		<div className="copy-command-text">npx create-actor@latest</div>
     		<div className="icon-container">
     			<div className="copy-icon"><Icon icon="copy" /></div>
     			<div className="check-icon"><Icon icon="check" /></div>
     		</div>
-    	</div>
+    	</div>*/}
 
-    	<div style={{ height: '50px' }} />
+		{/*
+		<div className="libraries-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)", maxWidth: "800px", margin: "48px auto 0" }}>
+			<a href="/experimental/concepts/edge" className="library-box library-box-purple">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="diagram-project" color="#a855f7" size={28} /></div>
+						<h3 className="not-prose">Workflows</h3>
+					</div>
+					<div className="library-description">
+						<p>Distributed workflow engine for durable business processes.</p>
+						<p className="library-replaces">Replaces <span className="highlight">Temporal</span>, <span className="highlight">AWS Step Functions</span>, or <span className="highlight">LangGraph</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a>
+			<a href="/experimental/concepts/multiplayer" className="library-box library-box-blue">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="robot" color="#3b82f6" size={28} /></div>
+						<h3 className="not-prose">Agents</h3>
+					</div>
+					<div className="library-description">
+						<p>Framework for building, deploying, and orchestrating AI agents in production.</p>
+						<p className="library-replaces">Replaces <span className="highlight">LangChain</span>, <span className="highlight">LlamaIndex</span>, or <span className="highlight">AutoGen</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a>
+			<a href="/actor/overview" className="library-box library-box-orange">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="microchip" color="#ff4f00" size={28} /></div>
+						<h3 className="not-prose">Actors</h3>
+					</div>
+					<div className="library-description">
+						<p>Stateful actor model for building reliable, scalable, and maintainable backend services.</p>
+						<p className="library-replaces">Replaces <span className="highlight">Durable Objects</span>, <span className="highlight">AWS EventBridge</span>, or <span className="highlight">Orleans</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a>
+			<a href="/experimental/concepts/multiplayer" className="library-box library-box-green">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="tower-broadcast" color="#10b981" size={28} /></div>
+						<h3 className="not-prose">Realtime</h3>
+					</div>
+					<div className="library-description">
+						<p>Low-latency real-time communication for multiplayer experiences and collaborative apps.</p>
+						<p className="library-replaces">Replaces <span className="highlight">Socket.IO</span>, <span className="highlight">Pusher</span>, or <span className="highlight">Firebase</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a>
+		</div>*/}
 
-    	<div className="features-grid">
+        {/*<div className="features-grid">
     		<div className="feature-box group">
     			<Icon icon="microchip" color="#ff4f00" size={24} />
     			<h3 className="not-prose">Long-Lived, Stateful Compute</h3>
@@ -98,18 +221,17 @@ import FAQ from "/snippets/landing-faq.mdx";
     				<p>No servers to manage. Your code runs on-demand and scales automatically with usage.</p>
     			</div>
     		</div>
-    	</div>
+    	</div>*/}
 
-    	<div className="subtle-link-container">
+        {/*<div className="subtle-link-container">
     		<a href="#faq" className="subtle-link">Have more questions? Jump to our FAQ <Icon icon="arrow-right" color="white" /></a>
-    	</div>
-    </div>
+    	</div>*/}
 
-	<div style={{ height: '160px' }} />
+    </div>
 
 	<div className="landing-section-xl">
 		<h2 className="landing-section-heading">Reconsider What Your Backend Can Do</h2>
-		<p className="landing-section-text">Build powerful applications with ActorCore's comprehensive feature set.</p>
+		<p className="landing-section-text">Build powerful applications with RivetKit's comprehensive feature set.</p>
 
 		<div style={{ height: '20px' }} />
 		<Snippets />
@@ -120,7 +242,7 @@ import FAQ from "/snippets/landing-faq.mdx";
 
     <div className="text-center landing-section">
     	<h2 className="landing-section-heading">Less Complexity, More Functionality</h2>
-    	<p className="landing-section-text">ActorCore provides a solid foundation with the features you'd expect for modern apps.</p>
+    	<p className="landing-section-text">RivetKit provides a solid foundation with the features you'd expect for modern apps.</p>
 
     	<div style={{ height: '80px' }} />
 
@@ -134,7 +256,7 @@ import FAQ from "/snippets/landing-faq.mdx";
         <Tech />
     </div>
 
-    <div style={{ height: '260px' }} />
+    {/* <div style={{ height: '260px' }} />
 
     <div className="text-center landing-section">
         <h2 className="landing-section-heading">Supercharged Local Development with the Studio</h2>
@@ -159,7 +281,7 @@ import FAQ from "/snippets/landing-faq.mdx";
                 Visit The Studio
             </a>
         </div>
-    </div>
+    </div> */}
 
     <div style={{ height: '220px' }} />
 
@@ -171,7 +293,7 @@ import FAQ from "/snippets/landing-faq.mdx";
 
     <div className="text-center landing-section">
         <h2 className="landing-section-heading">Join the Community</h2>
-        <p className="landing-section-text">Help make ActorCore the universal way to build & scale stateful serverless applications.</p>
+        <p className="landing-section-text">Help make RivetKit the universal way to build & scale stateful serverless applications.</p>
 
         <div style={{ height: '40px' }} />
 
@@ -180,7 +302,7 @@ import FAQ from "/snippets/landing-faq.mdx";
                 <Icon icon="discord" color="#5865F2" className="tech-icon" />
                 Discord
             </a>
-            <a href="https://x.com/ActorCore_org" className="tech-button" target="_blank" rel="noopener noreferrer">
+            <a href="https://x.com/RivetKit_org" className="tech-button" target="_blank" rel="noopener noreferrer">
                 <Icon icon="x-twitter" color="white" className="tech-icon" />
                 X
             </a>
@@ -188,39 +310,39 @@ import FAQ from "/snippets/landing-faq.mdx";
                 <Icon icon="bluesky" color="#0085FF" className="tech-icon" />
                 Bluesky
             </a>
-            <a href="https://github.com/rivet-gg/actor-core/discussions" className="tech-button" target="_blank" rel="noopener noreferrer">
+            <a href="https://github.com/rivet-gg/rivetkit/discussions" className="tech-button" target="_blank" rel="noopener noreferrer">
                 <Icon icon="github" color="white" className="tech-icon" />
                 Discussions
             </a>
-            <a href="https://github.com/rivet-gg/actor-core/issues" className="tech-button" style={{ gridColumn: '2' }} target="_blank" rel="noopener noreferrer">
+            <a href="https://github.com/rivet-gg/rivetkit/issues" className="tech-button" style={{ gridColumn: '2' }} target="_blank" rel="noopener noreferrer">
                 <Icon icon="github" color="white" className="tech-icon" />
                 Issues
             </a>
         </div>
     </div>
 
-    <div style={{ height: '260px' }} />
+    {/* <div style={{ height: '260px' }} />
 
     <div className="landing-section">
         <FAQ />
-    </div>
+    </div> */}
 
-    <div style={{ height: '260px' }} />
+    {/*<div style={{ height: '260px' }} />
 
     <div className="landing-section">
         <Manifesto />
-    </div>
+    </div> */}
 
     <div style={{ height: '260px' }} />
 
     <div className="cta-section landing-section">
-        <h2 className="cta-title" id="rotating-cta-title">Performance in every act - thanks to ActorCore.</h2>
+        <h2 className="cta-title" id="rotating-cta-title">Performance in every act - thanks to Rivet Actors.</h2>
     	<div style={{ height: "16px" }} />
         <div className="landing-buttons">
-            <a href="/overview" className="landing-button landing-button-primary">
+            <a href="/actors/overview" className="landing-button landing-button-primary">
                 Get Started
             </a>
-            <a href="https://github.com/rivet-gg/actor-core" target="_blank" className="landing-button landing-button-secondary">
+            <a href="https://github.com/rivet-gg/rivetkit" target="_blank" className="landing-button landing-button-secondary">
                 View on GitHub
             </a>
         </div>

@@ -1,21 +1,21 @@
 import { serve as honoServe, type ServerType } from "@hono/node-server";
 import { createNodeWebSocket, type NodeWebSocket } from "@hono/node-ws";
-import { assertUnreachable } from "actor-core/utils";
-import { CoordinateTopology } from "actor-core/topologies/coordinate";
+import { assertUnreachable } from "@rivetkit/actor/utils";
+import { CoordinateTopology } from "@rivetkit/actor/topologies/coordinate";
 import { logger } from "./log";
 import type { Hono } from "hono";
-import { StandaloneTopology, type ActorCoreApp } from "actor-core";
+import { StandaloneTopology, type ActorCoreApp } from "@rivetkit/actor";
 import {
 	MemoryGlobalState,
 	MemoryManagerDriver,
 	MemoryActorDriver,
-} from "@actor-core/memory";
+} from "@rivetkit/memory";
 import { type InputConfig, ConfigSchema } from "./config";
 import {
 	FileSystemActorDriver,
 	FileSystemGlobalState,
 	FileSystemManagerDriver,
-} from "@actor-core/file-system";
+} from "@rivetkit/file-system";
 
 export { InputConfig as Config } from "./config";
 

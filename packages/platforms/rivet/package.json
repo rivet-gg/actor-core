@@ -1,5 +1,5 @@
 {
-  "name": "@actor-core/rivet",
+  "name": "@rivetkit/rivet",
   "version": "0.9.0-rc.1",
   "files": [
     "src",
@@ -27,14 +27,13 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "actor-core": "*"
+    "@rivetkit/actor": "*"
   },
   "devDependencies": {
     "@rivet-gg/actor-core": "^25.1.0",
     "@types/deno": "^2.0.0",
     "@types/invariant": "^2",
     "@types/node": "^22.13.1",
-    "actor-core": "workspace:*",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2",
     "vitest": "^3.1.1"

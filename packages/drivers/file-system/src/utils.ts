@@ -5,7 +5,7 @@ import * as crypto from "crypto";
 import envPaths from "env-paths";
 
 // Get platform-specific data directory
-const paths = envPaths("actor-core", { suffix: "" });
+const paths = envPaths("@rivetkit/actor", { suffix: "" });
 
 /**
  * Create a hash for a path, normalizing it first

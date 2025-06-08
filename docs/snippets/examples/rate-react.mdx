@@ -1,11 +1,11 @@
 ```typescript
-import { createClient } from "actor-core/client";
-import { createReactActorCore } from "@actor-core/react";
+import { createClient } from "@rivetkit/actor/client";
+import { createReactRivetKit } from "@rivetkit/react";
 import { useState } from "react";
 import type { App } from "../actors/app";
 
 const client = createClient<App>("http://localhost:6420");
-const { useActor } = createReactActorCore(client);
+const { useActor } = createReactRivetKit(client);
 
 export function RateLimiter() {
   // Connect to API rate limiter for user-123

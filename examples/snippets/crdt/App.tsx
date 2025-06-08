@@ -1,5 +1,5 @@
-import { createClient } from "actor-core/client";
-import { createReactActorCore } from "@actor-core/react";
+import { createClient } from "@rivetkit/actor/client";
+import { createReactActorCore } from "@rivetkit/react";
 import { useState, useEffect, useRef } from "react";
 import * as Y from 'yjs';
 import { applyUpdate, encodeStateAsUpdate } from 'yjs';

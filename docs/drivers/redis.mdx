@@ -9,7 +9,7 @@ The Redis Driver is a production-ready implementation that uses Redis for actor 
 <DriverNote />
 
 <Warning>
-  ActorCore requires AOF (Append Only File) persistence to be enabled on your Redis server. See the [Redis Persistence Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/#append-only-file) for setup instructions.
+  RivetKit requires AOF (Append Only File) persistence to be enabled on your Redis server. See the [Redis Persistence Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/#append-only-file) for setup instructions.
 </Warning>
 
 ## Compatibility
@@ -30,22 +30,22 @@ The Redis Driver is a production-ready implementation that uses Redis for actor 
     <Tabs>
       <Tab title="npm">
         ```bash
-        npm install @actor-core/redis @actor-core/nodejs ioredis
+        npm install rivetkit/redis rivetkit/nodejs ioredis
         ```
       </Tab>
       <Tab title="yarn">
         ```bash
-        yarn add @actor-core/redis @actor-core/nodejs ioredis
+        yarn add rivetkit/redis rivetkit/nodejs ioredis
         ```
       </Tab>
       <Tab title="pnpm">
         ```bash
-        pnpm add @actor-core/redis @actor-core/nodejs ioredis
+        pnpm add rivetkit/redis rivetkit/nodejs ioredis
         ```
       </Tab>
       <Tab title="bun">
         ```bash
-        bun add @actor-core/redis @actor-core/nodejs ioredis
+        bun add rivetkit/redis rivetkit/nodejs ioredis
         ```
       </Tab>
     </Tabs>
@@ -55,10 +55,10 @@ The Redis Driver is a production-ready implementation that uses Redis for actor 
     Create a Redis connection and set up your server:
 
     ```typescript src/index.ts
-    import { serve } from "@actor-core/nodejs"
-    import { RedisManagerDriver } from "@actor-core/redis/manager";
-    import { RedisActorDriver } from "@actor-core/redis/actor";
-    import { RedisCoordinateDriver } from "@actor-core/redis/coordinate";
+    import { serve } from "@rivetkit/nodejs"
+    import { RedisManagerDriver } from "@rivetkit/redis/manager";
+    import { RedisActorDriver } from "@rivetkit/redis/actor";
+    import { RedisCoordinateDriver } from "@rivetkit/redis/coordinate";
     import Redis from "ioredis";
 
     // Create a Redis connection
@@ -109,9 +109,9 @@ The Redis driver requires an [ioredis](https://github.com/redis/ioredis) connect
 
 ```typescript
 import Redis from "ioredis";
-import { RedisManagerDriver } from "@actor-core/redis/manager";
-import { RedisActorDriver } from "@actor-core/redis/actor";
-import { RedisCoordinateDriver } from "@actor-core/redis/coordinate";
+import { RedisManagerDriver } from "@rivetkit/redis/manager";
+import { RedisActorDriver } from "@rivetkit/redis/actor";
+import { RedisCoordinateDriver } from "@rivetkit/redis/coordinate";
 
 // Create a Redis connection
 const redis = new Redis({

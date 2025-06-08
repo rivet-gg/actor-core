@@ -1,11 +1,11 @@
 ```typescript
-import { createClient } from "actor-core/client";
-import { createReactActorCore } from "@actor-core/react";
+import { createClient } from "@rivetkit/actor/client";
+import { createReactRivetKit } from "@rivetkit/react";
 import { useState, useEffect } from "react";
 import type { App } from "../actors/app";
 
 const client = createClient<App>("http://localhost:6420");
-const { useActor, useActorEvent } = createReactActorCore(client);
+const { useActor, useActorEvent } = createReactRivetKit(client);
 
 export function DocumentEditor() {
   // Connect to actor for this document ID from URL

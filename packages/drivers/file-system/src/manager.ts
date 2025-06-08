@@ -6,13 +6,13 @@ import type {
 	ManagerDriver,
 	ActorOutput,
 	CreateInput,
-} from "actor-core/driver-helpers";
-import { ActorAlreadyExists } from "actor-core/errors";
+} from "@rivetkit/actor/driver-helpers";
+import { ActorAlreadyExists } from "@rivetkit/actor/errors";
 import { logger } from "./log";
 import type { FileSystemGlobalState } from "./global-state";
 import { ActorState } from "./global-state";
-import type { ActorCoreApp } from "actor-core";
-import { ManagerInspector } from "actor-core/inspector";
+import type { ActorCoreApp } from "@rivetkit/actor";
+import { ManagerInspector } from "@rivetkit/actor/inspector";
 
 export class FileSystemManagerDriver implements ManagerDriver {
 	#state: FileSystemGlobalState;

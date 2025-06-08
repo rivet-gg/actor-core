@@ -35,17 +35,16 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 
 	// Create package.json with workspace dependencies
 	const packageJson = {
-		name: "actor-core-test",
+		name: "@rivetkit/actor-test",
 		private: true,
 		version: "1.0.0",
 		type: "module",
 		scripts: {
-			deploy: "actor-core deploy rivet app.ts --env prod",
+			deploy: "@rivetkit/actor deploy rivet app.ts --env prod",
 		},
 		dependencies: {
-			"@actor-core/rivet": "workspace:*",
-			"@actor-core/cli": "workspace:*",
-			"actor-core": "workspace:*",
+			"@rivetkit/rivet": "workspace:*",
+			"@rivetkit/actor": "workspace:*",
 		},
 		packageManager:
 			"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
@@ -96,11 +95,11 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 
 	if (!process.env._RIVET_SKIP_DEPLOY) {
 		// Deploy using the actor-core CLI
-		console.log("Spawning @actor-core/cli deploy command...");
+		console.log("Spawning rivetkit/cli deploy command...");
 		const deployProcess = spawn(
 			"npx",
 			[
-				"@actor-core/cli",
+				"@rivetkit/cli",
 				"deploy",
 				"rivet",
 				"app.ts",
@@ -144,10 +143,10 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 	console.log("Getting Rivet endpoint...");
 
 	// Get the endpoint using the CLI endpoint command
-	console.log("Spawning @actor-core/cli endpoint command...");
+	console.log("Spawning rivetkit/cli endpoint command...");
 	const endpointProcess = spawn(
 		"npx",
-		["@actor-core/cli", "endpoint", "rivet", "--env", ENV, "--plain"],
+		["@rivetkit/cli", "endpoint", "rivet", "--env", ENV, "--plain"],
 		{
 			cwd: tmpDir,
 			env: {

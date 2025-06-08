@@ -9,23 +9,23 @@
 
 ```bash
 # npm
-npm add @actor-core/react
+npm add rivetkit/react
 
 # pnpm
-pnpm add @actor-core/react
+pnpm add rivetkit/react
 
 # Yarn
-yarn add @actor-core/react
+yarn add rivetkit/react
 
 # Bun
-bun add @actor-core/react
+bun add rivetkit/react
 ```
 
 ## Quick Start
 
 ```tsx
-import { createClient } from "actor-core/client";
-import { createReactActorCore } from "@actor-core/react";
+import { createClient } from "@rivetkit/actor/client";
+import { createReactActorCore } from "@rivetkit/react";
 import type { App } from "../counter/src/index";
 import React, { useState } from "react";
 

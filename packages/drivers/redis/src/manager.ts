@@ -5,13 +5,13 @@ import type {
 	GetOrCreateWithKeyInput,
 	GetWithKeyInput,
 	ManagerDriver,
-} from "actor-core/driver-helpers";
-import { ActorAlreadyExists } from "actor-core/errors";
+} from "@rivetkit/actor/driver-helpers";
+import { ActorAlreadyExists } from "@rivetkit/actor/errors";
 import type Redis from "ioredis";
 import * as crypto from "node:crypto";
 import { KEYS } from "./keys";
-import { ManagerInspector } from "actor-core/inspector";
-import type { ActorCoreApp } from "actor-core";
+import { ManagerInspector } from "@rivetkit/actor/inspector";
+import type { ActorCoreApp } from "@rivetkit/actor";
 
 interface Actor {
 	id: string;
