@@ -139,3 +139,16 @@ export async function sendHttpRequest<
 
 	return responseBody;
 }
+
+export function serializeWithEncoding(
+	encoding: Encoding,
+	value: unknown,
+): WebSocketMessage {
+	if (encoding === "json") {
+		return JSON.stringify(value);
+	} else if (encoding === "cbor") {
+		return cbor.encode(value);
+	} else {
+		assertUnreachable(encoding);
+	}
+}

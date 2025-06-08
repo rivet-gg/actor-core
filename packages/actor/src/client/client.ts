@@ -1,13 +1,20 @@
 import type { Transport } from "@/actor/protocol/message/mod";
 import type { Encoding } from "@/actor/protocol/serde";
 import type { ActorQuery } from "@/manager/protocol/query";
-import * as errors from "./errors";
-import { ActorConn, ActorConnRaw, CONNECT_SYMBOL } from "./actor-conn";
+import {
+	ActorConn,
+	ActorConnRaw,
+	CONNECT_SYMBOL,
+	SendHttpMessageOpts,
+} from "./actor-conn";
 import { ActorHandle, ActorHandleRaw } from "./actor-handle";
-import { ActorActionFunction, resolveActorId } from "./actor-common";
+import { ActorActionFunction } from "./actor-common";
 import { logger } from "./log";
 import type { ActorCoreApp } from "@/mod";
 import type { AnyActorDefinition } from "@/actor/definition";
+import type * as wsToServer from "@/actor/protocol/message/to-server";
+import type { EventSource } from "eventsource";
+import { createHttpClientDriver } from "./http-client-driver";
 
 /** Extract the actor registry from the app definition. */
 export type ExtractActorsFromApp<A extends ActorCoreApp<any>> =
@@ -150,6 +157,36 @@ export const ACTOR_CONNS_SYMBOL = Symbol("actorConns");
 export const CREATE_ACTOR_CONN_PROXY = Symbol("createActorConnProxy");
 export const TRANSPORT_SYMBOL = Symbol("transport");
 
+export interface ClientDriver {
+	action<Args extends Array<unknown> = unknown[], Response = unknown>(
+		actorQuery: ActorQuery,
+		encoding: Encoding,
+		params: unknown,
+		name: string,
+		...args: Args
+	): Promise<Response>;
+	resolveActorId(
+		actorQuery: ActorQuery,
+		encodingKind: Encoding,
+	): Promise<string>;
+	connectWebSocket(
+		actorQuery: ActorQuery,
+		encodingKind: Encoding,
+	): Promise<WebSocket>;
+	connectSse(
+		actorQuery: ActorQuery,
+		encodingKind: Encoding,
+		params: unknown,
+	): Promise<EventSource>;
+	sendHttpMessage(
+		actorId: string,
+		encoding: Encoding,
+		connectionId: string,
+		connectionToken: string,
+		message: wsToServer.ToServer,
+	): Promise<Response>;
+}
+
 /**
  * Client for managing & connecting to actors.
  *
@@ -161,7 +198,7 @@ export class ClientRaw {
 
 	[ACTOR_CONNS_SYMBOL] = new Set<ActorConnRaw>();
 
-	#managerEndpoint: string;
+	#driver: ClientDriver;
 	#encodingKind: Encoding;
 	[TRANSPORT_SYMBOL]: Transport;
 
@@ -172,8 +209,8 @@ export class ClientRaw {
 	 * @param {ClientOptions} [opts] - Options for configuring the client.
 	 * @see {@link https://rivet.gg/docs/setup|Initial Setup}
 	 */
-	public constructor(managerEndpoint: string, opts?: ClientOptions) {
-		this.#managerEndpoint = managerEndpoint;
+	public constructor(driver: ClientDriver, opts?: ClientOptions) {
+		this.#driver = driver;
 
 		this.#encodingKind = opts?.encoding ?? "cbor";
 		this[TRANSPORT_SYMBOL] = opts?.transport ?? "websocket";
@@ -205,12 +242,7 @@ export class ClientRaw {
 			},
 		};
 
-		const managerEndpoint = this.#managerEndpoint;
-		const handle = this.#createHandle(
-			managerEndpoint,
-			opts?.params,
-			actorQuery,
-		);
+		const handle = this.#createHandle(opts?.params, actorQuery);
 		return createActorProxy(handle) as ActorHandle<AD>;
 	}
 
@@ -244,12 +276,7 @@ export class ClientRaw {
 			},
 		};
 
-		const managerEndpoint = this.#managerEndpoint;
-		const handle = this.#createHandle(
-			managerEndpoint,
-			opts?.params,
-			actorQuery,
-		);
+		const handle = this.#createHandle(opts?.params, actorQuery);
 		return createActorProxy(handle) as ActorHandle<AD>;
 	}
 
@@ -286,12 +313,7 @@ export class ClientRaw {
 			},
 		};
 
-		const managerEndpoint = this.#managerEndpoint;
-		const handle = this.#createHandle(
-			managerEndpoint,
-			opts?.params,
-			actorQuery,
-		);
+		const handle = this.#createHandle(opts?.params, actorQuery);
 		return createActorProxy(handle) as ActorHandle<AD>;
 	}
 
@@ -330,8 +352,7 @@ export class ClientRaw {
 		});
 
 		// Create the actor
-		const actorId = await resolveActorId(
-			this.#managerEndpoint,
+		const actorId = await this.#driver.resolveActorId(
 			createQuery,
 			this.#encodingKind,
 		);
@@ -347,25 +368,17 @@ export class ClientRaw {
 				actorId,
 			},
 		} satisfies ActorQuery;
-		const handle = this.#createHandle(
-			this.#managerEndpoint,
-			opts?.params,
-			getForIdQuery,
-		);
+		const handle = this.#createHandle(opts?.params, getForIdQuery);
 
 		const proxy = createActorProxy(handle) as ActorHandle<AD>;
 
 		return proxy;
 	}
 
-	#createHandle(
-		endpoint: string,
-		params: unknown,
-		actorQuery: ActorQuery,
-	): ActorHandleRaw {
+	#createHandle(params: unknown, actorQuery: ActorQuery): ActorHandleRaw {
 		return new ActorHandleRaw(
 			this,
-			endpoint,
+			this.#driver,
 			params,
 			this.#encodingKind,
 			actorQuery,
@@ -421,19 +434,11 @@ export type Client<A extends ActorCoreApp<any>> = ClientRaw & {
 	>;
 };
 
-/**
- * Creates a client with the actor accessor proxy.
- *
- * @template A The actor application type.
- * @param {string} managerEndpoint - The manager endpoint.
- * @param {ClientOptions} [opts] - Options for configuring the client.
- * @returns {Client<A>} - A proxied client that supports the `client.myActor.connect()` syntax.
- */
-export function createClient<A extends ActorCoreApp<any>>(
-	managerEndpoint: string,
+export function createClientWithDriver<A extends ActorCoreApp<any>>(
+	driver: ClientDriver,
 	opts?: ClientOptions,
 ): Client<A> {
-	const client = new ClientRaw(managerEndpoint, opts);
+	const client = new ClientRaw(driver, opts);
 
 	// Create proxy for accessing actors by name
 	return new Proxy(client, {

@@ -1,4 +1,7 @@
-export { createClient } from "./client";
+import type { ActorCoreApp } from "@/app/mod";
+import { type Client, type ClientOptions, createClientWithDriver } from "./client";
+import { createHttpClientDriver } from "./http-client-driver";
+
 export type {
 	Client,
 	ActorAccessor,
@@ -33,3 +36,19 @@ export {
 	AnyActorDefinition,
 	ActorDefinition,
 } from "@/actor/definition";
+
+/**
+ * Creates a client with the actor accessor proxy.
+ *
+ * @template A The actor application type.
+ * @param {string} managerEndpoint - The manager endpoint.
+ * @param {ClientOptions} [opts] - Options for configuring the client.
+ * @returns {Client<A>} - A proxied client that supports the `client.myActor.connect()` syntax.
+ */
+export function createClient<A extends ActorCoreApp<any>>(
+	endpoint: string,
+	opts?: ClientOptions,
+): Client<A> {
+	const driver = createHttpClientDriver(endpoint);
+	return createClientWithDriver<A>(driver, opts);
+}

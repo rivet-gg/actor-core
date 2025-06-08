@@ -1,19 +1,16 @@
 import type { AnyActorDefinition } from "@/actor/definition";
-import type { ActionRequest, ActionResponse } from "@/actor/protocol/http/action";
 import type { Encoding } from "@/actor/protocol/serde";
 import type { ActorQuery } from "@/manager/protocol/query";
-import { type ActorDefinitionActions, resolveActorId } from "./actor-common";
+import { type ActorDefinitionActions } from "./actor-common";
 import { type ActorConn, ActorConnRaw } from "./actor-conn";
-import { CREATE_ACTOR_CONN_PROXY, type ClientRaw } from "./client";
+import {
+	ClientDriver,
+	CREATE_ACTOR_CONN_PROXY,
+	type ClientRaw,
+} from "./client";
 import { logger } from "./log";
-import { sendHttpRequest } from "./utils";
 import invariant from "invariant";
 import { assertUnreachable } from "@/actor/utils";
-import {
-	HEADER_ACTOR_QUERY,
-	HEADER_CONN_PARAMS,
-	HEADER_ENCODING,
-} from "@/actor/router-endpoints";
 
 /**
  * Provides underlying functions for stateless {@link ActorHandle} for action calls.
@@ -23,30 +20,30 @@ import {
  */
 export class ActorHandleRaw {
 	#client: ClientRaw;
-	#endpoint: string;
+	#driver: ClientDriver;
 	#encodingKind: Encoding;
 	#actorQuery: ActorQuery;
+	#params: unknown;
 
 	/**
 	 * Do not call this directly.
 	 *
 	 * Creates an instance of ActorHandleRaw.
 	 *
-	 * @param {string} endpoint - The endpoint to connect to.
-	 *
 	 * @protected
 	 */
 	public constructor(
 		client: any,
-		endpoint: string,
-		private readonly params: unknown,
+		driver: ClientDriver,
+		params: unknown,
 		encodingKind: Encoding,
 		actorQuery: ActorQuery,
 	) {
 		this.#client = client;
-		this.#endpoint = endpoint;
+		this.#driver = driver;
 		this.#encodingKind = encodingKind;
 		this.#actorQuery = actorQuery;
+		this.#params = params;
 	}
 
 	/**
@@ -63,27 +60,13 @@ export class ActorHandleRaw {
 		name: string,
 		...args: Args
 	): Promise<Response> {
-		logger().debug("actor handle action", {
+		return await this.#driver.action<Args, Response>(
+			this.#actorQuery,
+			this.#encodingKind,
+			this.#params,
 			name,
-			args,
-			query: this.#actorQuery,
-		});
-
-		const responseData = await sendHttpRequest<ActionRequest, ActionResponse>({
-			url: `${this.#endpoint}/actors/actions/${encodeURIComponent(name)}`,
-			method: "POST",
-			headers: {
-				[HEADER_ENCODING]: this.#encodingKind,
-				[HEADER_ACTOR_QUERY]: JSON.stringify(this.#actorQuery),
-				...(this.params !== undefined
-					? { [HEADER_CONN_PARAMS]: JSON.stringify(this.params) }
-					: {}),
-			},
-			body: { a: args } satisfies ActionRequest,
-			encoding: this.#encodingKind,
-		});
-
-		return responseData.o as Response;
+			...args,
+		);
 	}
 
 	/**
@@ -99,8 +82,8 @@ export class ActorHandleRaw {
 
 		const conn = new ActorConnRaw(
 			this.#client,
-			this.#endpoint,
-			this.params,
+			this.#driver,
+			this.#params,
 			this.#encodingKind,
 			this.#actorQuery,
 		);
@@ -120,8 +103,8 @@ export class ActorHandleRaw {
 			"getForKey" in this.#actorQuery ||
 			"getOrCreateForKey" in this.#actorQuery
 		) {
-			const actorId = await resolveActorId(
-				this.#endpoint,
+			// TODO:
+			const actorId = await this.#driver.resolveActorId(
 				this.#actorQuery,
 				this.#encodingKind,
 			);

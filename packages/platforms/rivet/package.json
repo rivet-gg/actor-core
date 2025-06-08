@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@rivet-gg/actor-core": "^25.1.0",
+    "@rivetkit/actor": "workspace:*",
     "@types/deno": "^2.0.0",
     "@types/invariant": "^2",
     "@types/node": "^22.13.1",
