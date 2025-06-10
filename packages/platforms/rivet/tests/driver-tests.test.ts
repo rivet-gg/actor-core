@@ -1,4 +1,4 @@
-import { runDriverTests } from "@rivetkit/actor/driver-test-suite";
+import { runDriverTests } from "rivetkit/driver-test-suite";
 import { deployToRivet, RIVET_CLIENT_CONFIG } from "./rivet-deploy";
 import { type RivetClientConfig, rivetRequest } from "../src/rivet-client";
 import invariant from "invariant";
@@ -17,8 +17,8 @@ const driverTestConfig = {
 			managerEndpoint,
 		});
 
-		// Cleanup actors from previous tests
-		await deleteAllActors(RIVET_CLIENT_CONFIG, !alreadyDeployedManager);
+		// Cleanup workers from previous tests
+		await deleteAllWorkers(RIVET_CLIENT_CONFIG, !alreadyDeployedManager);
 
 		if (!alreadyDeployedApps.has(appPath)) {
 			console.log(`Starting Rivet driver tests with app: ${appPath}`);
@@ -41,30 +41,30 @@ const driverTestConfig = {
 		return {
 			endpoint: managerEndpoint,
 			async cleanup() {
-				await deleteAllActors(RIVET_CLIENT_CONFIG, false);
+				await deleteAllWorkers(RIVET_CLIENT_CONFIG, false);
 			},
 		};
 	},
 };
 
-async function deleteAllActors(
+async function deleteAllWorkers(
 	clientConfig: RivetClientConfig,
 	deleteManager: boolean,
 ) {
-	console.log("Listing actors to delete");
-	const { actors } = await rivetRequest<
+	console.log("Listing workers to delete");
+	const { workers } = await rivetRequest<
 		void,
-		{ actors: { id: string; tags: Record<string, string> }[] }
-	>(clientConfig, "GET", "/actors");
+		{ workers: { id: string; tags: Record<string, string> }[] }
+	>(clientConfig, "GET", "/workers");
 
-	for (const actor of actors) {
-		if (!deleteManager && actor.tags.name === "manager") continue;
+	for (const worker of workers) {
+		if (!deleteManager && worker.tags.name === "manager") continue;
 
-		console.log(`Deleting actor ${actor.id} (${JSON.stringify(actor.tags)})`);
+		console.log(`Deleting worker ${worker.id} (${JSON.stringify(worker.tags)})`);
 		await rivetRequest<void, void>(
 			clientConfig,
 			"DELETE",
-			`/actors/${actor.id}`,
+			`/workers/${worker.id}`,
 		);
 	}
 }

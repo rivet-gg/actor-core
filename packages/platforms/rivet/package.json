@@ -27,14 +27,14 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@rivetkit/actor": "*"
+    "rivetkit": "*"
   },
   "devDependencies": {
     "@rivet-gg/actor-core": "^25.1.0",
-    "@rivetkit/actor": "workspace:*",
     "@types/deno": "^2.0.0",
     "@types/invariant": "^2",
     "@types/node": "^22.13.1",
+    "rivetkit": "workspace:*",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2",
     "vitest": "^3.1.1"

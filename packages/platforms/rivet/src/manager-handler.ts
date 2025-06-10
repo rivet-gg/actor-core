@@ -1,12 +1,12 @@
-import { setupLogging } from "@rivetkit/actor/log";
-import { stringifyError } from "@rivetkit/actor/utils";
-import type { ActorContext } from "@rivet-gg/actor-core";
+import { setupLogging } from "rivetkit/log";
+import { stringifyError } from "rivetkit/utils";
+import type { WorkerContext } from "@rivet-gg/worker-core";
 import { logger } from "./log";
-import { GetActorMeta, RivetManagerDriver } from "./manager-driver";
+import { GetWorkerMeta, RivetManagerDriver } from "./manager-driver";
 import type { RivetClientConfig } from "./rivet-client";
 import type { RivetHandler } from "./util";
 import { createWebSocketProxy } from "./ws-proxy";
-import { PartitionTopologyManager } from "@rivetkit/actor/topologies/partition";
+import { PartitionTopologyManager } from "rivetkit/topologies/partition";
 import { type InputConfig, ConfigSchema } from "./config";
 import { proxy } from "hono/proxy";
 import invariant from "invariant";
@@ -27,7 +27,7 @@ export function createManagerHandlerInner(
 	const driverConfig = ConfigSchema.parse(inputConfig);
 
 	const handler = {
-		async start(ctx: ActorContext): Promise<void> {
+		async start(ctx: WorkerContext): Promise<void> {
 			setupLogging();
 
 			const portStr = Deno.env.get("PORT_HTTP");
@@ -96,33 +96,33 @@ export function createManagerHandlerInner(
 				driverConfig.app.config,
 				driverConfig,
 				{
-					onProxyRequest: async (c, actorRequest, _actorId, metaRaw) => {
+					onProxyRequest: async (c, workerRequest, _workerId, metaRaw) => {
 						invariant(metaRaw, "meta not provided");
-						const meta = metaRaw as GetActorMeta;
+						const meta = metaRaw as GetWorkerMeta;
 
-						const parsedRequestUrl = new URL(actorRequest.url);
-						const actorUrl = `${meta.endpoint}${parsedRequestUrl.pathname}${parsedRequestUrl.search}`;
+						const parsedRequestUrl = new URL(workerRequest.url);
+						const workerUrl = `${meta.endpoint}${parsedRequestUrl.pathname}${parsedRequestUrl.search}`;
 
-						logger().debug("proxying request to rivet actor", {
-							method: actorRequest.method,
-							url: actorUrl,
+						logger().debug("proxying request to rivet worker", {
+							method: workerRequest.method,
+							url: workerUrl,
 						});
 
-						const proxyRequest = new Request(actorUrl, actorRequest);
+						const proxyRequest = new Request(workerUrl, workerRequest);
 						return await proxy(proxyRequest);
 					},
-					onProxyWebSocket: async (c, path, actorId, metaRaw) => {
+					onProxyWebSocket: async (c, path, workerId, metaRaw) => {
 						invariant(metaRaw, "meta not provided");
-						const meta = metaRaw as GetActorMeta;
+						const meta = metaRaw as GetWorkerMeta;
 
-						const actorUrl = `${meta.endpoint}${path}`;
+						const workerUrl = `${meta.endpoint}${path}`;
 
-						logger().debug("proxying websocket to rivet actor", {
-							url: actorUrl,
+						logger().debug("proxying websocket to rivet worker", {
+							url: workerUrl,
 						});
 
 						// TODO: fix as any
-						return createWebSocketProxy(c, actorUrl) as any;
+						return createWebSocketProxy(c, workerUrl) as any;
 					},
 				},
 			);

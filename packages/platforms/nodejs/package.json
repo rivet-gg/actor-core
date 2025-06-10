@@ -26,15 +26,15 @@
     "check-types": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@rivetkit/actor": "*",
     "@rivetkit/file-system": "*",
-    "@rivetkit/memory": "*"
+    "@rivetkit/memory": "*",
+    "rivetkit": "*"
   },
   "devDependencies": {
-    "@rivetkit/actor": "workspace:*",
     "@rivetkit/file-system": "workspace:*",
     "@rivetkit/memory": "workspace:*",
     "hono": "^4.7.0",
+    "rivetkit": "workspace:*",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2"
   },

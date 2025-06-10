@@ -1,5 +1,5 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 import { drizzle } from "@rivetkit/drizzle";
 import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
@@ -8,7 +8,7 @@ import { messages } from "./schema";
 
 export type Message = { role: "user" | "assistant"; content: string; timestamp: number; }
 
-const aiAgent = actor({
+const aiAgent = worker({
   sql: drizzle(),
 
   actions: {
@@ -28,7 +28,7 @@ const aiAgent = actor({
       
       // Add user message to conversation
       const userMsg = {
-        conversationId: c.actorId, // Use the actor instance ID
+        conversationId: c.workerId, // Use the worker instance ID
         role: "user",
         content: userMessage,
       };

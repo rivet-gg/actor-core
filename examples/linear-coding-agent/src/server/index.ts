@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import dotenv from "dotenv";
-import { createClient } from "@rivetkit/actor/client";
+import { createClient } from "rivetkit/client";
 import { app } from "../actors/app";
 import type { App } from "../actors/app";
 import type { LinearWebhookEvent } from "../types";

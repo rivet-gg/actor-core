@@ -1,8 +1,8 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
 // Simple rate limiter - allows 5 requests per minute
-const rateLimiter = actor({
+const rateLimiter = worker({
   state: {
     count: 0,
     resetAt: 0

@@ -6,11 +6,11 @@ import { deployToRivet } from "./rivet-deploy";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Simple counter actor definition to deploy
-const COUNTER_ACTOR = `
-import { actor, setup } from "@rivetkit/actor";
+// Simple counter worker definition to deploy
+const COUNTER_WORKER = `
+import { worker, setup } from "rivetkit";
 
-const counter = actor({
+const counter = worker({
   state: { count: 0 },
   actions: {
     increment: (c, amount) => {
@@ -25,14 +25,14 @@ const counter = actor({
 });
 
 export const app = setup({
-  actors: { counter },
+  workers: { counter },
 });
 
 export type App = typeof app;
 `;
 
 test("Rivet deployment tests", async () => {
-	// Create a temporary path for the counter actor
+	// Create a temporary path for the counter worker
 	const tempFilePath = path.join(
 		__dirname,
 		"../../../..",
@@ -43,8 +43,8 @@ test("Rivet deployment tests", async () => {
 	// Ensure target directory exists
 	await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
 
-	// Write the counter actor file
-	await fs.writeFile(tempFilePath, COUNTER_ACTOR);
+	// Write the counter worker file
+	await fs.writeFile(tempFilePath, COUNTER_WORKER);
 
 	// Run the deployment
 	const result = await deployToRivet(tempFilePath, true);

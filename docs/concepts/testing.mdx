@@ -3,7 +3,7 @@ title: Testing
 icon: vial-circle-check
 ---
 
-RivetKit provides a straightforward testing framework to build reliable and maintainable applications. This guide covers how to write effective tests for your actor-based services.
+RivetKit provides a straightforward testing framework to build reliable and maintainable applications. This guide covers how to write effective tests for your worker-based services.
 
 ## Setup
 
@@ -19,33 +19,33 @@ npm test
 
 ## Basic Testing Setup
 
-RivetKit includes a test helper called `setupTest` that configures a test environment with in-memory drivers for your actors. This allows for fast, isolated tests without external dependencies.
+RivetKit includes a test helper called `setupTest` that configures a test environment with in-memory drivers for your workers. This allows for fast, isolated tests without external dependencies.
 
 <CodeGroup>
-```ts tests/my-actor.test.ts
+```ts tests/my-worker.test.ts
 import { test, expect } from "vitest";
-import { setupTest } from "@rivetkit/actor/test";
+import { setupTest } from "rivetkit/test";
 import { app } from "../src/index";
 
-test("my actor test", async (test) => {
+test("my worker test", async (test) => {
   const { client } = await setupTest(test, app);
   
-  // Now you can interact with your actor through the client
-  const myActor = await client.myActor.get();
+  // Now you can interact with your worker through the client
+  const myWorker = await client.myWorker.get();
   
-  // Test your actor's functionality
-  await myActor.someAction();
+  // Test your worker's functionality
+  await myWorker.someAction();
   
   // Make assertions
-  const result = await myActor.getState();
+  const result = await myWorker.getState();
   expect(result).toEqual("updated");
 });
 ```
 
 ```ts src/index.ts
-import { actor, setup } from "@rivetkit/actor";
+import { worker, setup } from "rivetkit";
 
-const myActor = actor({
+const myWorker = worker({
   state: { value: "initial" },
   actions: {
     someAction: (c) => {
@@ -59,24 +59,24 @@ const myActor = actor({
 });
 
 export const app = setup({
-  actors: { myActor }
+  workers: { myWorker }
 });
 
 export type App = typeof app;
 ```
 </CodeGroup>
 
-## Testing Actor State
+## Testing Worker State
 
-The test framework uses in-memory drivers that persist state within each test, allowing you to verify that your actor correctly maintains state between operations.
+The test framework uses in-memory drivers that persist state within each test, allowing you to verify that your worker correctly maintains state between operations.
 
 <CodeGroup>
 ```ts tests/counter.test.ts
 import { test, expect } from "vitest";
-import { setupTest } from "@rivetkit/actor/test";
+import { setupTest } from "rivetkit/test";
 import { app } from "../src/index";
 
-test("actor should persist state", async (test) => {
+test("worker should persist state", async (test) => {
   const { client } = await setupTest(test, app);
   const counter = await client.counter.get();
   
@@ -92,9 +92,9 @@ test("actor should persist state", async (test) => {
 ```
 
 ```ts src/index.ts
-import { setup } from "@rivetkit/actor";
+import { setup } from "rivetkit";
 
-const counter = actor({
+const counter = worker({
   state: { count: 0 },
   actions: {
     increment: (c) => {
@@ -109,7 +109,7 @@ const counter = actor({
 });
 
 export const app = setup({
-  actors: { counter }
+  workers: { counter }
 });
 
 export type App = typeof app;
@@ -118,15 +118,15 @@ export type App = typeof app;
 
 ## Testing Events
 
-For actors that emit events, you can verify events are correctly triggered by subscribing to them:
+For workers that emit events, you can verify events are correctly triggered by subscribing to them:
 
 <CodeGroup>
 ```ts tests/chat-room.test.ts
 import { test, expect, vi } from "vitest";
-import { setupTest } from "@rivetkit/actor/test";
+import { setupTest } from "rivetkit/test";
 import { app } from "../src/index";
 
-test("actor should emit events", async (test) => {
+test("worker should emit events", async (test) => {
   const { client } = await setupTest(test, app);
   const chatRoom = await client.chatRoom.get();
   
@@ -145,9 +145,9 @@ test("actor should emit events", async (test) => {
 ```
 
 ```ts src/index.ts
-import { actor, setup } from "@rivetkit/actor";
+import { worker, setup } from "rivetkit";
 
-export const chatRoom = actor({
+export const chatRoom = worker({
   state: { 
     messages: []
   },
@@ -164,7 +164,7 @@ export const chatRoom = actor({
 
 // Create and export the app
 export const app = setup({
-  actors: { chatRoom }
+  workers: { chatRoom }
 });
 
 // Export type for client type checking
@@ -179,7 +179,7 @@ RivetKit's schedule functionality can be tested using Vitest's time manipulation
 <CodeGroup>
 ```ts tests/scheduler.test.ts
 import { test, expect, vi } from "vitest";
-import { setupTest } from "@rivetkit/actor/test";
+import { setupTest } from "rivetkit/test";
 import { app } from "../src/index";
 
 test("scheduled tasks should execute", async (test) => {
@@ -199,9 +199,9 @@ test("scheduled tasks should execute", async (test) => {
 ```
 
 ```ts src/index.ts
-import { actor, setup } from "@rivetkit/actor";
+import { worker, setup } from "rivetkit";
 
-const scheduler = actor({
+const scheduler = worker({
   state: { 
     tasks: [],
     completedTasks: []
@@ -225,7 +225,7 @@ const scheduler = actor({
 });
 
 export const app = setup({
-  actors: { scheduler }
+  workers: { scheduler }
 });
 
 export type App = typeof app;
@@ -237,7 +237,7 @@ The `setupTest` function automatically calls `vi.useFakeTimers()`, allowing you 
 ## Best Practices
 
 1. **Isolate tests**: Each test should run independently, avoiding shared state.
-2. **Test edge cases**: Verify how your actor handles invalid inputs, concurrent operations, and error conditions.
+2. **Test edge cases**: Verify how your worker handles invalid inputs, concurrent operations, and error conditions.
 3. **Mock time**: Use Vitest's timer mocks for testing scheduled operations.
 4. **Use realistic data**: Test with data that resembles production scenarios.
 

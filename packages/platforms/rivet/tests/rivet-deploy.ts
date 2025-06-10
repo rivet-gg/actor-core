@@ -28,23 +28,23 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 
 	// Create a temporary directory for the test
 	const uuid = crypto.randomUUID();
-	const appName = `actor-core-test-${uuid}`;
+	const appName = `worker-core-test-${uuid}`;
 	const tmpDir = path.join(os.tmpdir(), appName);
 	console.log(`Creating temp directory: ${tmpDir}`);
 	await fs.mkdir(tmpDir, { recursive: true });
 
 	// Create package.json with workspace dependencies
 	const packageJson = {
-		name: "@rivetkit/actor-test",
+		name: "rivetkit-test",
 		private: true,
 		version: "1.0.0",
 		type: "module",
 		scripts: {
-			deploy: "@rivetkit/actor deploy rivet app.ts --env prod",
+			deploy: "rivetkit deploy rivet app.ts --env prod",
 		},
 		dependencies: {
 			"@rivetkit/rivet": "workspace:*",
-			"@rivetkit/actor": "workspace:*",
+			"rivetkit": "workspace:*",
 		},
 		packageManager:
 			"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
@@ -90,11 +90,11 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 	console.log(`Creating app.ts with content: ${appTsContent}`);
 	await fs.writeFile(path.join(tmpDir, "app.ts"), appTsContent);
 
-	// Build and deploy to Rivet using actor-core CLI
+	// Build and deploy to Rivet using worker-core CLI
 	console.log("Building and deploying to Rivet...");
 
 	if (!process.env._RIVET_SKIP_DEPLOY) {
-		// Deploy using the actor-core CLI
+		// Deploy using the worker-core CLI
 		console.log("Spawning rivetkit/cli deploy command...");
 		const deployProcess = spawn(
 			"npx",
@@ -114,7 +114,7 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 					RIVET_ENDPOINT: RIVET_API_ENDPOINT,
 					RIVET_CLOUD_TOKEN: rivetCloudToken,
 					_RIVET_MANAGER_LOG_LEVEL: "DEBUG",
-					_RIVET_ACTOR_LOG_LEVEL: "DEBUG",
+					_RIVET_WORKER_LOG_LEVEL: "DEBUG",
 					//CI: "1",
 				},
 				stdio: "inherit", // Stream output directly to console

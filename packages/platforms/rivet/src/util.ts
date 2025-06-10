@@ -1,8 +1,8 @@
-import type { ActorContext } from "@rivet-gg/actor-core";
+import type { WorkerContext } from "@rivet-gg/worker-core";
 import invariant from "invariant";
 
 export interface RivetHandler {
-	start(ctx: ActorContext): Promise<void>;
+	start(ctx: WorkerContext): Promise<void>;
 }
 
 // Constants for key handling

@@ -1,4 +1,4 @@
-import { actor } from "@rivetkit/actor";
+import { actor } from "rivetkit";
 import { drizzle } from "@rivetkit/drizzle";
 import { generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";

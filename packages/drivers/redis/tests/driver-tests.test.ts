@@ -2,16 +2,16 @@
 //import {
 //	runDriverTests,
 //	createTestRuntime,
-//} from "@rivetkit/actor/driver-test-suite";
+//} from "rivetkit/driver-test-suite";
 //import {
-//	RedisActorDriver,
+//	RedisWorkerDriver,
 //	RedisCoordinateDriver,
 //	RedisManagerDriver,
 //} from "../src/mod";
 //import Redis from "ioredis";
 //import { $ } from "zx";
 //import { expect, test } from "vitest";
-//import { getPort } from "@rivetkit/actor/test";
+//import { getPort } from "rivetkit/test";
 //
 //async function startValkeyContainer(): Promise<{
 //	port: number;
@@ -87,7 +87,7 @@
 //			});
 //
 //			return {
-//				actorDriver: new RedisActorDriver(redisClient),
+//				workerDriver: new RedisWorkerDriver(redisClient),
 //				managerDriver: new RedisManagerDriver(redisClient, app),
 //				coordinateDriver: new RedisCoordinateDriver(redisClient),
 //				async cleanup() {

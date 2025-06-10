@@ -1,3 +1,3 @@
 export { MemoryGlobalState } from "./global-state";
-export { MemoryActorDriver } from "./actor";
+export { MemoryWorkerDriver } from "./worker";
 export { MemoryManagerDriver } from "./manager";

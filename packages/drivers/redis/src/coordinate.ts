@@ -1,11 +1,11 @@
 import type {
 	AttemptAcquireLease,
 	ExtendLeaseOutput,
-	GetActorLeaderOutput,
+	GetWorkerLeaderOutput,
 	NodeMessageCallback,
 	CoordinateDriver,
-	StartActorAndAcquireLeaseOutput,
-} from "@rivetkit/actor/driver-helpers";
+	StartWorkerAndAcquireLeaseOutput,
+} from "rivetkit/driver-helpers";
 import type Redis from "ioredis";
 import { KEYS, PUBSUB } from "./keys";
 import dedent from "dedent";
@@ -13,21 +13,21 @@ import dedent from "dedent";
 // Define custom commands for ioredis
 declare module "ioredis" {
 	interface RedisCommander {
-		actorPeerAcquireLease(
+		workerPeerAcquireLease(
 			nodeKey: string,
 			nodeId: string,
 			leaseDuration: number,
 		): Promise<string>;
-		actorPeerExtendLease(
+		workerPeerExtendLease(
 			nodeKey: string,
 			nodeId: string,
 			leaseDuration: number,
 		): Promise<number>;
-		actorPeerReleaseLease(nodeKey: string, nodeId: string): Promise<number>;
+		workerPeerReleaseLease(nodeKey: string, nodeId: string): Promise<number>;
 	}
 
 	interface ChainableCommander {
-		actorPeerAcquireLease(
+		workerPeerAcquireLease(
 			nodeKey: string,
 			nodeId: string,
 			leaseDuration: number,
@@ -66,35 +66,35 @@ export class RedisCoordinateDriver implements CoordinateDriver {
 		await this.#redis.publish(PUBSUB.node(targetNodeId), message);
 	}
 
-	async getActorLeader(actorId: string): Promise<GetActorLeaderOutput> {
+	async getWorkerLeader(workerId: string): Promise<GetWorkerLeaderOutput> {
 		// Get current leader from Redis
 		const [initialized, nodeId] = await this.#redis.mget([
-			KEYS.ACTOR.initialized(actorId),
-			KEYS.ACTOR.LEASE.node(actorId),
+			KEYS.WORKER.initialized(workerId),
+			KEYS.WORKER.LEASE.node(workerId),
 		]);
 
 		if (!initialized) {
-			return { actor: undefined };
+			return { worker: undefined };
 		}
 
 		return {
-			actor: {
+			worker: {
 				leaderNodeId: nodeId || undefined,
 			},
 		};
 	}
 
-	async startActorAndAcquireLease(
-		actorId: string,
+	async startWorkerAndAcquireLease(
+		workerId: string,
 		selfNodeId: string,
 		leaseDuration: number,
-	): Promise<StartActorAndAcquireLeaseOutput> {
-		// Execute multi to get actor info and attempt to acquire lease in a single operation
+	): Promise<StartWorkerAndAcquireLeaseOutput> {
+		// Execute multi to get worker info and attempt to acquire lease in a single operation
 		const execRes = await this.#redis
 			.multi()
-			.mget([KEYS.ACTOR.initialized(actorId), KEYS.ACTOR.metadata(actorId)])
-			.actorPeerAcquireLease(
-				KEYS.ACTOR.LEASE.node(actorId),
+			.mget([KEYS.WORKER.initialized(workerId), KEYS.WORKER.metadata(workerId)])
+			.workerPeerAcquireLease(
+				KEYS.WORKER.LEASE.node(workerId),
 				selfNodeId,
 				leaseDuration,
 			)
@@ -113,15 +113,15 @@ export class RedisCoordinateDriver implements CoordinateDriver {
 		const leaderNodeId = leaseRes as unknown as string;
 
 		if (!initialized) {
-			return { actor: undefined };
+			return { worker: undefined };
 		}
 
 		// Parse metadata if present
-		if (!metadataRaw) throw new Error("Actor should have metadata if initialized.");
+		if (!metadataRaw) throw new Error("Worker should have metadata if initialized.");
 		const metadata = JSON.parse(metadataRaw);
 
 		return {
-			actor: {
+			worker: {
 				name: metadata.name,
 				key: metadata.key,
 				leaderNodeId,
@@ -130,12 +130,12 @@ export class RedisCoordinateDriver implements CoordinateDriver {
 	}
 
 	async extendLease(
-		actorId: string,
+		workerId: string,
 		selfNodeId: string,
 		leaseDuration: number,
 	): Promise<ExtendLeaseOutput> {
-		const res = await this.#redis.actorPeerExtendLease(
-			KEYS.ACTOR.LEASE.node(actorId),
+		const res = await this.#redis.workerPeerExtendLease(
+			KEYS.WORKER.LEASE.node(workerId),
 			selfNodeId,
 			leaseDuration,
 		);
@@ -146,12 +146,12 @@ export class RedisCoordinateDriver implements CoordinateDriver {
 	}
 
 	async attemptAcquireLease(
-		actorId: string,
+		workerId: string,
 		selfNodeId: string,
 		leaseDuration: number,
 	): Promise<AttemptAcquireLease> {
-		const newLeaderNodeId = await this.#redis.actorPeerAcquireLease(
-			KEYS.ACTOR.LEASE.node(actorId),
+		const newLeaderNodeId = await this.#redis.workerPeerAcquireLease(
+			KEYS.WORKER.LEASE.node(workerId),
 			selfNodeId,
 			leaseDuration,
 		);
@@ -161,16 +161,16 @@ export class RedisCoordinateDriver implements CoordinateDriver {
 		};
 	}
 
-	async releaseLease(actorId: string, nodeId: string): Promise<void> {
-		await this.#redis.actorPeerReleaseLease(
-			KEYS.ACTOR.LEASE.node(actorId),
+	async releaseLease(workerId: string, nodeId: string): Promise<void> {
+		await this.#redis.workerPeerReleaseLease(
+			KEYS.WORKER.LEASE.node(workerId),
 			nodeId,
 		);
 	}
 
 	#defineRedisScripts() {
 		// Add custom Lua script commands to Redis
-		this.#redis.defineCommand("actorPeerAcquireLease", {
+		this.#redis.defineCommand("workerPeerAcquireLease", {
 			numberOfKeys: 1,
 			lua: dedent`
                 -- Get the current value of the key
@@ -189,7 +189,7 @@ export class RedisCoordinateDriver implements CoordinateDriver {
             `,
 		});
 
-		this.#redis.defineCommand("actorPeerExtendLease", {
+		this.#redis.defineCommand("workerPeerExtendLease", {
 			numberOfKeys: 1,
 			lua: dedent`
                 -- Return 0 if an entry exists with a different lease holder
@@ -205,7 +205,7 @@ export class RedisCoordinateDriver implements CoordinateDriver {
             `,
 		});
 
-		this.#redis.defineCommand("actorPeerReleaseLease", {
+		this.#redis.defineCommand("workerPeerReleaseLease", {
 			numberOfKeys: 1,
 			lua: dedent`
                 -- Only remove the entry for this lock value

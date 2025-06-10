@@ -24,10 +24,10 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@rivetkit/actor": "*"
+    "rivetkit": "*"
   },
   "devDependencies": {
-    "@rivetkit/actor": "workspace:*",
+    "rivetkit": "workspace:*",
     "tsup": "^8.4.0",
     "typescript": "^5.5.2"
   },

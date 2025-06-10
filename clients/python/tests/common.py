@@ -42,7 +42,7 @@ def start_mock_server():
     # Build actor-core
     logger.info("Building actor-core")
     subprocess.run(
-        ["yarn", "build", "-F", "@rivetkit/actor"],
+        ["yarn", "build", "-F", "rivetkit"],
         cwd=repo_root,
         check=True
     )
@@ -58,7 +58,7 @@ def start_mock_server():
     
     # Pack packages
     packages = [
-        ("@rivetkit/actor", repo_root / "packages/actor-core"),
+        ("rivetkit", repo_root / "packages/actor-core"),
         ("nodejs", repo_root / "packages/platforms/nodejs"),
         ("memory", repo_root / "packages/drivers/memory"),
         ("file-system", repo_root / "packages/drivers/file-system")
@@ -66,7 +66,7 @@ def start_mock_server():
     
     logger.info("Packing packages (3 total)")
     for name, path in packages:
-        output_path = vendor_dir / f"@rivetkit/actor-{name}.tgz"
+        output_path = vendor_dir / f"rivetkit-{name}.tgz"
         subprocess.run(
             ["yarn", "pack", "--out", str(output_path)],
             cwd=path,
@@ -98,12 +98,12 @@ serve(app, {{ port: {port}, mode: "memory" }});
     # Create package.json
     logger.info("Creating package.json")
     package_json = {
-        "name": "@rivetkit/actor-python-test",
+        "name": "rivetkit-python-test",
         "packageManager": "yarn@4.2.2",
         "private": True,
         "type": "module",
         "dependencies": {
-            "@rivetkit/actor": f"file:{vendor_dir}/actor-core-actor-core.tgz",
+            "rivetkit": f"file:{vendor_dir}/actor-core-actor-core.tgz",
             "@rivetkit/nodejs": f"file:{vendor_dir}/actor-core-nodejs.tgz",
             "@rivetkit/memory": f"file:{vendor_dir}/actor-core-memory.tgz",
             "@rivetkit/file-system": f"file:{vendor_dir}/actor-core-file-system.tgz",

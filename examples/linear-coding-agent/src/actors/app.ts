@@ -1,4 +1,4 @@
-import { setup } from "@rivetkit/actor";
+import { setup } from "rivetkit";
 import dotenv from "dotenv";
 import { codingAgent } from "./coding-agent/mod";
 

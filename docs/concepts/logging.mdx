@@ -3,11 +3,11 @@ title: Logging
 icon: list-ul
 ---
 
-Actors provide a built-in way to log complex data to the console.
+Workers provide a built-in way to log complex data to the console.
 
 When dealing with lots of data, `console.log` often doesn't cut it. Using the context's log object (`c.log`) allows you to log complex data using structured logging.
 
-<Note>Using the actor logging API is completely optional.</Note>
+<Note>Using the worker logging API is completely optional.</Note>
 
 ## Log levels
 
@@ -46,9 +46,9 @@ Consider this example:
 <CodeGroup>
 
 ```typescript structured_logging.ts
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const counter = actor({
+const counter = worker({
   state: { count: 0 },
   
   actions: {
@@ -64,9 +64,9 @@ const counter = actor({
 ```
 
 ```typescript unstructured_logging.ts
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const counter = actor({
+const counter = worker({
   state: { count: 0 },
   
   actions: {
@@ -92,13 +92,13 @@ Additionally, structured logs can be parsed and queried at scale using tools lik
 The logger is available in all lifecycle hooks:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const loggingExample = actor({
+const loggingExample = worker({
   state: { events: [] },
   
   onStart: (c) => {
-    c.log.info('actor_started', { timestamp: Date.now() });
+    c.log.info('worker_started', { timestamp: Date.now() });
   },
   
   onBeforeConnect: (c, { params }) => {
@@ -137,7 +137,7 @@ const loggingExample = actor({
   },
   
   actions: {
-    // Actor actions...
+    // Worker actions...
   }
 });
 ```

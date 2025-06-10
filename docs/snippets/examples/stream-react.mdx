@@ -1,34 +1,34 @@
 ```typescript
-import { createClient } from "@rivetkit/actor/client";
+import { createClient } from "rivetkit/client";
 import { createReactRivetKit } from "@rivetkit/react";
 import { useState, useEffect } from "react";
-import type { App } from "../actors/app";
-import type { StreamState } from "./actor"; // Import shared types from actor
+import type { App } from "../workers/app";
+import type { StreamState } from "./worker"; // Import shared types from worker
 
 const client = createClient<App>("http://localhost:6420");
-const { useActor, useActorEvent } = createReactRivetKit(client);
+const { useWorker, useWorkerEvent } = createReactRivetKit(client);
 
 export function StreamExample() {
-  const [{ actor }] = useActor("streamProcessor");
+  const [{ worker }] = useWorker("streamProcessor");
   const [topValues, setTopValues] = useState<number[]>([]);
   const [newValue, setNewValue] = useState<number>(0);
 
   // Load initial values
   useEffect(() => {
-    if (actor) {
-      actor.getTopValues().then(setTopValues);
+    if (worker) {
+      worker.getTopValues().then(setTopValues);
     }
-  }, [actor]);
+  }, [worker]);
 
   // Listen for updates from other clients
-  useActorEvent({ actor, event: "updated" }, ({ topValues }) => {
+  useWorkerEvent({ worker, event: "updated" }, ({ topValues }) => {
     setTopValues(topValues);
   });
 
   // Add a new value to the stream
   const handleAddValue = () => {
-    if (actor) {
-      actor.addValue(newValue).then(setTopValues);
+    if (worker) {
+      worker.addValue(newValue).then(setTopValues);
       setNewValue(0);
     }
   };

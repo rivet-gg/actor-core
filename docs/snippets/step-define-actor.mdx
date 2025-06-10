@@ -1,11 +1,11 @@
-<Step title="Define your actor">
-  Create a file `actors/app.ts` in your project with your actor definition:
+<Step title="Define your worker">
+  Create a file `workers/app.ts` in your project with your worker definition:
 
-  ```typescript actors/app.ts
-  import { actor, setup } from "@rivetkit/actor";
+  ```typescript workers/app.ts
+  import { worker, setup } from "rivetkit";
 
-  // Create actor
-  const counter = actor({
+  // Create worker
+  const counter = worker({
 	state: { count: 0 },
 	actions: {
 	  increment: (c, x: number) => {
@@ -18,7 +18,7 @@
 
   // Create the application
   export const app = setup({
-	actors: { counter },
+	workers: { counter },
 	cors: { origin: "*" } // Configure CORS for your production domains in production
   });
 

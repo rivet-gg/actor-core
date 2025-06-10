@@ -1,4 +1,4 @@
-import { DriverConfigSchema } from "@rivetkit/actor/driver-helpers";
+import { DriverConfigSchema } from "rivetkit/driver-helpers";
 import { z } from "zod";
 
 export const ConfigSchema = DriverConfigSchema.default({});

@@ -1,11 +1,11 @@
 //import type {
-//	ActorConn,
-//	ActorAccessor,
+//	WorkerConn,
+//	WorkerAccessor,
 //	ExtractAppFromClient,
-//	ExtractActorsFromApp,
+//	ExtractWorkersFromApp,
 //	ClientRaw,
-//	AnyActorDefinition,
-//} from "@rivetkit/actor/client";
+//	AnyWorkerDefinition,
+//} from "rivetkit/client";
 //
 ///**
 // * Shallow compare objects.
@@ -35,75 +35,75 @@
 //}
 //
 //namespace State {
-//	export type Value<AD extends AnyActorDefinition> =
-//		| { state: "init"; actor: undefined; isLoading: false }
-//		| { state: "creating"; actor: undefined; isLoading: true }
-//		| { state: "created"; actor: ActorConn<AD>; isLoading: false }
-//		| { state: "error"; error: unknown; actor: undefined; isLoading: false };
+//	export type Value<AD extends AnyWorkerDefinition> =
+//		| { state: "init"; worker: undefined; isLoading: false }
+//		| { state: "creating"; worker: undefined; isLoading: true }
+//		| { state: "created"; worker: WorkerConn<AD>; isLoading: false }
+//		| { state: "error"; error: unknown; worker: undefined; isLoading: false };
 //
-//	export const INIT = <AD extends AnyActorDefinition>(): Value<AD> => ({
+//	export const INIT = <AD extends AnyWorkerDefinition>(): Value<AD> => ({
 //		state: "init",
-//		actor: undefined,
+//		worker: undefined,
 //		isLoading: false,
 //	});
-//	export const CREATING = <AD extends AnyActorDefinition>(): Value<AD> => ({
+//	export const CREATING = <AD extends AnyWorkerDefinition>(): Value<AD> => ({
 //		state: "creating",
-//		actor: undefined,
+//		worker: undefined,
 //		isLoading: true,
 //	});
-//	export const CREATED = <AD extends AnyActorDefinition>(
-//		actor: ActorConn<AD>,
+//	export const CREATED = <AD extends AnyWorkerDefinition>(
+//		worker: WorkerConn<AD>,
 //	): Value<AD> => ({
 //		state: "created",
-//		actor,
+//		worker,
 //		isLoading: false,
 //	});
-//	export const ERRORED = <AD extends AnyActorDefinition>(
+//	export const ERRORED = <AD extends AnyWorkerDefinition>(
 //		error: unknown,
 //	): Value<AD> => ({
 //		state: "error",
-//		actor: undefined,
+//		worker: undefined,
 //		error,
 //		isLoading: false,
 //	});
 //}
 //
-//export class ActorManager<
+//export class WorkerManager<
 //	C extends ClientRaw,
 //	App extends ExtractAppFromClient<C>,
-//	Registry extends ExtractActorsFromApp<App>,
-//	ActorName extends keyof Registry,
-//	AD extends Registry[ActorName],
+//	Registry extends ExtractWorkersFromApp<App>,
+//	WorkerName extends keyof Registry,
+//	AD extends Registry[WorkerName],
 //> {
 //	#client: C;
-//	#name: Exclude<ActorName, symbol | number>;
-//	#options: Parameters<ActorAccessor<AD>["connect"]>;
+//	#name: Exclude<WorkerName, symbol | number>;
+//	#options: Parameters<WorkerAccessor<AD>["connect"]>;
 //
 //	#listeners: (() => void)[] = [];
 //
 //	#state: State.Value<AD> = State.INIT();
 //
-//	#createPromise: Promise<ActorConn<AD>> | null = null;
+//	#createPromise: Promise<WorkerConn<AD>> | null = null;
 //
 //	constructor(
 //		client: C,
-//		name: Exclude<ActorName, symbol | number>,
-//		options: Parameters<ActorAccessor<AD>["connect"]>,
+//		name: Exclude<WorkerName, symbol | number>,
+//		options: Parameters<WorkerAccessor<AD>["connect"]>,
 //	) {
 //		this.#client = client;
 //		this.#name = name;
 //		this.#options = options;
 //	}
 //
-//	setOptions(options: Parameters<ActorAccessor<AD>["connect"]>) {
+//	setOptions(options: Parameters<WorkerAccessor<AD>["connect"]>) {
 //		if (shallowEqualObjects(options, this.#options)) {
-//			if (!this.#state.actor) {
+//			if (!this.#state.worker) {
 //				this.create();
 //			}
 //			return;
 //		}
 //
-//		this.#state.actor?.dispose();
+//		this.#state.worker?.dispose();
 //
 //		this.#state = { ...State.INIT() };
 //		this.#options = options;
@@ -119,8 +119,8 @@
 //		this.#update();
 //		try {
 //			this.#createPromise = this.#client.connect(this.#name, ...this.#options);
-//			const actor = (await this.#createPromise) as ActorConn<AD>;
-//			this.#state = { ...State.CREATED(actor) };
+//			const worker = (await this.#createPromise) as WorkerConn<AD>;
+//			this.#state = { ...State.CREATED(worker) };
 //			this.#createPromise = null;
 //		} catch (e) {
 //			this.#state = { ...State.ERRORED(e) };

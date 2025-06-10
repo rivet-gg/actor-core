@@ -5,7 +5,7 @@ import * as crypto from "crypto";
 import envPaths from "env-paths";
 
 // Get platform-specific data directory
-const paths = envPaths("@rivetkit/actor", { suffix: "" });
+const paths = envPaths("rivetkit", { suffix: "" });
 
 /**
  * Create a hash for a path, normalizing it first
@@ -37,10 +37,10 @@ export function getStoragePath(customPath?: string): string {
 }
 
 /**
- * Get actor's storage directory
+ * Get worker's storage directory
  */
-export function getActorStoragePath(baseDir: string, actorId: string): string {
-	return path.join(baseDir, "actors", actorId);
+export function getWorkerStoragePath(baseDir: string, workerId: string): string {
+	return path.join(baseDir, "workers", workerId);
 }
 
 /**

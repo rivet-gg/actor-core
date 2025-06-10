@@ -1,19 +1,19 @@
 import type {
 	CreateInput,
-	ActorOutput,
+	WorkerOutput,
 	GetForIdInput,
 	GetOrCreateWithKeyInput,
 	GetWithKeyInput,
 	ManagerDriver,
-} from "@rivetkit/actor/driver-helpers";
-import { ActorAlreadyExists } from "@rivetkit/actor/errors";
+} from "rivetkit/driver-helpers";
+import { WorkerAlreadyExists } from "rivetkit/errors";
 import type Redis from "ioredis";
 import * as crypto from "node:crypto";
 import { KEYS } from "./keys";
-import { ManagerInspector } from "@rivetkit/actor/inspector";
-import type { ActorCoreApp } from "@rivetkit/actor";
+import { ManagerInspector } from "rivetkit/inspector";
+import type { WorkerCoreApp } from "rivetkit";
 
-interface Actor {
+interface Worker {
 	id: string;
 	name: string;
 	key: string[];
@@ -23,42 +23,42 @@ interface Actor {
 }
 
 /**
- * Redis Manager Driver for Actor-Core
- * Handles actor creation and lookup by ID or key
+ * Redis Manager Driver for Worker-Core
+ * Handles worker creation and lookup by ID or key
  */
 export class RedisManagerDriver implements ManagerDriver {
 	#redis: Redis;
-	#app?: ActorCoreApp<any>;
+	#app?: WorkerCoreApp<any>;
 
 	/**
 	 * @internal
 	 */
 	inspector: ManagerInspector = new ManagerInspector(this, {
-		getAllActors: () => {
-			// Create a function that returns an array of actors directly
+		getAllWorkers: () => {
+			// Create a function that returns an array of workers directly
 			// Not returning a Promise since the ManagerInspector expects a synchronous function
-			const actors: Actor[] = [];
+			const workers: Worker[] = [];
 
 			// Return empty array since we can't do async operations here
-			// The actual data will be fetched when needed by calling getAllActors() manually
-			return actors;
+			// The actual data will be fetched when needed by calling getAllWorkers() manually
+			return workers;
 		},
-		getAllTypesOfActors: () => {
+		getAllTypesOfWorkers: () => {
 			if (!this.#app) return [];
-			return Object.keys(this.#app.config.actors);
+			return Object.keys(this.#app.config.workers);
 		},
 	});
 
-	constructor(redis: Redis, app?: ActorCoreApp<any>) {
+	constructor(redis: Redis, app?: WorkerCoreApp<any>) {
 		this.#redis = redis;
 		this.#app = app;
 	}
 
-	async getForId({ actorId }: GetForIdInput): Promise<ActorOutput | undefined> {
+	async getForId({ workerId }: GetForIdInput): Promise<WorkerOutput | undefined> {
 		// Get metadata from Redis
-		const metadataStr = await this.#redis.get(KEYS.ACTOR.metadata(actorId));
+		const metadataStr = await this.#redis.get(KEYS.WORKER.metadata(workerId));
 
-		// If the actor doesn't exist, return undefined
+		// If the worker doesn't exist, return undefined
 		if (!metadataStr) {
 			return undefined;
 		}
@@ -67,7 +67,7 @@ export class RedisManagerDriver implements ManagerDriver {
 		const { name, key } = metadata;
 
 		return {
-			actorId,
+			workerId,
 			name,
 			key,
 			meta: undefined,
@@ -77,99 +77,99 @@ export class RedisManagerDriver implements ManagerDriver {
 	async getWithKey({
 		name,
 		key,
-	}: GetWithKeyInput): Promise<ActorOutput | undefined> {
-		// Since keys are 1:1 with actor IDs, we can directly look up by key
-		const lookupKey = this.#generateActorKeyRedisKey(name, key);
-		const actorId = await this.#redis.get(lookupKey);
+	}: GetWithKeyInput): Promise<WorkerOutput | undefined> {
+		// Since keys are 1:1 with worker IDs, we can directly look up by key
+		const lookupKey = this.#generateWorkerKeyRedisKey(name, key);
+		const workerId = await this.#redis.get(lookupKey);
 
-		if (!actorId) {
+		if (!workerId) {
 			return undefined;
 		}
 
-		return this.getForId({ actorId });
+		return this.getForId({ workerId });
 	}
 
 	async getOrCreateWithKey(
 		input: GetOrCreateWithKeyInput,
-	): Promise<ActorOutput> {
+	): Promise<WorkerOutput> {
 		// TODO: Prevent race condition here
 		const getOutput = await this.getWithKey(input);
 		if (getOutput) {
 			return getOutput;
 		} else {
-			return await this.createActor(input);
+			return await this.createWorker(input);
 		}
 	}
 
-	async createActor({ name, key, input }: CreateInput): Promise<ActorOutput> {
-		// Check if actor with the same name and key already exists
-		const existingActor = await this.getWithKey({ name, key });
-		if (existingActor) {
-			throw new ActorAlreadyExists(name, key);
+	async createWorker({ name, key, input }: CreateInput): Promise<WorkerOutput> {
+		// Check if worker with the same name and key already exists
+		const existingWorker = await this.getWithKey({ name, key });
+		if (existingWorker) {
+			throw new WorkerAlreadyExists(name, key);
 		}
 
-		const actorId = crypto.randomUUID();
-		const actorKeyRedisKey = this.#generateActorKeyRedisKey(name, key);
+		const workerId = crypto.randomUUID();
+		const workerKeyRedisKey = this.#generateWorkerKeyRedisKey(name, key);
 
 		// Use a transaction to ensure all operations are atomic
 		const pipeline = this.#redis.multi();
 
-		// Store basic actor information
-		pipeline.set(KEYS.ACTOR.initialized(actorId), "1");
-		pipeline.set(KEYS.ACTOR.metadata(actorId), JSON.stringify({ name, key }));
-		pipeline.set(KEYS.ACTOR.input(actorId), JSON.stringify(input));
+		// Store basic worker information
+		pipeline.set(KEYS.WORKER.initialized(workerId), "1");
+		pipeline.set(KEYS.WORKER.metadata(workerId), JSON.stringify({ name, key }));
+		pipeline.set(KEYS.WORKER.input(workerId), JSON.stringify(input));
 
-		// Create direct lookup by name+key -> actorId
-		pipeline.set(actorKeyRedisKey, actorId);
+		// Create direct lookup by name+key -> workerId
+		pipeline.set(workerKeyRedisKey, workerId);
 
 		// Execute all commands atomically
 		await pipeline.exec();
 
-		// Notify inspector of actor creation
-		this.inspector.onActorsChange([
+		// Notify inspector of worker creation
+		this.inspector.onWorkersChange([
 			{
-				id: actorId,
+				id: workerId,
 				name,
 				key,
 			},
 		]);
 
 		return {
-			actorId,
+			workerId,
 			name,
 			key,
 			meta: undefined,
 		};
 	}
 
-	// Helper method to get all actors (for inspector)
-	private async getAllActors(): Promise<Actor[]> {
+	// Helper method to get all workers (for inspector)
+	private async getAllWorkers(): Promise<Worker[]> {
 		const keys = await this.#redis.keys(
-			KEYS.ACTOR.metadata("*").replace(/:metadata$/, ""),
+			KEYS.WORKER.metadata("*").replace(/:metadata$/, ""),
 		);
-		const actorIds = keys.map((key) => key.split(":")[1]);
+		const workerIds = keys.map((key) => key.split(":")[1]);
 
-		const actors: Actor[] = [];
-		for (const actorId of actorIds) {
-			const metadataStr = await this.#redis.get(KEYS.ACTOR.metadata(actorId));
+		const workers: Worker[] = [];
+		for (const workerId of workerIds) {
+			const metadataStr = await this.#redis.get(KEYS.WORKER.metadata(workerId));
 
 			if (metadataStr) {
 				const metadata = JSON.parse(metadataStr);
-				actors.push({
-					id: actorId,
+				workers.push({
+					id: workerId,
 					name: metadata.name,
 					key: metadata.key || [],
 				});
 			}
 		}
 
-		return actors;
+		return workers;
 	}
 
-	// Generate a Redis key for looking up an actor by name+key
-	#generateActorKeyRedisKey(name: string, key: string[]): string {
-		// Base prefix for actor key lookups
-		let redisKey = `actor_by_key:${this.#escapeRedisKey(name)}`;
+	// Generate a Redis key for looking up a worker by name+key
+	#generateWorkerKeyRedisKey(name: string, key: string[]): string {
+		// Base prefix for worker key lookups
+		let redisKey = `worker_by_key:${this.#escapeRedisKey(name)}`;
 
 		// Add each key component with proper escaping
 		if (key.length > 0) {

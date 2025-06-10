@@ -1,0 +1,122 @@
+---
+title: Quickstart
+icon: forward
+description: Start building awesome documentation in under 5 minutes
+---
+
+<Steps>
+<Step title="Install">
+
+```sh
+npm install rivetkit/worker
+```
+
+</Step>
+<Step title="Write Worker">
+
+```ts
+import { worker, setup } from "rivetkit";
+
+const myWorker = worker({
+
+});
+```
+
+</Step>
+
+<Step title="Configure Driver">
+
+<CodeGroup>
+```ts Rivet
+// TODO:
+```
+
+```ts Cloudflare Workers
+// TODO:
+```
+
+```ts Redis
+// TODO:
+```
+
+```ts Postgres
+// TODO:
+```
+</CodeGroup>
+
+</Step>
+
+<Step title="Add RivetKit">
+
+<CodeGroup>
+
+```ts Hono
+const app = new Hono();
+app.route("rivetkit", setup({ myWf, myWorker }));
+serve(app);
+```
+
+```ts Express.js
+const app = new Hono();
+app.route("rivetkit", setup({ myWf, myWorker }));
+serve(app);
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Run server">
+
+```sh
+node src/server.ts
+```
+
+</Step>
+
+<Step title="Integrate client">
+
+<CodeGroup>
+
+```ts Node.js
+const client = createClient();
+client.myWf.getOrCreate().sendEvent("foo");
+```
+
+```ts React
+const client = createClient();
+client.myWf.getOrCreate().sendEvent("foo");
+```
+
+</CodeGroup>
+
+</Step>
+
+<Step title="Deploy server">
+
+<CodeGroup>
+
+```sh Rivet
+rivet deploy
+```
+
+```sh Cloudflare Workers
+rivet deploy
+```
+
+</CodeGroup>
+
+</Step>
+
+</Steps>
+
+
+## Next Steps
+
+<CardGroup>
+	<Card title="Overview" href="/concepts/overview" icon="square-plus" horizontal={true} />
+	<Card title="Interacting with Workers" href="/concepts/interacting-with-workers" icon="square-plus" horizontal={true} />
+	<Card title="Actions" href="/concepts/actions" icon="bolt" horizontal={true} />
+	<Card title="State" href="/concepts/state" icon="floppy-disk" horizontal={true} />
+</CardGroup>
+

@@ -1,6 +1,6 @@
-import { runDriverTests, createTestRuntime } from "@rivetkit/actor/driver-test-suite";
+import { runDriverTests, createTestRuntime } from "rivetkit/driver-test-suite";
 import {
-	MemoryActorDriver,
+	MemoryWorkerDriver,
 	MemoryManagerDriver,
 	MemoryGlobalState,
 } from "../src/mod";
@@ -10,7 +10,7 @@ runDriverTests({
 		return await createTestRuntime(appPath, async (app) => {
 			const memoryState = new MemoryGlobalState();
 			return {
-				actorDriver: new MemoryActorDriver(memoryState),
+				workerDriver: new MemoryWorkerDriver(memoryState),
 				managerDriver: new MemoryManagerDriver(app, memoryState),
 			};
 		});

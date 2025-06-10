@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "version": "0.9.0-rc.1",
-    "title": "ActorCore API"
+    "title": "WorkerCore API"
   },
   "components": {
     "schemas": {
@@ -11,7 +11,7 @@
         "properties": {
           "i": {
             "type": "string",
-            "example": "actor-123"
+            "example": "worker-123"
           }
         },
         "required": [
@@ -25,7 +25,7 @@
             "nullable": true,
             "example": {
               "getForId": {
-                "actorId": "actor-123"
+                "workerId": "worker-123"
               }
             }
           }
@@ -41,7 +41,7 @@
             "nullable": true,
             "example": {
               "getForId": {
-                "actorId": "actor-123"
+                "workerId": "worker-123"
               }
             }
           },
@@ -64,7 +64,7 @@
             "nullable": true,
             "example": {
               "type": "message",
-              "content": "Hello, actor!"
+              "content": "Hello, worker!"
             }
           }
         }
@@ -73,13 +73,13 @@
     "parameters": {}
   },
   "paths": {
-    "/actors/resolve": {
+    "/workers/resolve": {
       "post": {
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "Actor query information"
+              "description": "Worker query information"
             },
             "required": true,
             "name": "X-AC-Query",
@@ -115,7 +115,7 @@
         }
       }
     },
-    "/actors/connect/websocket": {
+    "/workers/connect/websocket": {
       "get": {
         "parameters": [
           {
@@ -131,7 +131,7 @@
           {
             "schema": {
               "type": "string",
-              "description": "Actor query information"
+              "description": "Worker query information"
             },
             "required": true,
             "name": "query",
@@ -145,7 +145,7 @@
         }
       }
     },
-    "/actors/connect/sse": {
+    "/workers/connect/sse": {
       "get": {
         "parameters": [
           {
@@ -161,7 +161,7 @@
           {
             "schema": {
               "type": "string",
-              "description": "Actor query information"
+              "description": "Worker query information"
             },
             "required": true,
             "name": "X-AC-Query",
@@ -191,7 +191,7 @@
         }
       }
     },
-    "/actors/actions/{action}": {
+    "/workers/actions/{action}": {
       "post": {
         "parameters": [
           {
@@ -252,17 +252,17 @@
         }
       }
     },
-    "/actors/message": {
+    "/workers/message": {
       "post": {
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "Actor ID (used in some endpoints)",
-              "example": "actor-123456"
+              "description": "Worker ID (used in some endpoints)",
+              "example": "worker-123456"
             },
             "required": true,
-            "name": "X-AC-Actor",
+            "name": "X-AC-Worker",
             "in": "header"
           },
           {

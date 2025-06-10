@@ -1,16 +1,16 @@
 ```typescript
-import { createClient } from "@rivetkit/actor/client";
+import { createClient } from "rivetkit/client";
 import { createReactRivetKit } from "@rivetkit/react";
 import { useState, useEffect } from "react";
-import type { App } from "../actors/app";
+import type { App } from "../workers/app";
 
 const client = createClient<App>("http://localhost:6420");
-const { useActor, useActorEvent } = createReactRivetKit(client);
+const { useWorker, useWorkerEvent } = createReactRivetKit(client);
 
 export function DocumentEditor() {
-  // Connect to actor for this document ID from URL
+  // Connect to worker for this document ID from URL
   const documentId = new URLSearchParams(window.location.search).get('id') || 'default-doc';
-  const [{ actor, connectionId }] = useActor("document", { tags: { id: documentId } });
+  const [{ worker, connectionId }] = useWorker("document", { tags: { id: documentId } });
   
   // Local state
   const [text, setText] = useState("");
@@ -19,18 +19,18 @@ export function DocumentEditor() {
   
   // Load initial document state
   useEffect(() => {
-    if (actor) {
-      actor.getText().then(setText);
-      actor.getCursors().then(setOtherCursors);
+    if (worker) {
+      worker.getText().then(setText);
+      worker.getCursors().then(setOtherCursors);
     }
-  }, [actor]);
+  }, [worker]);
   
   // Listen for updates from other users
-  useActorEvent({ actor, event: "textUpdated" }, ({ text: newText, userId: senderId }) => {
+  useWorkerEvent({ worker, event: "textUpdated" }, ({ text: newText, userId: senderId }) => {
     if (senderId !== connectionId) setText(newText);
   });
   
-  useActorEvent({ actor, event: "cursorUpdated" }, ({ userId: cursorUserId, x, y }) => {
+  useWorkerEvent({ worker, event: "cursorUpdated" }, ({ userId: cursorUserId, x, y }) => {
     if (cursorUserId !== connectionId) {
       setOtherCursors(prev => ({
         ...prev,
@@ -41,14 +41,14 @@ export function DocumentEditor() {
   
   // Update cursor position
   const updateCursor = (e) => {
-    if (!actor) return;
+    if (!worker) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
     if (x !== cursorPos.x || y !== cursorPos.y) {
       setCursorPos({ x, y });
-      actor.updateCursor(x, y);
+      worker.updateCursor(x, y);
     }
   };
   
@@ -62,7 +62,7 @@ export function DocumentEditor() {
           onChange={(e) => {
             const newText = e.target.value;
             setText(newText);
-            actor?.setText(newText);
+            worker?.setText(newText);
           }}
           placeholder="Start typing..."
         />

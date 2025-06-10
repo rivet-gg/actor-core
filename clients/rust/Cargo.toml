@@ -1,5 +1,5 @@
 [package]
-name = "@rivetkit/actor-client"
+name = "rivetkit-client"
 version = "0.9.0-rc.1"
 description = "Rust client for ActorCore - the Stateful Serverless Framework for building AI agents, realtime apps, and game servers"
 edition = "2021"

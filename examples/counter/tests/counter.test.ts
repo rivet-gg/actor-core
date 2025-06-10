@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { setupTest } from "@rivetkit/actor/test";
+import { setupTest } from "rivetkit/test";
 import { app } from "../actors/app";
 
 test("it should count", async (test) => {

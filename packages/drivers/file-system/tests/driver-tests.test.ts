@@ -1,9 +1,9 @@
 import {
 	runDriverTests,
 	createTestRuntime,
-} from "@rivetkit/actor/driver-test-suite";
+} from "rivetkit/driver-test-suite";
 import {
-	FileSystemActorDriver,
+	FileSystemWorkerDriver,
 	FileSystemManagerDriver,
 	FileSystemGlobalState,
 } from "../src/mod";
@@ -17,13 +17,13 @@ runDriverTests({
 			// Create a unique temp directory for each test
 			const testDir = path.join(
 				os.tmpdir(),
-				`actor-core-fs-tests-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+				`worker-core-fs-tests-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
 			);
 			await fs.mkdir(testDir, { recursive: true });
 
 			const fileSystemState = new FileSystemGlobalState(testDir);
 			return {
-				actorDriver: new FileSystemActorDriver(fileSystemState),
+				workerDriver: new FileSystemWorkerDriver(fileSystemState),
 				managerDriver: new FileSystemManagerDriver(app, fileSystemState),
 				async cleanup() {
 					await fs.rmdir(testDir, { recursive: true });

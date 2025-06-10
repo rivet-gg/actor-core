@@ -1,4 +1,4 @@
-import { createClient } from "@rivetkit/actor/client";
+import { createClient } from "rivetkit/client";
 import { createReactActorCore } from "@rivetkit/react";
 import { useState } from "react";
 import type { App } from "../actors/app";

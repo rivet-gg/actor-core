@@ -3,26 +3,26 @@ title: Introduction
 icon: square-info
 ---
 
-import CreateActorCli from "/snippets/create-actor-cli.mdx";
+import CreateWorkerCli from "/snippets/create-worker-cli.mdx";
 
-Actors combine compute and storage into unified entities for simplified architecture. Actors seamlessly integrate with your existing infrastructure or can serve as a complete standalone solution.
+Workers combine compute and storage into unified entities for simplified architecture. Workers seamlessly integrate with your existing infrastructure or can serve as a complete standalone solution.
 
 ## Quickstart
 
 Run this to get started:
 
-<CreateActorCli />
+<CreateWorkerCli />
 
 ## Code Example
 
-Here's a complete chat room actor that maintains state and handles messages. We'll explore each component in depth throughout this document:
+Here's a complete chat room worker that maintains state and handles messages. We'll explore each component in depth throughout this document:
 
 ```typescript chat_room.ts
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-// Define a chat room actor
-const chatRoom = actor({
-  // Initialize state when the actor is first created
+// Define a chat room worker
+const chatRoom = worker({
+  // Initialize state when the worker is first created
   createState: () => ({
     messages: []
   }),
@@ -50,15 +50,15 @@ export default chatRoom;
 
 ## Using the App
 
-To start using your actor, create an app and serve it:
+To start using your worker, create an app and serve it:
 
 ```typescript app.ts
-import { setup, serve } from "@rivetkit/actor";
+import { setup, serve } from "rivetkit";
 import chatRoom from "./chat_room";
 
 // Create the application
 const app = setup({
-  actors: { chatRoom }
+  workers: { chatRoom }
 });
 
 // Start serving on default port
@@ -68,17 +68,17 @@ serve(app);
 export type App = typeof app;
 ```
 
-## Key Actor Components
+## Key Worker Components
 
 ### State
 
-Actors maintain state that's stored in memory and automatically persisted. State is defined either as a constant or via a `createState` function:
+Workers maintain state that's stored in memory and automatically persisted. State is defined either as a constant or via a `createState` function:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
 // Method 1: State constant
-const counter1 = actor({
+const counter1 = worker({
   state: { count: 0 },
   actions: {
     // ...
@@ -86,7 +86,7 @@ const counter1 = actor({
 });
 
 // Method 2: CreateState function
-const counter2 = actor({
+const counter2 = worker({
   createState: () => ({ count: 0 }),
   actions: {
     // ...
@@ -97,9 +97,9 @@ const counter2 = actor({
 Update state by modifying `c.state` in your actions:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const counter = actor({
+const counter = worker({
   state: { count: 0 },
   actions: {
     // Example of state update in an action
@@ -117,12 +117,12 @@ Learn more about [state management](/concepts/state).
 
 ### Actions
 
-Actions are functions defined in your actor configuration that clients & other actors can call:
+Actions are functions defined in your worker configuration that clients & other workers can call:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const mathUtils = actor({
+const mathUtils = worker({
   state: {},
   actions: {
     multiplyByTwo: (c, x) => {
@@ -138,12 +138,12 @@ Learn more about [actions](/concepts/actions).
 
 ### Events
 
-Actors can broadcast events to connected clients:
+Workers can broadcast events to connected clients:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const inventory = actor({
+const inventory = worker({
   createState: () => ({ 
     items: [] 
   }),
@@ -163,9 +163,9 @@ const inventory = actor({
 You can also send events to specific clients:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const messageService = actor({
+const messageService = worker({
   state: {},
   actions: {
     sendPrivateMessage: (c, userId, text) => {
@@ -181,12 +181,12 @@ const messageService = actor({
 
 Learn more about [events](/concepts/events).
 
-## Actor Tags
+## Worker Tags
 
-Tags are key-value pairs attached to actors that serve two purposes:
+Tags are key-value pairs attached to workers that serve two purposes:
 
-1. **Actor Discovery**: Find specific actors using `client.get(tags)`
-2. **Organization**: Group related actors for management purposes
+1. **Worker Discovery**: Find specific workers using `client.get(tags)`
+2. **Organization**: Group related workers for management purposes
 
 For example, you can query chat rooms by tag like:
 
@@ -197,7 +197,7 @@ await client.chatRoom.get({ channel: "random" });
 ### Common Tag Patterns
 
 ```typescript
-import { createClient } from "@rivetkit/actor/client";
+import { createClient } from "rivetkit/client";
 import type { App } from "./src/index";
 
 const client = createClient<App>("http://localhost:6420");
@@ -215,16 +215,16 @@ const document = await client.document.get({
 });
 ```
 
-## Actor Lifecycle
+## Worker Lifecycle
 
-Actors are created automatically when needed and persist until explicitly shutdown.
+Workers are created automatically when needed and persist until explicitly shutdown.
 
-To shut down an actor, use `c.shutdown()` from within an action:
+To shut down a worker, use `c.shutdown()` from within an action:
 
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
-const chatRoom = actor({
+const chatRoom = worker({
   createState: () => ({
     messages: []
   }),
@@ -233,26 +233,26 @@ const chatRoom = actor({
       // Do any cleanup needed
       c.broadcast("roomClosed");
       
-      // Shutdown the actor
+      // Shutdown the worker
       c.shutdown();
     }
   }
 });
 ```
 
-Learn more about the [actor lifecycle](/concepts/lifecycle).
+Learn more about the [worker lifecycle](/concepts/lifecycle).
 
 ## Next Steps
 
 <CardGroup>
-  <Card title="Interacting with Actors" href="/concepts/interacting-with-actors">
-    Learn how to connect to actors from clients
+  <Card title="Interacting with Workers" href="/concepts/interacting-with-workers">
+    Learn how to connect to workers from clients
   </Card>
   <Card title="State" href="/concepts/state">
-    Deep dive into actor state management
+    Deep dive into worker state management
   </Card>
   <Card title="Actions" href="/concepts/actions">
-    Learn more about actor actions
+    Learn more about worker actions
   </Card>
   <Card title="Events" href="/concepts/events">
     Learn more about realtime events

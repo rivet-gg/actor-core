@@ -1,0 +1,194 @@
+{
+  "name": "rivetkit",
+  "version": "0.9.0-rc.1",
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "src",
+    "deno.json",
+    "bun.json",
+    "package.json"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/mod.d.ts",
+        "default": "./dist/mod.js"
+      },
+      "require": {
+        "types": "./dist/mod.d.cts",
+        "default": "./dist/mod.cjs"
+      }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/client/mod.d.ts",
+        "default": "./dist/client/mod.js"
+      },
+      "require": {
+        "types": "./dist/client/mod.d.cts",
+        "default": "./dist/client/mod.cjs"
+      }
+    },
+    "./log": {
+      "import": {
+        "types": "./dist/common/log.d.ts",
+        "default": "./dist/common/log.js"
+      },
+      "require": {
+        "types": "./dist/common/log.d.cts",
+        "default": "./dist/common/log.cjs"
+      }
+    },
+    "./errors": {
+      "import": {
+        "types": "./dist/worker/errors.d.ts",
+        "default": "./dist/worker/errors.js"
+      },
+      "require": {
+        "types": "./dist/worker/errors.d.cts",
+        "default": "./dist/worker/errors.cjs"
+      }
+    },
+    "./utils": {
+      "import": {
+        "types": "./dist/utils.d.ts",
+        "default": "./dist/utils.js"
+      },
+      "require": {
+        "types": "./dist/utils.d.cts",
+        "default": "./dist/utils.cjs"
+      }
+    },
+    "./driver-helpers": {
+      "import": {
+        "types": "./dist/driver-helpers/mod.d.ts",
+        "default": "./dist/driver-helpers/mod.js"
+      },
+      "require": {
+        "types": "./dist/driver-helpers/mod.d.cts",
+        "default": "./dist/driver-helpers/mod.cjs"
+      }
+    },
+    "./driver-test-suite": {
+      "import": {
+        "types": "./dist/driver-test-suite/mod.d.ts",
+        "default": "./dist/driver-test-suite/mod.js"
+      },
+      "require": {
+        "types": "./dist/driver-test-suite/mod.d.cts",
+        "default": "./dist/driver-test-suite/mod.cjs"
+      }
+    },
+    "./topologies/coordinate": {
+      "import": {
+        "types": "./dist/topologies/coordinate/mod.d.ts",
+        "default": "./dist/topologies/coordinate/mod.js"
+      },
+      "require": {
+        "types": "./dist/topologies/coordinate/mod.d.cts",
+        "default": "./dist/topologies/coordinate/mod.cjs"
+      }
+    },
+    "./topologies/partition": {
+      "import": {
+        "types": "./dist/topologies/partition/mod.d.ts",
+        "default": "./dist/topologies/partition/mod.js"
+      },
+      "require": {
+        "types": "./dist/topologies/partition/mod.d.cts",
+        "default": "./dist/topologies/partition/mod.cjs"
+      }
+    },
+    "./test": {
+      "import": {
+        "types": "./dist/test/mod.d.ts",
+        "default": "./dist/test/mod.js"
+      },
+      "require": {
+        "types": "./dist/test/mod.d.cts",
+        "default": "./dist/test/mod.cjs"
+      }
+    },
+    "./inspector": {
+      "import": {
+        "types": "./dist/inspector/mod.d.ts",
+        "default": "./dist/inspector/mod.js"
+      },
+      "require": {
+        "types": "./dist/inspector/mod.d.cts",
+        "default": "./dist/inspector/mod.cjs"
+      }
+    },
+    "./inspector/protocol/worker": {
+      "import": {
+        "types": "./dist/inspector/protocol/worker/mod.d.ts",
+        "default": "./dist/inspector/protocol/worker/mod.js"
+      },
+      "require": {
+        "types": "./dist/inspector/protocol/worker/mod.d.cts",
+        "default": "./dist/inspector/protocol/worker/mod.cjs"
+      }
+    },
+    "./inspector/protocol/manager": {
+      "import": {
+        "types": "./dist/inspector/protocol/manager/mod.d.ts",
+        "default": "./dist/inspector/protocol/manager/mod.js"
+      },
+      "require": {
+        "types": "./dist/inspector/protocol/manager/mod.d.cts",
+        "default": "./dist/inspector/protocol/manager/mod.cjs"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "dev": "yarn build --watch",
+    "build": "tsup src/mod.ts src/client/mod.ts src/common/log.ts src/worker/errors.ts src/topologies/coordinate/mod.ts src/topologies/partition/mod.ts src/utils.ts src/driver-helpers/mod.ts src/driver-test-suite/mod.ts src/worker/protocol/inspector/mod.ts src/test/mod.ts src/inspector/protocol/worker/mod.ts src/inspector/protocol/manager/mod.ts src/inspector/mod.ts",
+    "check-types": "tsc --noEmit",
+    "boop": "tsc --outDir dist/test -d",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dump-openapi": "tsx scripts/dump-openapi.ts"
+  },
+  "dependencies": {
+    "@hono/zod-openapi": "^0.19.6",
+    "cbor-x": "^1.6.0",
+    "hono": "^4.7.0",
+    "invariant": "^2.2.4",
+    "on-change": "^5.0.1",
+    "p-retry": "^6.2.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@hono/node-ws": "^1.1.1",
+    "@types/invariant": "^2",
+    "@types/node": "^22.13.1",
+    "@types/ws": "^8",
+    "bundle-require": "^5.1.0",
+    "eventsource": "^3.0.5",
+    "tsup": "^8.4.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.7.3",
+    "vitest": "^3.1.1",
+    "ws": "^8.18.1"
+  },
+  "peerDependencies": {
+    "eventsource": "^3.0.5",
+    "ws": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "eventsource": {
+      "optional": true
+    },
+    "ws": {
+      "optional": true
+    }
+  },
+  "stableVersion": "0.8.0"
+}

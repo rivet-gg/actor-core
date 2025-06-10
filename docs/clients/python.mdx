@@ -4,12 +4,12 @@ icon: python
 ---
 
 import MvpWarning from "/snippets/mvp-warning.mdx";
-import StepDefineActor from "/snippets/step-define-actor.mdx";
+import StepDefineWorker from "/snippets/step-define-worker.mdx";
 import StepRunStudio from "/snippets/step-run-studio.mdx";
 import StepDeploy from "/snippets/step-deploy.mdx";
 import SetupNextSteps from "/snippets/setup-next-steps.mdx";
 
-The RivetKit Python client provides a way to connect to and interact with actors from Python applications.
+The RivetKit Python client provides a way to connect to and interact with workers from Python applications.
 
 <MvpWarning />
 
@@ -39,7 +39,7 @@ The RivetKit Python client provides a way to connect to and interact with actors
     ```
   </Step>
 
-  <StepDefineActor />
+  <StepDefineWorker />
 
   <Step title="Create your client">
     Create a new file `main.py`:
@@ -47,13 +47,13 @@ The RivetKit Python client provides a way to connect to and interact with actors
     <CodeGroup>
         ```python Async
         import asyncio
-        from actor_core_client import AsyncClient
+        from worker_core_client import AsyncClient
 
         async def main():
             # Replace with your endpoint URL after deployment
             client = AsyncClient("http://localhost:6420")
             
-            # Get or create an actor instance
+            # Get or create a worker instance
             counter = await client.get("counter")
             
             # Subscribe to events using callback
@@ -77,12 +77,12 @@ The RivetKit Python client provides a way to connect to and interact with actors
         ```
 
         ```python Sync
-        from actor_core_client import Client
+        from worker_core_client import Client
 
         # Replace with your endpoint URL after deployment
         client = Client("http://localhost:6420")
         
-        # Get or create an actor instance
+        # Get or create a worker instance
         counter = client.get("counter")
         
         # Subscribe to events using callback

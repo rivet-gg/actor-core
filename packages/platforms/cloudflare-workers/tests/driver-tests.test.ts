@@ -1,11 +1,11 @@
-import { runDriverTests } from "@rivetkit/actor/driver-test-suite";
+import { runDriverTests } from "rivetkit/driver-test-suite";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { spawn, exec } from "node:child_process";
 import crypto from "node:crypto";
 import { promisify } from "node:util";
-import { getPort } from "@rivetkit/actor/test";
+import { getPort } from "rivetkit/test";
 
 const execPromise = promisify(exec);
 
@@ -20,12 +20,12 @@ runDriverTests({
 
 		// Create a temporary directory for the test
 		const uuid = crypto.randomUUID();
-		const tmpDir = path.join(os.tmpdir(), `actor-core-cloudflare-test-${uuid}`);
+		const tmpDir = path.join(os.tmpdir(), `worker-core-cloudflare-test-${uuid}`);
 		await fs.mkdir(tmpDir, { recursive: true });
 
 		// Create package.json with workspace dependencies
 		const packageJson = {
-			name: "@rivetkit/actor-test",
+			name: "rivetkit-test",
 			private: true,
 			version: "1.0.0",
 			type: "module",
@@ -35,7 +35,7 @@ runDriverTests({
 			dependencies: {
 				wrangler: "4.8.0",
 				"@rivetkit/cloudflare-workers": "workspace:*",
-				"@rivetkit/actor": "workspace:*",
+				"rivetkit": "workspace:*",
 			},
 			packageManager:
 				"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
@@ -58,7 +58,7 @@ runDriverTests({
 
 		// Create a wrangler.json file
 		const wranglerConfig = {
-			name: "@rivetkit/actor-test",
+			name: "rivetkit-test",
 			main: "src/index.ts",
 			compatibility_date: "2025-01-29",
 			compatibility_flags: ["nodejs_compat"],
@@ -67,21 +67,21 @@ runDriverTests({
 			},
 			migrations: [
 				{
-					new_classes: ["ActorHandler"],
+					new_classes: ["WorkerHandler"],
 					tag: "v1",
 				},
 			],
 			durable_objects: {
 				bindings: [
 					{
-						class_name: "ActorHandler",
-						name: "ACTOR_DO",
+						class_name: "WorkerHandler",
+						name: "WORKER_DO",
 					},
 				],
 			},
 			kv_namespaces: [
 				{
-					binding: "ACTOR_KV",
+					binding: "WORKER_KV",
 					id: "test", // Will be replaced with a mock in dev mode
 				},
 			],
@@ -103,10 +103,10 @@ runDriverTests({
 import { app } from "${appPath.replace(/\.ts$/, "")}";
 
 // Create handlers for Cloudflare Workers
-const { handler, ActorHandler } = createHandler(app);
+const { handler, WorkerHandler } = createHandler(app);
 
 // Export the handlers for Cloudflare
-export { handler as default, ActorHandler };
+export { handler as default, WorkerHandler };
 `;
 		await fs.writeFile(path.join(srcDir, "index.ts"), indexContent);
 

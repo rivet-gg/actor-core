@@ -5,7 +5,7 @@ export const KEY_SEPARATOR = ",";
 /**
  * Serializes an array of key strings into a single string for use with idFromName
  * 
- * @param name The actor name
+ * @param name The worker name
  * @param key Array of key strings to serialize
  * @returns A single string containing the serialized name and key
  */

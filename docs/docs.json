@@ -46,31 +46,37 @@
         ]
       },
       {
-        "group": "Actors",
+        "group": "Workers",
         "pages": [
-"actor/overview",
-"actor/quickstart",
-"actor/state",
-"actor/actions",
-"actor/events",
+"workers/overview",
+"workers/quickstart",
+"workers/state",
+"workers/actions",
+"workers/events",
           {
             "group": "More",
             "pages": [
-"actor/schedule",
+"workers/schedule",
 
-"actor/lifecycle",
-"actor/connections",
-"actor/authentication",
+"workers/lifecycle",
+"workers/connections",
+"workers/authentication",
               {
                 "group": "Advanced",
                 "pages": [
-"actor/metadata",
-"actor/types"
+"workers/metadata",
+"workers/types"
 
                 ]
               }
             ]
           }
+        ]
+      },
+      {
+        "group": "Workflows",
+        "pages": [
+          "workflows/overview"
         ]
       },
       {
@@ -123,7 +129,7 @@
                 "pages": [
                   "concepts/cors",
                   "concepts/external-sql",
-                  "concepts/interacting-with-actors",
+                  "concepts/interacting-with-workers",
                   "concepts/logging",
                   "concepts/overview",
                   "concepts/scaling",
@@ -177,23 +183,5 @@
       "apiHost": "https://ph.rivet.gg/",
       "apiKey": "phc_6kfTNEAVw7rn1LA51cO3D69FefbKupSWFaM7OUgEpEo"
     }
-  },
-  "redirects": [
-    {
-      "source": "/changelog/overview",
-      "destination": "https://github.com/rivet-gg/rivetkit/releases"
-    },
-    {
-      "source": "/concepts/manage",
-      "destination": "/concepts/interacting-with-actors"
-    },
-    {
-      "source": "/concepts/rpc",
-      "destination": "/concepts/actions"
-    },
-    {
-      "source": "/concepts/remote-procedure-calls",
-      "destination": "/concepts/actions"
-    }
-  ]
+  }
 }

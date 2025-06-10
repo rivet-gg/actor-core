@@ -9,8 +9,8 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@rivetkit/actor": "workspace:*",
     "@types/node": "^22.13.9",
+    "rivetkit": "workspace:*",
     "tsx": "^3.12.7",
     "typescript": "^5.7.3",
     "vitest": "^3.1.1"

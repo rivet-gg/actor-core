@@ -1,23 +1,23 @@
 import * as fs from "node:fs/promises";
 import * as fsSync from "node:fs";
 import * as path from "node:path";
-import type { ActorKey } from "@rivetkit/actor";
+import type { WorkerKey } from "rivetkit";
 import { logger } from "./log";
 import {
 	getStoragePath,
-	getActorStoragePath,
+	getWorkerStoragePath,
 	ensureDirectoryExists,
 	ensureDirectoryExistsSync,
 } from "./utils";
 import invariant from "invariant";
 
 /**
- * Interface representing an actor's state
+ * Interface representing a worker's state
  */
-export interface ActorState {
+export interface WorkerState {
 	id: string;
 	name: string;
-	key: ActorKey;
+	key: WorkerKey;
 	persistedData: unknown;
 	input?: unknown;
 }
@@ -27,7 +27,7 @@ export interface ActorState {
  */
 export class FileSystemGlobalState {
 	#storagePath: string;
-	#stateCache: Map<string, ActorState> = new Map();
+	#stateCache: Map<string, WorkerState> = new Map();
 
 	constructor(customPath?: string) {
 		// Set up storage directory
@@ -35,47 +35,47 @@ export class FileSystemGlobalState {
 
 		// Ensure storage directories exist synchronously during initialization
 		ensureDirectoryExistsSync(this.#storagePath);
-		ensureDirectoryExistsSync(`${this.#storagePath}/actors`);
+		ensureDirectoryExistsSync(`${this.#storagePath}/workers`);
 
-		// Load all actors into cache synchronously
-		this.#loadAllActorsIntoCache();
+		// Load all workers into cache synchronously
+		this.#loadAllWorkersIntoCache();
 
 		logger().info("file system loaded", {
 			dir: this.#storagePath,
-			actorCount: this.#stateCache.size,
+			workerCount: this.#stateCache.size,
 		});
 	}
 
 	/**
-	 * Load all actors into the state cache from the file system
+	 * Load all workers into the state cache from the file system
 	 * Only called once during initialization
 	 */
-	#loadAllActorsIntoCache(): void {
-		const actorsDir = path.join(this.#storagePath, "actors");
+	#loadAllWorkersIntoCache(): void {
+		const workersDir = path.join(this.#storagePath, "workers");
 
 		try {
 			// HACK: Use synchronous filesystem operations for initialization
-			const actorIds = fsSync.readdirSync(actorsDir);
+			const workerIds = fsSync.readdirSync(workersDir);
 
-			for (const actorId of actorIds) {
-				const stateFilePath = this.getStateFilePath(actorId);
+			for (const workerId of workerIds) {
+				const stateFilePath = this.getStateFilePath(workerId);
 
 				if (fsSync.existsSync(stateFilePath)) {
 					try {
 						const stateData = fsSync.readFileSync(stateFilePath, "utf8");
-						const state = JSON.parse(stateData) as ActorState;
+						const state = JSON.parse(stateData) as WorkerState;
 
-						this.#stateCache.set(actorId, state);
+						this.#stateCache.set(workerId, state);
 					} catch (error) {
 						logger().error(
-							"failed to read actor state during cache initialization",
-							{ actorId, error },
+							"failed to read worker state during cache initialization",
+							{ workerId, error },
 						);
 					}
 				}
 			}
 		} catch (error) {
-			logger().error("failed to load actors into cache", { error });
+			logger().error("failed to load workers into cache", { error });
 		}
 	}
 
@@ -87,62 +87,62 @@ export class FileSystemGlobalState {
 	}
 
 	/**
-	 * Get state file path for an actor
+	 * Get state file path for a worker
 	 */
-	getStateFilePath(actorId: string): string {
-		const actorDir = getActorStoragePath(this.#storagePath, actorId);
-		return path.join(actorDir, "state.json");
+	getStateFilePath(workerId: string): string {
+		const workerDir = getWorkerStoragePath(this.#storagePath, workerId);
+		return path.join(workerDir, "state.json");
 	}
 
 	/**
-	 * Load actor state from cache
+	 * Load worker state from cache
 	 */
-	loadActorState(actorId: string): ActorState {
-		this.ensureActorExists(actorId);
+	loadWorkerState(workerId: string): WorkerState {
+		this.ensureWorkerExists(workerId);
 
-		// Get actor state from cache
-		const cachedActor = this.#stateCache.get(actorId);
-		invariant(cachedActor, `actor state should exist in cache for ${actorId}`);
+		// Get worker state from cache
+		const cachedWorker = this.#stateCache.get(workerId);
+		invariant(cachedWorker, `worker state should exist in cache for ${workerId}`);
 
-		return cachedActor;
+		return cachedWorker;
 	}
 
-	readInput(actorId: string): unknown | undefined {
-		const state = this.loadActorState(actorId);
+	readInput(workerId: string): unknown | undefined {
+		const state = this.loadWorkerState(workerId);
 		return state.input;
 	}
 
 	/**
-	 * Read persisted data for an actor
+	 * Read persisted data for a worker
 	 */
-	readPersistedData(actorId: string): unknown | undefined {
-		const state = this.loadActorState(actorId);
+	readPersistedData(workerId: string): unknown | undefined {
+		const state = this.loadWorkerState(workerId);
 		return state.persistedData;
 	}
 
 	/**
-	 * Write persisted data for an actor
+	 * Write persisted data for a worker
 	 */
-	writePersistedData(actorId: string, data: unknown): void {
-		const state = this.loadActorState(actorId);
+	writePersistedData(workerId: string, data: unknown): void {
+		const state = this.loadWorkerState(workerId);
 		state.persistedData = data;
 	}
 
 	/**
-	 * Save actor state to disk
+	 * Save worker state to disk
 	 */
-	async saveActorState(actorId: string): Promise<void> {
-		const state = this.#stateCache.get(actorId);
+	async saveWorkerState(workerId: string): Promise<void> {
+		const state = this.#stateCache.get(workerId);
 		if (!state) {
 			return;
 		}
 
-		const actorDir = getActorStoragePath(this.#storagePath, actorId);
-		const stateFilePath = this.getStateFilePath(actorId);
+		const workerDir = getWorkerStoragePath(this.#storagePath, workerId);
+		const stateFilePath = this.getStateFilePath(workerId);
 
 		try {
-			// Create actor directory
-			await ensureDirectoryExists(actorDir);
+			// Create worker directory
+			await ensureDirectoryExists(workerDir);
 
 			// Create serializable object
 			// State is already in serializable format
@@ -154,44 +154,44 @@ export class FileSystemGlobalState {
 				"utf8",
 			);
 		} catch (error) {
-			logger().error("failed to save actor state", { actorId, error });
-			throw new Error(`Failed to save actor state: ${error}`);
+			logger().error("failed to save worker state", { workerId, error });
+			throw new Error(`Failed to save worker state: ${error}`);
 		}
 	}
 
 	/**
-	 * Check if an actor exists in the cache
+	 * Check if a worker exists in the cache
 	 */
-	hasActor(actorId: string): boolean {
-		return this.#stateCache.has(actorId);
+	hasWorker(workerId: string): boolean {
+		return this.#stateCache.has(workerId);
 	}
 
 	/**
-	 * Ensure an actor exists, throwing if it doesn't
+	 * Ensure a worker exists, throwing if it doesn't
 	 */
-	ensureActorExists(actorId: string): void {
-		if (!this.hasActor(actorId)) {
-			throw new Error(`Actor does not exist for ID: ${actorId}`);
+	ensureWorkerExists(workerId: string): void {
+		if (!this.hasWorker(workerId)) {
+			throw new Error(`Worker does not exist for ID: ${workerId}`);
 		}
 	}
 
 	/**
-	 * Create an actor
+	 * Create a worker
 	 */
-	async createActor(
-		actorId: string,
+	async createWorker(
+		workerId: string,
 		name: string,
-		key: ActorKey,
+		key: WorkerKey,
 		input?: unknown,
 	): Promise<void> {
-		// Check if actor already exists
-		if (this.hasActor(actorId)) {
-			throw new Error(`Actor already exists for ID: ${actorId}`);
+		// Check if worker already exists
+		if (this.hasWorker(workerId)) {
+			throw new Error(`Worker already exists for ID: ${workerId}`);
 		}
 
 		// Create initial state
-		const newState: ActorState = {
-			id: actorId,
+		const newState: WorkerState = {
+			id: workerId,
 			name,
 			key,
 			persistedData: undefined,
@@ -199,30 +199,30 @@ export class FileSystemGlobalState {
 		};
 
 		// Cache the state
-		this.#stateCache.set(actorId, newState);
+		this.#stateCache.set(workerId, newState);
 
 		// Save to disk
-		await this.saveActorState(actorId);
+		await this.saveWorkerState(workerId);
 	}
 
 	/**
-	 * Find actor by name and key
+	 * Find worker by name and key
 	 */
-	findActorByNameAndKey(name: string, key: ActorKey): ActorState | undefined {
-		// NOTE: This is a slow implementation that checks each actor individually.
+	findWorkerByNameAndKey(name: string, key: WorkerKey): WorkerState | undefined {
+		// NOTE: This is a slow implementation that checks each worker individually.
 		// This can be optimized with an index in the future.
 
-		return this.findActor((actor) => {
-			if (actor.name !== name) return false;
+		return this.findWorker((worker) => {
+			if (worker.name !== name) return false;
 
-			// If actor doesn't have a key, it's not a match
-			if (!actor.key || actor.key.length !== key.length) {
+			// If worker doesn't have a key, it's not a match
+			if (!worker.key || worker.key.length !== key.length) {
 				return false;
 			}
 
-			// Check if all elements in key are in actor.key
+			// Check if all elements in key are in worker.key
 			for (let i = 0; i < key.length; i++) {
-				if (key[i] !== actor.key[i]) {
+				if (key[i] !== worker.key[i]) {
 					return false;
 				}
 			}
@@ -231,22 +231,22 @@ export class FileSystemGlobalState {
 	}
 
 	/**
-	 * Find actor by filter function
+	 * Find worker by filter function
 	 */
-	findActor(filter: (actor: ActorState) => boolean): ActorState | undefined {
-		for (const actor of this.#stateCache.values()) {
-			if (filter(actor)) {
-				return actor;
+	findWorker(filter: (worker: WorkerState) => boolean): WorkerState | undefined {
+		for (const worker of this.#stateCache.values()) {
+			if (filter(worker)) {
+				return worker;
 			}
 		}
 		return undefined;
 	}
 
 	/**
-	 * Get all actors from the cache
+	 * Get all workers from the cache
 	 */
-	getAllActors(): ActorState[] {
-		// Return all actors from the cache
+	getAllWorkers(): WorkerState[] {
+		// Return all workers from the cache
 		return Array.from(this.#stateCache.values());
 	}
 }

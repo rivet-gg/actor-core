@@ -2,31 +2,31 @@ import type {
 	ManagerDriver,
 	GetForIdInput,
 	GetWithKeyInput,
-	ActorOutput,
+	WorkerOutput,
 	CreateInput,
 	GetOrCreateWithKeyInput,
-} from "@rivetkit/actor/driver-helpers";
-import { ActorAlreadyExists } from "@rivetkit/actor/errors";
+} from "rivetkit/driver-helpers";
+import { WorkerAlreadyExists } from "rivetkit/errors";
 import { Bindings } from "./mod";
 import { logger } from "./log";
 import { serializeNameAndKey, serializeKey } from "./util";
 
-// Actor metadata structure
-interface ActorData {
+// Worker metadata structure
+interface WorkerData {
 	name: string;
 	key: string[];
 }
 
 // Key constants similar to Redis implementation
 const KEYS = {
-	ACTOR: {
-		// Combined key for actor metadata (name and key)
-		metadata: (actorId: string) => `actor:${actorId}:metadata`,
+	WORKER: {
+		// Combined key for worker metadata (name and key)
+		metadata: (workerId: string) => `worker:${workerId}:metadata`,
 
-		// Key index function for actor lookup
+		// Key index function for worker lookup
 		keyIndex: (name: string, key: string[] = []) => {
 			// Use serializeKey for consistent handling of all keys
-			return `actor_key:${serializeKey(key)}`;
+			return `worker_key:${serializeKey(key)}`;
 		},
 	},
 };
@@ -34,27 +34,27 @@ const KEYS = {
 export class CloudflareWorkersManagerDriver implements ManagerDriver {
 	async getForId({
 		c,
-		actorId,
-	}: GetForIdInput<{ Bindings: Bindings }>): Promise<ActorOutput | undefined> {
+		workerId,
+	}: GetForIdInput<{ Bindings: Bindings }>): Promise<WorkerOutput | undefined> {
 		if (!c) throw new Error("Missing Hono context");
 
-		// Get actor metadata from KV (combined name and key)
-		const actorData = (await c.env.ACTOR_KV.get(KEYS.ACTOR.metadata(actorId), {
+		// Get worker metadata from KV (combined name and key)
+		const workerData = (await c.env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
 			type: "json",
-		})) as ActorData | null;
+		})) as WorkerData | null;
 
-		// If the actor doesn't exist, return undefined
-		if (!actorData) {
+		// If the worker doesn't exist, return undefined
+		if (!workerData) {
 			return undefined;
 		}
 
-		// Generate durable ID from actorId for meta
-		const durableId = c.env.ACTOR_DO.idFromString(actorId);
+		// Generate durable ID from workerId for meta
+		const durableId = c.env.WORKER_DO.idFromString(workerId);
 
 		return {
-			actorId,
-			name: actorData.name,
-			key: actorData.key,
+			workerId,
+			name: workerData.name,
+			key: workerData.key,
 			meta: durableId,
 		};
 	}
@@ -64,120 +64,120 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		name,
 		key,
 	}: GetWithKeyInput<{ Bindings: Bindings }>): Promise<
-		ActorOutput | undefined
+		WorkerOutput | undefined
 	> {
 		if (!c) throw new Error("Missing Hono context");
 		const log = logger();
 
-		log.debug("getWithKey: searching for actor", { name, key });
+		log.debug("getWithKey: searching for worker", { name, key });
 
 		// Generate deterministic ID from the name and key
-		// This is aligned with how createActor generates IDs
+		// This is aligned with how createWorker generates IDs
 		const nameKeyString = serializeNameAndKey(name, key);
-		const durableId = c.env.ACTOR_DO.idFromName(nameKeyString);
-		const actorId = durableId.toString();
+		const durableId = c.env.WORKER_DO.idFromName(nameKeyString);
+		const workerId = durableId.toString();
 
-		// Check if the actor metadata exists
-		const actorData = await c.env.ACTOR_KV.get(KEYS.ACTOR.metadata(actorId), {
+		// Check if the worker metadata exists
+		const workerData = await c.env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
 			type: "json",
 		});
 
-		if (!actorData) {
-			log.debug("getWithKey: no actor found with matching name and key", {
+		if (!workerData) {
+			log.debug("getWithKey: no worker found with matching name and key", {
 				name,
 				key,
-				actorId,
+				workerId,
 			});
 			return undefined;
 		}
 
-		log.debug("getWithKey: found actor with matching name and key", {
-			actorId,
+		log.debug("getWithKey: found worker with matching name and key", {
+			workerId,
 			name,
 			key,
 		});
-		return this.#buildActorOutput(c, actorId);
+		return this.#buildWorkerOutput(c, workerId);
 	}
 
 	async getOrCreateWithKey(
 		input: GetOrCreateWithKeyInput,
-	): Promise<ActorOutput> {
+	): Promise<WorkerOutput> {
 		// TODO: Prevent race condition here
 		const getOutput = await this.getWithKey(input);
 		if (getOutput) {
 			return getOutput;
 		} else {
-			return await this.createActor(input);
+			return await this.createWorker(input);
 		}
 	}
 
-	async createActor({
+	async createWorker({
 		c,
 		name,
 		key,
 		input,
-	}: CreateInput<{ Bindings: Bindings }>): Promise<ActorOutput> {
+	}: CreateInput<{ Bindings: Bindings }>): Promise<WorkerOutput> {
 		if (!c) throw new Error("Missing Hono context");
 		const log = logger();
 
-		// Check if actor with the same name and key already exists
-		const existingActor = await this.getWithKey({ c, name, key });
-		if (existingActor) {
-			throw new ActorAlreadyExists(name, key);
+		// Check if worker with the same name and key already exists
+		const existingWorker = await this.getWithKey({ c, name, key });
+		if (existingWorker) {
+			throw new WorkerAlreadyExists(name, key);
 		}
 
-		// Create a deterministic ID from the actor name and key
-		// This ensures that actors with the same name and key will have the same ID
+		// Create a deterministic ID from the worker name and key
+		// This ensures that workers with the same name and key will have the same ID
 		const nameKeyString = serializeNameAndKey(name, key);
-		const durableId = c.env.ACTOR_DO.idFromName(nameKeyString);
-		const actorId = durableId.toString();
+		const durableId = c.env.WORKER_DO.idFromName(nameKeyString);
+		const workerId = durableId.toString();
 
-		// Init actor
-		const actor = c.env.ACTOR_DO.get(durableId);
-		await actor.initialize({
+		// Init worker
+		const worker = c.env.WORKER_DO.get(durableId);
+		await worker.initialize({
 			name,
 			key,
 			input,
 		});
 
-		// Store combined actor metadata (name and key)
-		const actorData: ActorData = { name, key };
-		await c.env.ACTOR_KV.put(
-			KEYS.ACTOR.metadata(actorId),
-			JSON.stringify(actorData),
+		// Store combined worker metadata (name and key)
+		const workerData: WorkerData = { name, key };
+		await c.env.WORKER_KV.put(
+			KEYS.WORKER.metadata(workerId),
+			JSON.stringify(workerData),
 		);
 
 		// Add to key index for lookups by name and key
-		await c.env.ACTOR_KV.put(KEYS.ACTOR.keyIndex(name, key), actorId);
+		await c.env.WORKER_KV.put(KEYS.WORKER.keyIndex(name, key), workerId);
 
 		return {
-			actorId,
+			workerId,
 			name,
 			key,
 			meta: durableId,
 		};
 	}
 
-	// Helper method to build actor output from an ID
-	async #buildActorOutput(
+	// Helper method to build worker output from an ID
+	async #buildWorkerOutput(
 		c: any,
-		actorId: string,
-	): Promise<ActorOutput | undefined> {
-		const actorData = (await c.env.ACTOR_KV.get(KEYS.ACTOR.metadata(actorId), {
+		workerId: string,
+	): Promise<WorkerOutput | undefined> {
+		const workerData = (await c.env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
 			type: "json",
-		})) as ActorData | null;
+		})) as WorkerData | null;
 
-		if (!actorData) {
+		if (!workerData) {
 			return undefined;
 		}
 
 		// Generate durable ID for meta
-		const durableId = c.env.ACTOR_DO.idFromString(actorId);
+		const durableId = c.env.WORKER_DO.idFromString(workerId);
 
 		return {
-			actorId,
-			name: actorData.name,
-			key: actorData.key,
+			workerId,
+			name: workerData.name,
+			key: workerData.key,
 			meta: durableId,
 		};
 	}

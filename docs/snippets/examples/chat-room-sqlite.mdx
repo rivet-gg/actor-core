@@ -1,11 +1,11 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 import { drizzle } from "@rivetkit/drizzle";
 import { messages } from "./schema";
 
 export type Message = { sender: string; text: string; timestamp: number; }
 
-const chatRoom = actor({
+const chatRoom = worker({
   sql: drizzle(),
 
   actions: {

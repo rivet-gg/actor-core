@@ -24,7 +24,7 @@ bun add rivetkit/react
 ## Quick Start
 
 ```tsx
-import { createClient } from "@rivetkit/actor/client";
+import { createClient } from "rivetkit/client";
 import { createReactActorCore } from "@rivetkit/react";
 import type { App } from "../counter/src/index";
 import React, { useState } from "react";

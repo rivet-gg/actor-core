@@ -1,4 +1,4 @@
-import { type ActionContextOf, type ActorContextOf, actor } from "@rivetkit/actor";
+import { type ActionContextOf, type ActorContextOf, actor } from "rivetkit";
 import type {
 	CodingAgentState,
 	CodingAgentVars,

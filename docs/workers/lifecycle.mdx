@@ -1,0 +1,436 @@
+---
+title: Lifecycle
+icon: rotate
+---
+
+## Lifecycle Hooks
+
+Worker lifecycle hooks are defined as functions in the worker configuration.
+
+### `createState` and `state`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._onInitialize) */}
+
+The `createState` function or `state` constant defines the initial state of the worker (see [state documentation](/concepts/state)). The `createState` function is called only once when the worker is first created.
+
+### `createVars` and `vars`
+
+The `createVars` function or `vars` constant defines ephemeral variables for the worker (see [state documentation](/concepts/state)). These variables are not persisted and are useful for storing runtime-only objects or temporary data.
+
+The `createVars` function can also receive driver-specific context as its second parameter, allowing access to driver capabilities like Rivet KV or Cloudflare Durable Object storage.
+
+```typescript
+import { worker } from "rivetkit";
+
+// Using vars constant
+const counter1 = worker({
+  state: { count: 0 },
+  vars: { lastAccessTime: 0 },
+  actions: { /* ... */ }
+});
+
+// Using createVars function
+const counter2 = worker({
+  state: { count: 0 },
+  createVars: () => {
+    // Initialize with non-serializable objects
+    return { 
+      lastAccessTime: Date.now(),
+      emitter: createNanoEvents() 
+    };
+  },
+  actions: { /* ... */ }
+});
+
+// Access driver-specific context
+const exampleWorker = worker({
+  state: { count: 0 },
+  // Access driver context in createVars
+  createVars: (c, rivet) => ({
+    ctx: rivet.ctx,
+  }),
+  actions: {
+    doSomething: (c) => {
+      // Use driver-specific context
+      console.log(`Region: ${c.vars.rivet.metadata.region.name}`);
+    }
+  }
+});
+```
+
+### `onCreate`
+
+The `onCreate` hook is called at the same time as `createState`, but unlike `createState`, it doesn't return any value. Use this hook for initialization logic that doesn't affect the initial state.
+
+```typescript
+import { worker } from "rivetkit";
+
+// Using state constant
+const counter1 = worker({
+  state: { count: 0 },
+  actions: { /* ... */ }
+});
+
+// Using createState function
+const counter2 = worker({
+  createState: () => {
+    // Initialize with a count of 0
+    return { count: 0 };
+  },
+  actions: { /* ... */ }
+});
+
+// Using onCreate
+const counter3 = worker({
+  state: { count: 0 },
+  
+  // Run initialization logic (logging, external service setup, etc.)
+  onCreate: (c) => {
+    console.log("Counter worker initialized");
+    // Can perform async operations or setup
+    // No need to return anything
+  },
+  
+  actions: { /* ... */ }
+});
+```
+
+### `onStart`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._onStart) */}
+
+This hook is called any time the worker is started (e.g. after restarting, upgrading code, or crashing).
+
+This is called after the worker has been initialized but before any connections are accepted.
+
+Use this hook to set up any resources or start any background tasks, such as `setInterval`.
+
+```typescript
+import { worker } from "rivetkit";
+
+const counter = worker({
+  state: { count: 0 },
+  
+  onStart: (c) => {
+    console.log('Worker started with count:', c.state.count);
+    
+    // Set up interval for automatic counting
+    const intervalId = setInterval(() => {
+      c.state.count++;
+      console.log('Auto-increment:', c.state.count);
+    }, 10000);
+    
+    // Store interval ID to clean up later if needed
+    c.custom.intervalId = intervalId;
+  },
+  
+  actions: { /* ... */ }
+});
+```
+
+### `onStateChange`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._onStateChange) */}
+
+Called whenever the worker's state changes. This is often used to broadcast state updates.
+
+```typescript
+import { worker } from "rivetkit";
+
+const counter = worker({
+  state: { count: 0 },
+  
+  onStateChange: (c, newState) => {
+    // Broadcast the new count to all connected clients
+    c.broadcast('countUpdated', {
+      count: newState.count
+    });
+  },
+  
+  actions: {
+    increment: (c) => {
+      c.state.count++;
+      return c.state.count;
+    }
+  }
+});
+```
+
+### `createConnState` and `connState`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._createConnState) */}
+
+There are two ways to define the initial state for connections:
+1. `connState`: Define a constant object that will be used as the initial state for all connections
+2. `createConnState`: A function that dynamically creates initial connection state based on connection parameters
+
+### `onBeforeConnect`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._onBeforeConnect) */}
+
+The `onBeforeConnect` hook is called whenever a new client connects to the worker. Clients can pass parameters when connecting, accessible via `params`. This hook is used for connection validation and can throw errors to reject connections.
+
+The `onBeforeConnect` hook does NOT return connection state - it's used solely for validation.
+
+```typescript
+import { worker } from "rivetkit";
+
+const chatRoom = worker({
+  state: { messages: [] },
+  
+  // Method 1: Use a static default connection state
+  connState: {
+    role: "guest",
+    joinTime: 0,
+  },
+  
+  // Method 2: Dynamically create connection state
+  createConnState: (c, { params }) => {
+    return {
+      userId: params.userId || "anonymous",
+      role: params.role || "guest",
+      joinTime: Date.now()
+    };
+  },
+  
+  // Validate connections before accepting them
+  onBeforeConnect: (c, { params }) => {
+    // Validate authentication
+    const authToken = params.authToken;
+    if (!authToken || !validateToken(authToken)) {
+      throw new Error("Invalid authentication");
+    }
+    
+    // Authentication is valid, connection will proceed
+    // The actual connection state will come from connState or createConnState
+  },
+  
+  actions: { /* ... */ }
+});
+```
+
+Connections cannot interact with the worker until this method completes successfully. Throwing an error will abort the connection. This can be used for authentication - see [Authentication](/concepts/authentication) for details.
+
+### `onConnect`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._onConnect) */}
+
+Executed after the client has successfully connected.
+
+```typescript
+import { worker } from "rivetkit";
+
+const chatRoom = worker({
+  state: { users: {}, messages: [] },
+  
+  onConnect: (c) => {
+    // Add user to the room's user list using connection state
+    const userId = c.conn.state.userId;
+    c.state.users[userId] = {
+      online: true,
+      lastSeen: Date.now()
+    };
+    
+    // Broadcast that a user joined
+    c.broadcast("userJoined", { userId, timestamp: Date.now() });
+    
+    console.log(`User ${userId} connected`);
+  },
+  
+  actions: { /* ... */ }
+});
+```
+
+Messages will not be processed for this worker until this hook succeeds. Errors thrown from this hook will cause the client to disconnect.
+
+### `onDisconnect`
+
+{/* [Documentation](https://jsr.io/@rivet-gg/worker/doc/~/Worker.prototype._onDisconnect) */}
+
+Called when a client disconnects from the worker. Use this to clean up any connection-specific resources.
+
+```typescript
+import { worker } from "rivetkit";
+
+const chatRoom = worker({
+  state: { users: {}, messages: [] },
+  
+  onDisconnect: (c) => {
+    // Update user status when they disconnect
+    const userId = c.conn.state.userId;
+    if (c.state.users[userId]) {
+      c.state.users[userId].online = false;
+      c.state.users[userId].lastSeen = Date.now();
+    }
+    
+    // Broadcast that a user left
+    c.broadcast("userLeft", { userId, timestamp: Date.now() });
+    
+    console.log(`User ${userId} disconnected`);
+  },
+  
+  actions: { /* ... */ }
+});
+```
+
+## Destroying Workers
+
+Workers can be shut down gracefully with `c.shutdown()`. Clients will be gracefully disconnected.
+
+```typescript
+import { worker } from "rivetkit";
+
+const temporaryRoom = worker({
+  state: { 
+    createdAt: 0,
+    expiresAfterMs: 3600000 // 1 hour
+  },
+  
+  createState: () => ({
+    createdAt: Date.now(),
+    expiresAfterMs: 3600000 // 1 hour
+  }),
+  
+  onStart: (c) => {
+    // Check if room is expired
+    const now = Date.now();
+    const expiresAt = c.state.createdAt + c.state.expiresAfterMs;
+    
+    if (now > expiresAt) {
+      console.log("Room expired, shutting down");
+      c.shutdown();
+    } else {
+      // Set up expiration timer
+      const timeUntilExpiry = expiresAt - now;
+      setTimeout(() => {
+        console.log("Room lifetime reached, shutting down");
+        c.shutdown();
+      }, timeUntilExpiry);
+    }
+  },
+  
+  actions: {
+    closeRoom: (c) => {
+      // Notify all clients
+      c.broadcast("roomClosed", { reason: "Admin closed the room" });
+      
+      // Shutdown the worker
+      c.shutdown();
+    }
+  }
+});
+```
+
+This action is permanent and cannot be reverted.
+
+## Using `WorkerContext` Type Externally
+
+When extracting logic from lifecycle hooks or actions into external functions, you'll often need to define the type of the context parameter. RivetKit provides helper types that make it easy to extract and pass these context types to external functions.
+
+```typescript
+import { worker, WorkerContextOf } from "rivetkit";
+
+const myWorker = worker({
+  state: { count: 0 },
+  
+  // Use external function in lifecycle hook
+  onStart: (c) => logWorkerStarted(c)
+});
+
+// Simple external function with typed context
+function logWorkerStarted(c: WorkerContextOf<typeof myWorker>) {
+  console.log(`Worker started with count: ${c.state.count}`);
+}
+```
+
+See [Helper Types](/concepts/types) for more details on using `WorkerContextOf`.
+
+## Full Example
+
+```typescript
+import { worker } from "rivetkit";
+
+const counter = worker({
+  // Initialize state
+  createState: () => ({
+    count: 0
+  }),
+  
+  // Initialize worker (run setup that doesn't affect initial state)
+  onCreate: (c) => {
+    console.log('Counter worker initialized');
+    // Set up external resources, etc.
+  },
+  
+  // Define default connection state
+  connState: {
+    role: "guest"
+  },
+  
+  // Dynamically create connection state based on params
+  createConnState: (c, { params }) => {
+    // Get auth info from validation
+    const authToken = params.authToken;
+    const authInfo = validateAuthToken(authToken);
+    
+    return {
+      userId: authInfo?.userId || "anonymous",
+      role: authInfo?.role || "guest"
+    };
+  },
+  
+  // Lifecycle hooks
+  onStart: (c) => {
+    console.log('Counter started with count:', c.state.count);
+  },
+  
+  onStateChange: (c, newState) => {
+    c.broadcast('countUpdated', { count: newState.count });
+  },
+  
+  onBeforeConnect: (c, { params }) => {
+    // Validate auth token
+    const authToken = params.authToken;
+    if (!authToken) {
+      throw new Error('Missing auth token');
+    }
+    
+    // Validate with your API and determine the user
+    const authInfo = validateAuthToken(authToken);
+    if (!authInfo) {
+      throw new Error('Invalid auth token');
+    }
+    
+    // If validation succeeds, connection proceeds
+    // Connection state will be set by createConnState
+  },
+  
+  onConnect: (c) => {
+    console.log(`User ${c.conn.state.userId} connected`);
+  },
+  
+  onDisconnect: (c) => {
+    console.log(`User ${c.conn.state.userId} disconnected`);
+  },
+  
+  // Define actions
+  actions: {
+    increment: (c) => {
+      c.state.count++;
+      return c.state.count;
+    },
+    
+    reset: (c) => {
+      // Check if user has admin role
+      if (c.conns.state.role !== "admin") {
+        throw new Error("Unauthorized: requires admin role");
+      }
+      
+      c.state.count = 0;
+      return c.state.count;
+    }
+  }
+});
+
+export default counter;
+```

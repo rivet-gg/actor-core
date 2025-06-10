@@ -1,18 +1,18 @@
 import { serve as honoServe, type ServerType } from "@hono/node-server";
 import { createNodeWebSocket, type NodeWebSocket } from "@hono/node-ws";
-import { assertUnreachable } from "@rivetkit/actor/utils";
-import { CoordinateTopology } from "@rivetkit/actor/topologies/coordinate";
+import { assertUnreachable } from "rivetkit/utils";
+import { CoordinateTopology } from "rivetkit/topologies/coordinate";
 import { logger } from "./log";
 import type { Hono } from "hono";
-import { StandaloneTopology, type ActorCoreApp } from "@rivetkit/actor";
+import { StandaloneTopology, type WorkerCoreApp } from "rivetkit";
 import {
 	MemoryGlobalState,
 	MemoryManagerDriver,
-	MemoryActorDriver,
+	MemoryWorkerDriver,
 } from "@rivetkit/memory";
 import { type InputConfig, ConfigSchema } from "./config";
 import {
-	FileSystemActorDriver,
+	FileSystemWorkerDriver,
 	FileSystemGlobalState,
 	FileSystemManagerDriver,
 } from "@rivetkit/file-system";
@@ -20,7 +20,7 @@ import {
 export { InputConfig as Config } from "./config";
 
 export function createRouter(
-	app: ActorCoreApp<any>,
+	app: WorkerCoreApp<any>,
 	inputConfig?: InputConfig,
 ): {
 	router: Hono;
@@ -30,22 +30,22 @@ export function createRouter(
 
 	// Configure default configuration
 	if (!config.topology) config.topology = "standalone";
-	if (!config.drivers.manager || !config.drivers.actor) {
+	if (!config.drivers.manager || !config.drivers.worker) {
 		if (config.mode === "file-system") {
 			const fsState = new FileSystemGlobalState();
 			if (!config.drivers.manager) {
 				config.drivers.manager = new FileSystemManagerDriver(app, fsState);
 			}
-			if (!config.drivers.actor) {
-				config.drivers.actor = new FileSystemActorDriver(fsState);
+			if (!config.drivers.worker) {
+				config.drivers.worker = new FileSystemWorkerDriver(fsState);
 			}
 		} else if (config.mode === "memory") {
 			const memoryState = new MemoryGlobalState();
 			if (!config.drivers.manager) {
 				config.drivers.manager = new MemoryManagerDriver(app, memoryState);
 			}
-			if (!config.drivers.actor) {
-				config.drivers.actor = new MemoryActorDriver(memoryState);
+			if (!config.drivers.worker) {
+				config.drivers.worker = new MemoryWorkerDriver(memoryState);
 			}
 		} else {
 			assertUnreachable(config.mode);
@@ -81,7 +81,7 @@ export function createRouter(
 }
 
 export function serve(
-	app: ActorCoreApp<any>,
+	app: WorkerCoreApp<any>,
 	inputConfig?: InputConfig,
 ): ServerType {
 	const config = ConfigSchema.parse(inputConfig);
@@ -95,7 +95,7 @@ export function serve(
 	});
 	injectWebSocket(server);
 
-	logger().info("actorcore started", {
+	logger().info("workercore started", {
 		hostname: config.hostname,
 		port: config.port,
 	});

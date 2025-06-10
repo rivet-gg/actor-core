@@ -1,23 +1,23 @@
-import { assertUnreachable } from "@rivetkit/actor/utils";
-import { ActorAlreadyExists, InternalError } from "@rivetkit/actor/errors";
+import { assertUnreachable } from "rivetkit/utils";
+import { WorkerAlreadyExists, InternalError } from "rivetkit/errors";
 import type {
 	ManagerDriver,
 	GetForIdInput,
 	GetWithKeyInput,
-	ActorOutput,
+	WorkerOutput,
 	GetOrCreateWithKeyInput,
 	CreateInput,
-} from "@rivetkit/actor/driver-helpers";
+} from "rivetkit/driver-helpers";
 import { logger } from "./log";
 import { type RivetClientConfig, rivetRequest } from "./rivet-client";
 import { serializeKeyForTag, deserializeKeyFromTag } from "./util";
 
-export interface ActorState {
+export interface WorkerState {
 	key: string[];
 	destroyedAt?: number;
 }
 
-export interface GetActorMeta {
+export interface GetWorkerMeta {
 	endpoint: string;
 }
 
@@ -28,38 +28,38 @@ export class RivetManagerDriver implements ManagerDriver {
 		this.#clientConfig = clientConfig;
 	}
 
-	async getForId({ actorId }: GetForIdInput): Promise<ActorOutput | undefined> {
+	async getForId({ workerId }: GetForIdInput): Promise<WorkerOutput | undefined> {
 		try {
-			// Get actor
-			const res = await rivetRequest<void, { actor: RivetActor }>(
+			// Get worker
+			const res = await rivetRequest<void, { worker: RivetWorker }>(
 				this.#clientConfig,
 				"GET",
-				`/actors/${encodeURIComponent(actorId)}`,
+				`/workers/${encodeURIComponent(workerId)}`,
 			);
 
-			// Check if actor exists and not destroyed
-			if (res.actor.destroyedAt) {
+			// Check if worker exists and not destroyed
+			if (res.worker.destroyedAt) {
 				return undefined;
 			}
 
-			// Ensure actor has required tags
-			if (!("name" in res.actor.tags)) {
-				throw new Error(`Actor ${res.actor.id} missing 'name' in tags.`);
+			// Ensure worker has required tags
+			if (!("name" in res.worker.tags)) {
+				throw new Error(`Worker ${res.worker.id} missing 'name' in tags.`);
 			}
-			if (res.actor.tags.role !== "actor") {
-				throw new Error(`Actor ${res.actor.id} does not have an actor role.`);
+			if (res.worker.tags.role !== "worker") {
+				throw new Error(`Worker ${res.worker.id} does not have a worker role.`);
 			}
-			if (res.actor.tags.framework !== "@rivetkit/actor") {
-				throw new Error(`Actor ${res.actor.id} is not an ActorCore actor.`);
+			if (res.worker.tags.framework !== "rivetkit") {
+				throw new Error(`Worker ${res.worker.id} is not an WorkerCore worker.`);
 			}
 
 			return {
-				actorId: res.actor.id,
-				name: res.actor.tags.name,
-				key: this.#extractKeyFromRivetTags(res.actor.tags),
+				workerId: res.worker.id,
+				name: res.worker.tags.name,
+				key: this.#extractKeyFromRivetTags(res.worker.tags),
 				meta: {
-					endpoint: buildActorEndpoint(res.actor),
-				} satisfies GetActorMeta,
+					endpoint: buildWorkerEndpoint(res.worker),
+				} satisfies GetWorkerMeta,
 			};
 		} catch (error) {
 			// Handle not found or other errors
@@ -70,19 +70,19 @@ export class RivetManagerDriver implements ManagerDriver {
 	async getWithKey({
 		name,
 		key,
-	}: GetWithKeyInput): Promise<ActorOutput | undefined> {
+	}: GetWithKeyInput): Promise<WorkerOutput | undefined> {
 		// Convert key array to Rivet's tag format
 		const rivetTags = this.#convertKeyToRivetTags(name, key);
 
-		// Query actors with matching tags
-		const { actors } = await rivetRequest<void, { actors: RivetActor[] }>(
+		// Query workers with matching tags
+		const { workers } = await rivetRequest<void, { workers: RivetWorker[] }>(
 			this.#clientConfig,
 			"GET",
-			`/actors?tags_json=${encodeURIComponent(JSON.stringify(rivetTags))}`,
+			`/workers?tags_json=${encodeURIComponent(JSON.stringify(rivetTags))}`,
 		);
 
-		// Filter actors to ensure they're valid
-		const validActors = actors.filter((a: RivetActor) => {
+		// Filter workers to ensure they're valid
+		const validWorkers = workers.filter((a: RivetWorker) => {
 			// Verify all ports have hostname and port
 			for (const portName in a.network.ports) {
 				const port = a.network.ports[portName];
@@ -91,69 +91,69 @@ export class RivetManagerDriver implements ManagerDriver {
 			return true;
 		});
 
-		if (validActors.length === 0) {
+		if (validWorkers.length === 0) {
 			return undefined;
 		}
 
-		// For consistent results, sort by ID if multiple actors match
-		const actor =
-			validActors.length > 1
-				? validActors.sort((a, b) => a.id.localeCompare(b.id))[0]
-				: validActors[0];
+		// For consistent results, sort by ID if multiple workers match
+		const worker =
+			validWorkers.length > 1
+				? validWorkers.sort((a, b) => a.id.localeCompare(b.id))[0]
+				: validWorkers[0];
 
-		// Ensure actor has required tags
-		if (!("name" in actor.tags)) {
-			throw new Error(`Actor ${actor.id} missing 'name' in tags.`);
+		// Ensure worker has required tags
+		if (!("name" in worker.tags)) {
+			throw new Error(`Worker ${worker.id} missing 'name' in tags.`);
 		}
 
 		return {
-			actorId: actor.id,
-			name: actor.tags.name,
-			key: this.#extractKeyFromRivetTags(actor.tags),
+			workerId: worker.id,
+			name: worker.tags.name,
+			key: this.#extractKeyFromRivetTags(worker.tags),
 			meta: {
-				endpoint: buildActorEndpoint(actor),
-			} satisfies GetActorMeta,
+				endpoint: buildWorkerEndpoint(worker),
+			} satisfies GetWorkerMeta,
 		};
 	}
 
 	async getOrCreateWithKey(
 		input: GetOrCreateWithKeyInput,
-	): Promise<ActorOutput> {
+	): Promise<WorkerOutput> {
 		const getOutput = await this.getWithKey(input);
 		if (getOutput) {
 			return getOutput;
 		} else {
-			return await this.createActor(input);
+			return await this.createWorker(input);
 		}
 	}
 
-	async createActor({
+	async createWorker({
 		name,
 		key,
 		region,
 		input,
-	}: CreateInput): Promise<ActorOutput> {
-		// Check if actor with the same name and key already exists
-		const existingActor = await this.getWithKey({ name, key });
-		if (existingActor) {
-			throw new ActorAlreadyExists(name, key);
+	}: CreateInput): Promise<WorkerOutput> {
+		// Check if worker with the same name and key already exists
+		const existingWorker = await this.getWithKey({ name, key });
+		if (existingWorker) {
+			throw new WorkerAlreadyExists(name, key);
 		}
 
-		// Create the actor request
-		let actorLogLevel: string | undefined = undefined;
+		// Create the worker request
+		let workerLogLevel: string | undefined = undefined;
 		if (typeof Deno !== "undefined") {
-			actorLogLevel = Deno.env.get("_ACTOR_LOG_LEVEL");
+			workerLogLevel = Deno.env.get("_WORKER_LOG_LEVEL");
 		} else if (typeof process !== "undefined") {
 			// Do this after Deno since `process` is sometimes polyfilled
-			actorLogLevel = process.env._ACTOR_LOG_LEVEL;
+			workerLogLevel = process.env._WORKER_LOG_LEVEL;
 		}
 
 		const createRequest = {
 			tags: this.#convertKeyToRivetTags(name, key),
 			build_tags: {
 				name,
-				role: "actor",
-				framework: "@rivetkit/actor",
+				role: "worker",
+				framework: "rivetkit",
 				current: "true",
 			},
 			region,
@@ -166,9 +166,9 @@ export class RivetManagerDriver implements ManagerDriver {
 				},
 			},
 			runtime: {
-				environment: actorLogLevel
+				environment: workerLogLevel
 					? {
-							_LOG_LEVEL: actorLogLevel,
+							_LOG_LEVEL: workerLogLevel,
 						}
 					: {},
 			},
@@ -177,19 +177,19 @@ export class RivetManagerDriver implements ManagerDriver {
 			},
 		};
 
-		logger().info("creating actor", { ...createRequest });
+		logger().info("creating worker", { ...createRequest });
 
-		// Create the actor
-		const { actor } = await rivetRequest<
+		// Create the worker
+		const { worker } = await rivetRequest<
 			typeof createRequest,
-			{ actor: RivetActor }
-		>(this.#clientConfig, "POST", "/actors", createRequest);
+			{ worker: RivetWorker }
+		>(this.#clientConfig, "POST", "/workers", createRequest);
 
-		// Initialize the actor
+		// Initialize the worker
 		try {
-			const endpoint = buildActorEndpoint(actor);
+			const endpoint = buildWorkerEndpoint(worker);
 			const url = `${endpoint}/initialize`;
-			logger().debug("initializing actor", { url, input: JSON.stringify(input) });
+			logger().debug("initializing worker", { url, input: JSON.stringify(input) });
 
 			const res = await fetch(url, {
 				method: "POST",
@@ -200,32 +200,32 @@ export class RivetManagerDriver implements ManagerDriver {
 			});
 			if (!res.ok) {
 				throw new InternalError(
-					`Actor initialize request failed (${res.status}):\n${await res.text()}`,
+					`Worker initialize request failed (${res.status}):\n${await res.text()}`,
 				);
 			}
 		} catch (error) {
-			logger().error("failed to initialize actor, destroying actor", {
-				actorId: actor.id,
+			logger().error("failed to initialize worker, destroying worker", {
+				workerId: worker.id,
 				error,
 			});
 
-			// Destroy the actor since it failed to initialize
-			await rivetRequest<typeof createRequest, { actor: RivetActor }>(
+			// Destroy the worker since it failed to initialize
+			await rivetRequest<typeof createRequest, { worker: RivetWorker }>(
 				this.#clientConfig,
 				"DELETE",
-				`/actors/${actor.id}`,
+				`/workers/${worker.id}`,
 			);
 
 			throw error;
 		}
 
 		return {
-			actorId: actor.id,
+			workerId: worker.id,
 			name,
-			key: this.#extractKeyFromRivetTags(actor.tags),
+			key: this.#extractKeyFromRivetTags(worker.tags),
 			meta: {
-				endpoint: buildActorEndpoint(actor),
-			} satisfies GetActorMeta,
+				endpoint: buildWorkerEndpoint(worker),
+			} satisfies GetWorkerMeta,
 		};
 	}
 
@@ -234,8 +234,8 @@ export class RivetManagerDriver implements ManagerDriver {
 		return {
 			name,
 			key: serializeKeyForTag(key),
-			role: "actor",
-			framework: "@rivetkit/actor",
+			role: "worker",
+			framework: "rivetkit",
 		};
 	}
 
@@ -265,9 +265,9 @@ export class RivetManagerDriver implements ManagerDriver {
 	}
 }
 
-function buildActorEndpoint(actor: RivetActor): string {
+function buildWorkerEndpoint(worker: RivetWorker): string {
 	// Fetch port
-	const httpPort = actor.network.ports.http;
+	const httpPort = worker.network.ports.http;
 	if (!httpPort) throw new Error("missing http port");
 	let hostname = httpPort.hostname;
 	if (!hostname) throw new Error("missing hostname");
@@ -299,6 +299,6 @@ function buildActorEndpoint(actor: RivetActor): string {
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: will add api types later
-type RivetActor = any;
+type RivetWorker = any;
 // biome-ignore lint/suspicious/noExplicitAny: will add api types later
 type RivetBuild = any;

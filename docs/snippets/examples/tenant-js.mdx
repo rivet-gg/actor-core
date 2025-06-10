@@ -1,9 +1,9 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 import { authenticate } from "./my-utils";
 
-// Simple tenant organization actor
-const tenant = actor({
+// Simple tenant organization worker
+const tenant = worker({
   // Example initial state
   state: {
     members: [

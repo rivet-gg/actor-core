@@ -1,11 +1,11 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 import { drizzle } from "@rivetkit/drizzle";
 import { documents, cursors } from "./schema";
 
 export type Cursor = { x: number, y: number, userId: string };
 
-const document = actor({
+const document = worker({
   sql: drizzle(),
 
   actions: {

@@ -1,4 +1,4 @@
-import { actor } from "@rivetkit/actor";
+import { actor } from "rivetkit";
 import { drizzle } from "@rivetkit/drizzle";
 import { documents, cursors } from "./schema";
 

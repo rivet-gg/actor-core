@@ -3,14 +3,14 @@ import type {
 	GetForIdInput,
 	GetWithKeyInput,
 	GetOrCreateWithKeyInput,
-	ActorOutput,
+	WorkerOutput,
 	ManagerDriver,
-} from "@rivetkit/actor/driver-helpers";
-import { ActorAlreadyExists } from "@rivetkit/actor/errors";
+} from "rivetkit/driver-helpers";
+import { WorkerAlreadyExists } from "rivetkit/errors";
 import type { MemoryGlobalState } from "./global-state";
 import * as crypto from "node:crypto";
-import { ManagerInspector } from "@rivetkit/actor/inspector";
-import type { ActorCoreApp } from "@rivetkit/actor";
+import { ManagerInspector } from "rivetkit/inspector";
+import type { WorkerCoreApp } from "rivetkit";
 
 export class MemoryManagerDriver implements ManagerDriver {
 	#state: MemoryGlobalState;
@@ -19,28 +19,28 @@ export class MemoryManagerDriver implements ManagerDriver {
 	 * @internal
 	 */
 	inspector: ManagerInspector = new ManagerInspector(this, {
-		getAllActors: () => this.#state.getAllActors(),
-		getAllTypesOfActors: () => Object.keys(this.app.config.actors),
+		getAllWorkers: () => this.#state.getAllWorkers(),
+		getAllTypesOfWorkers: () => Object.keys(this.app.config.workers),
 	});
 
 	constructor(
-		private readonly app: ActorCoreApp<any>,
+		private readonly app: WorkerCoreApp<any>,
 		state: MemoryGlobalState,
 	) {
 		this.#state = state;
 	}
 
-	async getForId({ actorId }: GetForIdInput): Promise<ActorOutput | undefined> {
-		// Validate the actor exists
-		const actor = this.#state.getActor(actorId);
-		if (!actor) {
+	async getForId({ workerId }: GetForIdInput): Promise<WorkerOutput | undefined> {
+		// Validate the worker exists
+		const worker = this.#state.getWorker(workerId);
+		if (!worker) {
 			return undefined;
 		}
 
 		return {
-			actorId: actor.id,
-			name: actor.name,
-			key: actor.key,
+			workerId: worker.id,
+			name: worker.name,
+			key: worker.key,
 			meta: undefined,
 		};
 	}
@@ -48,33 +48,33 @@ export class MemoryManagerDriver implements ManagerDriver {
 	async getWithKey({
 		name,
 		key,
-	}: GetWithKeyInput): Promise<ActorOutput | undefined> {
-		// NOTE: This is a slow implementation that checks each actor individually.
+	}: GetWithKeyInput): Promise<WorkerOutput | undefined> {
+		// NOTE: This is a slow implementation that checks each worker individually.
 		// This can be optimized with an index in the future.
 
-		// Search through all actors to find a match
-		const actor = this.#state.findActor((actor) => {
-			if (actor.name !== name) return false;
+		// Search through all workers to find a match
+		const worker = this.#state.findWorker((worker) => {
+			if (worker.name !== name) return false;
 
-			// If actor doesn't have a key, it's not a match
-			if (!actor.key || actor.key.length !== key.length) {
+			// If worker doesn't have a key, it's not a match
+			if (!worker.key || worker.key.length !== key.length) {
 				return false;
 			}
 
-			// Check if all elements in key are in actor.key
+			// Check if all elements in key are in worker.key
 			for (let i = 0; i < key.length; i++) {
-				if (key[i] !== actor.key[i]) {
+				if (key[i] !== worker.key[i]) {
 					return false;
 				}
 			}
 			return true;
 		});
 
-		if (actor) {
+		if (worker) {
 			return {
-				actorId: actor.id,
+				workerId: worker.id,
 				name,
-				key: actor.key,
+				key: worker.key,
 				meta: undefined,
 			};
 		}
@@ -84,27 +84,27 @@ export class MemoryManagerDriver implements ManagerDriver {
 
 	async getOrCreateWithKey(
 		input: GetOrCreateWithKeyInput,
-	): Promise<ActorOutput> {
+	): Promise<WorkerOutput> {
 		const getOutput = await this.getWithKey(input);
 		if (getOutput) {
 			return getOutput;
 		} else {
-			return await this.createActor(input);
+			return await this.createWorker(input);
 		}
 	}
 
-	async createActor({ name, key, input }: CreateInput): Promise<ActorOutput> {
-		// Check if actor with the same name and key already exists
-		const existingActor = await this.getWithKey({ name, key });
-		if (existingActor) {
-			throw new ActorAlreadyExists(name, key);
+	async createWorker({ name, key, input }: CreateInput): Promise<WorkerOutput> {
+		// Check if worker with the same name and key already exists
+		const existingWorker = await this.getWithKey({ name, key });
+		if (existingWorker) {
+			throw new WorkerAlreadyExists(name, key);
 		}
 
-		const actorId = crypto.randomUUID();
-		this.#state.createActor(actorId, name, key, input);
+		const workerId = crypto.randomUUID();
+		this.#state.createWorker(workerId, name, key, input);
 
-		this.inspector.onActorsChange(this.#state.getAllActors());
+		this.inspector.onWorkersChange(this.#state.getAllWorkers());
 
-		return { actorId, name, key, meta: undefined };
+		return { workerId, name, key, meta: undefined };
 	}
 }

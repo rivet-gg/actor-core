@@ -92,8 +92,8 @@ describe("Key serialization and deserialization", () => {
     });
 
     test("handles complex keys with name", () => {
-      expect(serializeNameAndKey("actor", ["a,b", EMPTY_KEY, "c,d"]))
-        .toBe(`actor:a\\,b${KEY_SEPARATOR}\\${EMPTY_KEY}${KEY_SEPARATOR}c\\,d`);
+      expect(serializeNameAndKey("worker", ["a,b", EMPTY_KEY, "c,d"]))
+        .toBe(`worker:a\\,b${KEY_SEPARATOR}\\${EMPTY_KEY}${KEY_SEPARATOR}c\\,d`);
     });
   });
 

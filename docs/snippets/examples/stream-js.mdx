@@ -1,12 +1,12 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
 export type StreamState = {
   topValues: number[];
 };
 
 // Simple top-K stream processor example
-const streamProcessor = actor({
+const streamProcessor = worker({
   state: {
     topValues: [] as number[]
   },

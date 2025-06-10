@@ -30,8 +30,8 @@ import FAQ from "/snippets/landing-faq.mdx";
             **Just a library, no SaaS.**
     	</p>
 
-        <div className="landing-buttons">
-    		<a href="/actors/overview" className="landing-button landing-button-primary">
+        {/* <div className="landing-buttons">
+    		<a href="/workers/overview" className="landing-button landing-button-primary">
     			Get Started
     		</a>
     		<a
@@ -42,7 +42,122 @@ import FAQ from "/snippets/landing-faq.mdx";
     		>
     			View on GitHub
     		</a>
-    	</div>
+    	</div> */}
+
+		<div style={{ height: '20px' }} />
+
+        {/*<div className="copy-command-container" onClick={(e) => window.copyCommand && window.copyCommand(e.currentTarget)}>
+    		<div className="copy-command-icon"><Icon icon="arrow-right" iconType="solid" color="white" /></div>
+    		<div className="copy-command-text">npx create-worker@latest</div>
+    		<div className="icon-container">
+    			<div className="copy-icon"><Icon icon="copy" /></div>
+    			<div className="check-icon"><Icon icon="check" /></div>
+    		</div>
+    	</div>*/}
+
+		<div className="libraries-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)", maxWidth: "800px" }}>
+			<a href="/worker/overview" className="library-box library-box-orange">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="microchip" color="#ff4f00" size={28} /></div>
+						<h3 className="not-prose">Workers</h3>
+					</div>
+					<div className="library-description">
+						<p>Stateful worker model for building reliable, scalable, and maintainable backend services.</p>
+						<p className="library-replaces">Replaces <span className="highlight">Durable Objects</span>, <span className="highlight">Orelans</span>, or <span className="highlight">Akka</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a>
+			<a href="/experimental/concepts/edge" className="library-box library-box-purple">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="diagram-project" color="#a855f7" size={28} /></div>
+						<h3 className="not-prose">Workflows</h3>
+					</div>
+					<div className="library-description">
+						<p>Distributed workflow engine for durable business processes.</p>
+						<p className="library-replaces">Replaces <span className="highlight">Cloudflare Workflows</span>, <span className="highlight">Temporal</span>, or <span className="highlight">AWS Step Functions</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a>
+			{/* <a href="/experimental/concepts/multiplayer" className="library-box library-box-blue">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="robot" color="#3b82f6" size={28} /></div>
+						<h3 className="not-prose">Agents</h3>
+					</div>
+					<div className="library-description">
+						<p>Framework for building, deploying, and orchestrating AI agents in production.</p>
+						<p className="library-replaces">Replaces <span className="highlight">LangChain</span>, <span className="highlight">LlamaIndex</span>, or <span className="highlight">AutoGen</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a> */}
+			{/* <a href="/experimental/concepts/multiplayer" className="library-box library-box-green">
+				<div className="library-content">
+					<div className="library-title">
+						<div className="library-icon"><Icon icon="tower-broadcast" color="#10b981" size={28} /></div>
+						<h3 className="not-prose">Realtime</h3>
+					</div>
+					<div className="library-description">
+						<p>Low-latency real-time communication for multiplayer experiences and collaborative apps.</p>
+						<p className="library-replaces">Replaces <span className="highlight">Socket.IO</span>, <span className="highlight">Pusher</span>, or <span className="highlight">Firebase</span></p>
+					</div>
+				</div>
+				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
+			</a> */}
+		</div>
+
+        {/*<div className="features-grid">
+    		<div className="feature-box group">
+    			<Icon icon="microchip" color="#ff4f00" size={24} />
+    			<h3 className="not-prose">Long-Lived, Stateful Compute</h3>
+    			<div className="feature-description">
+    				<p>Each unit of compute is like a tiny server that remembers things between requests – no need to reload data or worry about timeouts. Like AWS Lambda, but with memory and no timeouts.</p>
+    			</div>
+    		</div>
+    		<div className="feature-box group">
+    			<Icon icon="database" color="#ff4f00" size={24} />
+    			<h3 className="not-prose">Durable State Without a Database</h3>
+    			<div className="feature-description">
+    				<p>Your code's state is saved automatically—no database, ORM, or config needed. Just use regular JavaScript objects or SQLite (available in June).</p>
+    			</div>
+    		</div>
+    		<div className="feature-box group">
+    			<Icon icon="bolt" color="#ff4f00" size={24} />
+    			<h3 className="not-prose">Blazing-Fast Reads & Writes</h3>
+    			<div className="feature-description">
+    				<p>State is stored on the same machine as your compute, so reads and writes are ultra-fast. No database round trips, no latency spikes.</p>
+    			</div>
+    		</div>
+    		<div className="feature-box group">
+    			<Icon icon="tower-broadcast" color="#ff4f00" size={24} />
+    			<h3 className="not-prose">Realtime, Made Simple</h3>
+    			<div className="feature-description">
+    				<p>Update state and broadcast changes in realtime. No external pub/sub systems, no polling – just built-in low-latency events.</p>
+    			</div>
+    		</div>
+    		<div className="feature-box group">
+    			<Icon icon="globe" color="#ff4f00" size={24} />
+    			<h3 className="not-prose">Store Data Near Your Users</h3>
+    			<div className="feature-description">
+    				<p>Your state lives close to your users on the edge – not in a faraway data center – so every interaction feels instant.</p>
+    			</div>
+    		</div>
+    		<div className="feature-box group">
+    			<Icon icon="cloud" color="#ff4f00" size={24} />
+    			<h3 className="not-prose">Serverless & Scalable</h3>
+    			<div className="feature-description">
+    				<p>No servers to manage. Your code runs on-demand and scales automatically with usage.</p>
+    			</div>
+    		</div>
+    	</div>*/}
+
+        {/*<div className="subtle-link-container">
+    		<a href="#faq" className="subtle-link">Have more questions? Jump to our FAQ <Icon icon="arrow-right" color="white" /></a>
+    	</div>*/}
 
 		<div style={{ height: '60px' }} />
 
@@ -112,120 +227,6 @@ import FAQ from "/snippets/landing-faq.mdx";
                 </a>
             </div>
         </div>
-
-        {/*<div className="copy-command-container" onClick={(e) => window.copyCommand && window.copyCommand(e.currentTarget)}>
-    		<div className="copy-command-icon"><Icon icon="arrow-right" iconType="solid" color="white" /></div>
-    		<div className="copy-command-text">npx create-actor@latest</div>
-    		<div className="icon-container">
-    			<div className="copy-icon"><Icon icon="copy" /></div>
-    			<div className="check-icon"><Icon icon="check" /></div>
-    		</div>
-    	</div>*/}
-
-		{/*
-		<div className="libraries-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)", maxWidth: "800px", margin: "48px auto 0" }}>
-			<a href="/experimental/concepts/edge" className="library-box library-box-purple">
-				<div className="library-content">
-					<div className="library-title">
-						<div className="library-icon"><Icon icon="diagram-project" color="#a855f7" size={28} /></div>
-						<h3 className="not-prose">Workflows</h3>
-					</div>
-					<div className="library-description">
-						<p>Distributed workflow engine for durable business processes.</p>
-						<p className="library-replaces">Replaces <span className="highlight">Temporal</span>, <span className="highlight">AWS Step Functions</span>, or <span className="highlight">LangGraph</span></p>
-					</div>
-				</div>
-				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
-			</a>
-			<a href="/experimental/concepts/multiplayer" className="library-box library-box-blue">
-				<div className="library-content">
-					<div className="library-title">
-						<div className="library-icon"><Icon icon="robot" color="#3b82f6" size={28} /></div>
-						<h3 className="not-prose">Agents</h3>
-					</div>
-					<div className="library-description">
-						<p>Framework for building, deploying, and orchestrating AI agents in production.</p>
-						<p className="library-replaces">Replaces <span className="highlight">LangChain</span>, <span className="highlight">LlamaIndex</span>, or <span className="highlight">AutoGen</span></p>
-					</div>
-				</div>
-				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
-			</a>
-			<a href="/actor/overview" className="library-box library-box-orange">
-				<div className="library-content">
-					<div className="library-title">
-						<div className="library-icon"><Icon icon="microchip" color="#ff4f00" size={28} /></div>
-						<h3 className="not-prose">Actors</h3>
-					</div>
-					<div className="library-description">
-						<p>Stateful actor model for building reliable, scalable, and maintainable backend services.</p>
-						<p className="library-replaces">Replaces <span className="highlight">Durable Objects</span>, <span className="highlight">AWS EventBridge</span>, or <span className="highlight">Orleans</span></p>
-					</div>
-				</div>
-				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
-			</a>
-			<a href="/experimental/concepts/multiplayer" className="library-box library-box-green">
-				<div className="library-content">
-					<div className="library-title">
-						<div className="library-icon"><Icon icon="tower-broadcast" color="#10b981" size={28} /></div>
-						<h3 className="not-prose">Realtime</h3>
-					</div>
-					<div className="library-description">
-						<p>Low-latency real-time communication for multiplayer experiences and collaborative apps.</p>
-						<p className="library-replaces">Replaces <span className="highlight">Socket.IO</span>, <span className="highlight">Pusher</span>, or <span className="highlight">Firebase</span></p>
-					</div>
-				</div>
-				<div className="library-arrow"><Icon icon="arrow-right" color="rgba(255, 255, 255, 0.8)" size={20} /></div>
-			</a>
-		</div>*/}
-
-        {/*<div className="features-grid">
-    		<div className="feature-box group">
-    			<Icon icon="microchip" color="#ff4f00" size={24} />
-    			<h3 className="not-prose">Long-Lived, Stateful Compute</h3>
-    			<div className="feature-description">
-    				<p>Each unit of compute is like a tiny server that remembers things between requests – no need to reload data or worry about timeouts. Like AWS Lambda, but with memory and no timeouts.</p>
-    			</div>
-    		</div>
-    		<div className="feature-box group">
-    			<Icon icon="database" color="#ff4f00" size={24} />
-    			<h3 className="not-prose">Durable State Without a Database</h3>
-    			<div className="feature-description">
-    				<p>Your code's state is saved automatically—no database, ORM, or config needed. Just use regular JavaScript objects or SQLite (available in June).</p>
-    			</div>
-    		</div>
-    		<div className="feature-box group">
-    			<Icon icon="bolt" color="#ff4f00" size={24} />
-    			<h3 className="not-prose">Blazing-Fast Reads & Writes</h3>
-    			<div className="feature-description">
-    				<p>State is stored on the same machine as your compute, so reads and writes are ultra-fast. No database round trips, no latency spikes.</p>
-    			</div>
-    		</div>
-    		<div className="feature-box group">
-    			<Icon icon="tower-broadcast" color="#ff4f00" size={24} />
-    			<h3 className="not-prose">Realtime, Made Simple</h3>
-    			<div className="feature-description">
-    				<p>Update state and broadcast changes in realtime. No external pub/sub systems, no polling – just built-in low-latency events.</p>
-    			</div>
-    		</div>
-    		<div className="feature-box group">
-    			<Icon icon="globe" color="#ff4f00" size={24} />
-    			<h3 className="not-prose">Store Data Near Your Users</h3>
-    			<div className="feature-description">
-    				<p>Your state lives close to your users on the edge – not in a faraway data center – so every interaction feels instant.</p>
-    			</div>
-    		</div>
-    		<div className="feature-box group">
-    			<Icon icon="cloud" color="#ff4f00" size={24} />
-    			<h3 className="not-prose">Serverless & Scalable</h3>
-    			<div className="feature-description">
-    				<p>No servers to manage. Your code runs on-demand and scales automatically with usage.</p>
-    			</div>
-    		</div>
-    	</div>*/}
-
-        {/*<div className="subtle-link-container">
-    		<a href="#faq" className="subtle-link">Have more questions? Jump to our FAQ <Icon icon="arrow-right" color="white" /></a>
-    	</div>*/}
 
     </div>
 
@@ -336,10 +337,10 @@ import FAQ from "/snippets/landing-faq.mdx";
     <div style={{ height: '260px' }} />
 
     <div className="cta-section landing-section">
-        <h2 className="cta-title" id="rotating-cta-title">Performance in every act - thanks to Rivet Actors.</h2>
+        <h2 className="cta-title" id="rotating-cta-title">Performance in every act - thanks to Rivet Workers.</h2>
     	<div style={{ height: "16px" }} />
         <div className="landing-buttons">
-            <a href="/actors/overview" className="landing-button landing-button-primary">
+            <a href="/workers/overview" className="landing-button landing-button-primary">
                 Get Started
             </a>
             <a href="https://github.com/rivet-gg/rivetkit" target="_blank" className="landing-button landing-button-secondary">

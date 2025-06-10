@@ -1,53 +1,53 @@
 import {
 	type DurableObjectConstructor,
-	type ActorHandlerInterface,
-	createActorDurableObject,
-} from "./actor-handler-do";
+	type WorkerHandlerInterface,
+	createWorkerDurableObject,
+} from "./worker-handler-do";
 import { ConfigSchema, type InputConfig } from "./config";
-import { assertUnreachable } from "@rivetkit/actor/utils";
+import { assertUnreachable } from "rivetkit/utils";
 import type { Hono } from "hono";
-import { PartitionTopologyManager } from "@rivetkit/actor/topologies/partition";
+import { PartitionTopologyManager } from "rivetkit/topologies/partition";
 import { logger } from "./log";
 import { CloudflareWorkersManagerDriver } from "./manager-driver";
-import { ActorCoreApp } from "@rivetkit/actor";
+import { WorkerCoreApp } from "rivetkit";
 import { upgradeWebSocket } from "./websocket";
 
 /** Cloudflare Workers env */
 export interface Bindings {
-	ACTOR_KV: KVNamespace;
-	ACTOR_DO: DurableObjectNamespace<ActorHandlerInterface>;
+	WORKER_KV: KVNamespace;
+	WORKER_DO: DurableObjectNamespace<WorkerHandlerInterface>;
 }
 
 export function createHandler(
-	app: ActorCoreApp<any>,
+	app: WorkerCoreApp<any>,
 	inputConfig?: InputConfig,
 ): {
 	handler: ExportedHandler<Bindings>;
-	ActorHandler: DurableObjectConstructor;
+	WorkerHandler: DurableObjectConstructor;
 } {
 	// Create router
-	const { router, ActorHandler } = createRouter(app, inputConfig);
+	const { router, WorkerHandler } = createRouter(app, inputConfig);
 
 	// Create Cloudflare handler
 	const handler = {
 		fetch: router.fetch,
 	} satisfies ExportedHandler<Bindings>;
 
-	return { handler, ActorHandler };
+	return { handler, WorkerHandler };
 }
 
 export function createRouter(
-	app: ActorCoreApp<any>,
+	app: WorkerCoreApp<any>,
 	inputConfig?: InputConfig,
 ): {
 	router: Hono<{ Bindings: Bindings }>;
-	ActorHandler: DurableObjectConstructor;
+	WorkerHandler: DurableObjectConstructor;
 } {
 	const driverConfig = ConfigSchema.parse(inputConfig);
 
 	// Configur drivers
 	//
-	// Actor driver will get set in `ActorHandler`
+	// Worker driver will get set in `WorkerHandler`
 	if (!driverConfig.drivers) driverConfig.drivers = {};
 	if (!driverConfig.drivers.manager)
 		driverConfig.drivers.manager = new CloudflareWorkersManagerDriver();
@@ -57,7 +57,7 @@ export function createRouter(
 		driverConfig.getUpgradeWebSocket = () => upgradeWebSocket;
 
 	// Create Durable Object
-	const ActorHandler = createActorDurableObject(app, driverConfig);
+	const WorkerHandler = createWorkerDurableObject(app, driverConfig);
 
 	driverConfig.topology = driverConfig.topology ?? "partition";
 	if (driverConfig.topology === "partition") {
@@ -65,21 +65,21 @@ export function createRouter(
 			app.config,
 			driverConfig,
 			{
-				onProxyRequest: async (c, actorRequest, actorId): Promise<Response> => {
+				onProxyRequest: async (c, workerRequest, workerId): Promise<Response> => {
 					logger().debug("forwarding request to durable object", {
-						actorId,
-						method: actorRequest.method,
-						url: actorRequest.url,
+						workerId,
+						method: workerRequest.method,
+						url: workerRequest.url,
 					});
 
-					const id = c.env.ACTOR_DO.idFromString(actorId);
-					const stub = c.env.ACTOR_DO.get(id);
+					const id = c.env.WORKER_DO.idFromString(workerId);
+					const stub = c.env.WORKER_DO.get(id);
 
-					return await stub.fetch(actorRequest);
+					return await stub.fetch(workerRequest);
 				},
-				onProxyWebSocket: async (c, path, actorId) => {
+				onProxyWebSocket: async (c, path, workerId) => {
 					logger().debug("forwarding websocket to durable object", {
-						actorId,
+						workerId,
 						path,
 					});
 
@@ -92,13 +92,13 @@ export function createRouter(
 					}
 
 					// Update path on URL
-					const newUrl = new URL(`http://actor${path}`);
-					const actorRequest = new Request(newUrl, c.req.raw);
+					const newUrl = new URL(`http://worker${path}`);
+					const workerRequest = new Request(newUrl, c.req.raw);
 
-					const id = c.env.ACTOR_DO.idFromString(actorId);
-					const stub = c.env.ACTOR_DO.get(id);
+					const id = c.env.WORKER_DO.idFromString(workerId);
+					const stub = c.env.WORKER_DO.get(id);
 
-					return await stub.fetch(actorRequest);
+					return await stub.fetch(workerRequest);
 				},
 			},
 		);
@@ -108,7 +108,7 @@ export function createRouter(
 			Bindings: Bindings;
 		}>;
 
-		return { router, ActorHandler };
+		return { router, WorkerHandler };
 	} else if (
 		driverConfig.topology === "standalone" ||
 		driverConfig.topology === "coordinate"

@@ -1,9 +1,9 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 
 export type Message = { sender: string; text: string; timestamp: number; }
 
-const chatRoom = actor({
+const chatRoom = worker({
   // State is automatically persisted
   state: { 
     messages: [] as Message[] 

@@ -1,11 +1,11 @@
 ```typescript
-import { actor } from "@rivetkit/actor";
+import { worker } from "rivetkit";
 import { authenticate } from "./my-utils";
 
 export type Note = { id: string; content: string; updatedAt: number };
 
-// User notes actor
-const notes = actor({
+// User notes worker
+const notes = worker({
   state: {
     notes: [] as Note[]
   },
