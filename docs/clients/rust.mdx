@@ -41,7 +41,7 @@ The ActorCore Rust client provides a way to connect to and interact with actors 
     Modify `src/main.rs` to connect to your actor:
 
     ```rust src/main.rs
-    use actor_core_client::{Client, GetOptions, TransportKind, EncodingKind};
+    use actor_core_client::{Client, EncodingKind, GetOrCreateOptions, TransportKind};
     use serde_json::json;
     use std::time::Duration;
 
@@ -49,14 +49,15 @@ The ActorCore Rust client provides a way to connect to and interact with actors 
     async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Replace with your endpoint URL after deployment
         let client = Client::new(
-            "http://localhost:6420".to_string(),
-            TransportKind::WebSocket,
-            EncodingKind::Cbor,
+            "http://localhost:6420",
+            TransportKind::Sse,
+            EncodingKind::Json
         );
         
         // Get or create an actor instance
-        let options = GetOptions::default();
-        let counter = client.get("counter", options).await?;
+        let options = GetOrCreateOptions::default();
+        let counter = client.get("counter", [].into(), options)?
+          .connect();
         
         // Subscribe to events
         counter.on_event("newCount", |args| {
