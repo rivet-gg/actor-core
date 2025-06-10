@@ -17,7 +17,7 @@ import { createNodeWebSocket, type NodeWebSocket } from "@hono/node-ws";
 import invariant from "invariant";
 import { bundleRequire } from "bundle-require";
 import { getPort } from "@/test/mod";
-import { Transport } from "@/client/mod";
+import { Client, Transport } from "@/client/mod";
 import { runActorConnTests } from "./tests/actor-conn";
 import { runActorHandleTests } from "./tests/actor-handle";
 import { runActionFeaturesTests } from "./tests/action-features";
@@ -25,6 +25,7 @@ import { runActorVarsTests } from "./tests/actor-vars";
 import { runActorConnStateTests } from "./tests/actor-conn-state";
 import { runActorMetadataTests } from "./tests/actor-metadata";
 import { runActorErrorHandlingTests } from "./tests/actor-error-handling";
+import { ClientDriver } from "@/client/client";
 
 export interface DriverTestConfig {
 	/** Deploys an app and returns the connection endpoint. */
@@ -40,40 +41,61 @@ export interface DriverTestConfig {
 	HACK_skipCleanupNet?: boolean;
 
 	transport?: Transport;
+
+	clientType: ClientType;
 }
+
+/**
+ * The type of client to run the test with.
+ *
+ * The logic for HTTP vs inline is very different, so this helps validate all behavior matches.
+ **/
+type ClientType = "http" | "inline";
 
 export interface DriverDeployOutput {
 	endpoint: string;
+	inlineClientDriver: ClientDriver;
 
 	/** Cleans up the test. */
 	cleanup(): Promise<void>;
 }
 
 /** Runs all Vitest tests against the provided drivers. */
-export function runDriverTests(driverTestConfig: DriverTestConfig) {
-	runActorDriverTests(driverTestConfig);
-	runManagerDriverTests(driverTestConfig);
+export function runDriverTests(
+	driverTestConfigPartial: Omit<DriverTestConfig, "clientType" | "transport">,
+) {
+	for (const clientType of ["http", "inline"] as ClientType[]) {
+		const driverTestConfig: DriverTestConfig = {
+			...driverTestConfigPartial,
+			clientType,
+		};
 
-	for (const transport of ["websocket", "sse"] as Transport[]) {
-		describe(`actor connection (${transport})`, () => {
-			runActorConnTests({
-				...driverTestConfig,
-				transport,
-			});
+		describe(`client type (${clientType})`, () => {
+			runActorDriverTests(driverTestConfig);
+			runManagerDriverTests(driverTestConfig);
 
-			runActorConnStateTests({ ...driverTestConfig, transport });
+			for (const transport of ["websocket", "sse"] as Transport[]) {
+				describe(`transport (${transport})`, () => {
+					runActorConnTests({
+						...driverTestConfig,
+						transport,
+					});
+
+					runActorConnStateTests({ ...driverTestConfig, transport });
+				});
+			}
+
+			runActorHandleTests(driverTestConfig);
+
+			runActionFeaturesTests(driverTestConfig);
+
+			runActorVarsTests(driverTestConfig);
+
+			runActorMetadataTests(driverTestConfig);
+
+			runActorErrorHandlingTests(driverTestConfig);
 		});
 	}
-
-	runActorHandleTests(driverTestConfig);
-
-	runActionFeaturesTests(driverTestConfig);
-
-	runActorVarsTests(driverTestConfig);
-
-	runActorMetadataTests(driverTestConfig);
-
-	runActorErrorHandlingTests(driverTestConfig);
 }
 
 /**
@@ -144,5 +166,9 @@ export async function createTestRuntime(
 		await driverCleanup?.();
 	};
 
-	return { endpoint: `http://127.0.0.1:${port}`, cleanup };
+	return {
+		endpoint: `http://127.0.0.1:${port}`,
+		inlineClientDriver: topology.clientDriver,
+		cleanup,
+	};
 }

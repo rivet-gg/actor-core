@@ -1,6 +1,6 @@
 import type { ActorKey } from "@/common/utils";
 import type { ManagerInspector } from "@/inspector/manager";
-import type { Env, Context as HonoContext } from "hono";
+import type { Env, Context as HonoContext, HonoRequest } from "hono";
 
 export interface ManagerDriver {
 	getForId(input: GetForIdInput): Promise<ActorOutput | undefined>;
@@ -11,18 +11,18 @@ export interface ManagerDriver {
 	inspector?: ManagerInspector;
 }
 export interface GetForIdInput<E extends Env = any> {
-	c?: HonoContext<E>;
+	req?: HonoRequest | undefined;
 	actorId: string;
 }
 
 export interface GetWithKeyInput<E extends Env = any> {
-	c?: HonoContext<E>;
+	req?: HonoRequest | undefined;
 	name: string;
 	key: ActorKey;
 }
 
 export interface GetOrCreateWithKeyInput<E extends Env = any> {
-	c?: HonoContext<E>;
+	req?: HonoRequest | undefined;
 	name: string;
 	key: ActorKey;
 	input?: unknown;
@@ -30,7 +30,7 @@ export interface GetOrCreateWithKeyInput<E extends Env = any> {
 }
 
 export interface CreateInput<E extends Env = any> {
-	c?: HonoContext<E>;
+	req?: HonoRequest | undefined;
 	name: string;
 	key: ActorKey;
 	input?: unknown;

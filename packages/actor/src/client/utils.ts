@@ -1,5 +1,4 @@
-import { deserialize } from "@/actor/protocol/serde";
-import { assertUnreachable, stringifyError } from "@/common/utils";
+import { assertUnreachable } from "@/common/utils";
 import { httpUserAgent } from "@/utils";
 import { Encoding } from "@/mod";
 import * as cbor from "cbor-x";
@@ -32,6 +31,7 @@ export interface HttpRequestOpts<Body> {
 	body?: Body;
 	encoding: Encoding;
 	skipParseResponse?: boolean;
+	customFetch?: (req: Request) => Promise<Response>;
 }
 
 export async function sendHttpRequest<
@@ -62,19 +62,21 @@ export async function sendHttpRequest<
 	let response: Response;
 	try {
 		// Make the HTTP request
-		response = await fetch(opts.url, {
-			method: opts.method,
-			headers: {
-				...opts.headers,
-				...(contentType
-					? {
-							"Content-Type": contentType,
-						}
-					: {}),
-				"User-Agent": httpUserAgent(),
-			},
-			body: bodyData,
-		});
+		response = await (opts.customFetch ?? fetch)(
+			new Request(opts.url, {
+				method: opts.method,
+				headers: {
+					...opts.headers,
+					...(contentType
+						? {
+								"Content-Type": contentType,
+							}
+						: {}),
+					"User-Agent": httpUserAgent(),
+				},
+				body: bodyData
+			}),
+		);
 	} catch (error) {
 		throw new HttpRequestError(`Request failed: ${error}`, {
 			cause: error,

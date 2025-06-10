@@ -8,9 +8,9 @@ import type { CoordinateDriver } from "../driver";
 import { RelayConn } from "../conn/mod";
 import { publishMessageToLeader } from "../node/message";
 import type { ActorDriver } from "@/actor/driver";
-import type { ConnectWebSocketOpts, ConnectWebSocketOutput } from "@/actor/router";
-import { DriverConfig } from "@/driver-helpers/config";
-import { AppConfig } from "@/app/config";
+import type { DriverConfig } from "@/driver-helpers/config";
+import type { AppConfig } from "@/app/config";
+import { ConnectWebSocketOpts, ConnectWebSocketOutput } from "@/actor/router-endpoints";
 
 export async function serveWebSocket(
 	appConfig: AppConfig,
@@ -65,7 +65,7 @@ export async function serveWebSocket(
 						},
 					},
 				},
-				req.raw.signal,
+				req?.raw.signal,
 			);
 		},
 		onClose: async () => {

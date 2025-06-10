@@ -15,6 +15,7 @@ import type { AnyActorDefinition } from "@/actor/definition";
 import type * as wsToServer from "@/actor/protocol/message/to-server";
 import type { EventSource } from "eventsource";
 import { createHttpClientDriver } from "./http-client-driver";
+import { HonoRequest } from "hono";
 
 /** Extract the actor registry from the app definition. */
 export type ExtractActorsFromApp<A extends ActorCoreApp<any>> =
@@ -159,6 +160,7 @@ export const TRANSPORT_SYMBOL = Symbol("transport");
 
 export interface ClientDriver {
 	action<Args extends Array<unknown> = unknown[], Response = unknown>(
+		req: HonoRequest | undefined,
 		actorQuery: ActorQuery,
 		encoding: Encoding,
 		params: unknown,
@@ -166,19 +168,23 @@ export interface ClientDriver {
 		...args: Args
 	): Promise<Response>;
 	resolveActorId(
+		req: HonoRequest | undefined,
 		actorQuery: ActorQuery,
 		encodingKind: Encoding,
 	): Promise<string>;
 	connectWebSocket(
+		req: HonoRequest | undefined,
 		actorQuery: ActorQuery,
 		encodingKind: Encoding,
 	): Promise<WebSocket>;
 	connectSse(
+		req: HonoRequest | undefined,
 		actorQuery: ActorQuery,
 		encodingKind: Encoding,
 		params: unknown,
 	): Promise<EventSource>;
 	sendHttpMessage(
+		req: HonoRequest | undefined,
 		actorId: string,
 		encoding: Encoding,
 		connectionId: string,
@@ -353,6 +359,7 @@ export class ClientRaw {
 
 		// Create the actor
 		const actorId = await this.#driver.resolveActorId(
+			undefined,
 			createQuery,
 			this.#encodingKind,
 		);

@@ -61,6 +61,7 @@ export class ActorHandleRaw {
 		...args: Args
 	): Promise<Response> {
 		return await this.#driver.action<Args, Response>(
+			undefined,
 			this.#actorQuery,
 			this.#encodingKind,
 			this.#params,
@@ -105,6 +106,7 @@ export class ActorHandleRaw {
 		) {
 			// TODO:
 			const actorId = await this.#driver.resolveActorId(
+				undefined,
 				this.#actorQuery,
 				this.#encodingKind,
 			);

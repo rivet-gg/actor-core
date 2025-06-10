@@ -1,5 +1,5 @@
-import { Hono } from "hono";
-import { createActorRouter } from "@/actor/router";
+import { Hono, HonoRequest } from "hono";
+import { createActorRouter } from "@/topologies/partition/actor-router";
 import type { AnyActorInstance } from "@/actor/instance";
 import * as errors from "@/actor/errors";
 import {
@@ -24,11 +24,7 @@ import type { ActorKey } from "@/common/utils";
 import type { DriverConfig } from "@/driver-helpers/config";
 import type { AppConfig } from "@/app/config";
 import type { ActorInspectorConnection } from "@/inspector/actor";
-import {
-	createManagerRouter,
-	OnProxyWebSocket,
-	type OnProxyRequest,
-} from "@/manager/router";
+import { createManagerRouter } from "@/manager/router";
 import type { ManagerInspectorConnection } from "@/inspector/manager";
 import type {
 	ConnectWebSocketOpts,
@@ -39,22 +35,49 @@ import type {
 	ConnectSseOutput,
 	ActionOutput,
 } from "@/actor/router-endpoints";
+import { ClientDriver } from "@/client/client";
+import { ToServer } from "@/actor/protocol/message/to-server";
+import { ActorQuery } from "@/manager/protocol/query";
+import { Encoding } from "@/mod";
+import { EventSource } from "eventsource";
+import { createInlineClientDriver } from "@/app/inline-client-driver";
+import {
+	ConnRoutingHandler,
+	ConnRoutingHandlerCustom,
+} from "@/actor/conn-routing-handler";
+import invariant from "invariant";
+
+export type SendRequestHandler = (
+	actorRequest: Request,
+	actorId: string,
+	meta?: unknown,
+) => Promise<Response>;
+
+export type OpenWebSocketHandler = (
+	path: string,
+	actorId: string,
+	meta?: unknown,
+) => Promise<WebSocket>;
 
 export class PartitionTopologyManager {
+	clientDriver: ClientDriver;
 	router: Hono;
 
 	constructor(
 		appConfig: AppConfig,
 		driverConfig: DriverConfig,
-		proxyCustomConfig: {
-			onProxyRequest: OnProxyRequest;
-			onProxyWebSocket: OnProxyWebSocket;
-		},
+		customRoutingHandlers: ConnRoutingHandlerCustom,
 	) {
+		const routingHandler: ConnRoutingHandler = {
+			custom: customRoutingHandlers,
+		};
+
+		const managerDriver = driverConfig.drivers.manager;
+		invariant(managerDriver, "missing manager driver");
+		this.clientDriver = createInlineClientDriver(managerDriver, routingHandler);
+
 		this.router = createManagerRouter(appConfig, driverConfig, {
-			proxyMode: {
-				custom: proxyCustomConfig,
-			},
+			routingHandler,
 			onConnectInspector: async () => {
 				const inspector = driverConfig.drivers?.manager?.inspector;
 				if (!inspector) throw new errors.Unsupported("inspector");
@@ -127,7 +150,7 @@ export class PartitionTopologyActor {
 
 					const connId = generateConnId();
 					const connToken = generateConnToken();
-					const connState = await actor.prepareConn(opts.params, opts.req.raw);
+					const connState = await actor.prepareConn(opts.params, opts.req?.raw);
 
 					let conn: AnyConn | undefined;
 					return {
@@ -177,7 +200,7 @@ export class PartitionTopologyActor {
 
 					const connId = generateConnId();
 					const connToken = generateConnToken();
-					const connState = await actor.prepareConn(opts.params, opts.req.raw);
+					const connState = await actor.prepareConn(opts.params, opts.req?.raw);
 
 					let conn: AnyConn | undefined;
 					return {
@@ -217,7 +240,7 @@ export class PartitionTopologyActor {
 						// Create conn
 						const connState = await actor.prepareConn(
 							opts.params,
-							opts.req.raw,
+							opts.req?.raw,
 						);
 						conn = await actor.createConn(
 							generateConnId(),

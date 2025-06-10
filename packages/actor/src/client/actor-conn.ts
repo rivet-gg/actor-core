@@ -251,6 +251,7 @@ enc
 
 	async #connectWebSocket() {
 		const ws = await this.#driver.connectWebSocket(
+			undefined,
 			this.#actorQuery,
 			this.#encodingKind,
 		);
@@ -281,6 +282,7 @@ enc
 
 	async #connectSse() {
 		const eventSource = await this.#driver.connectSse(
+			undefined,
 			this.#actorQuery,
 			this.#encodingKind,
 			this.#params,
@@ -649,6 +651,7 @@ enc
 				throw new errors.InternalError("Missing connection ID or token.");
 
 			const res = await this.#driver.sendHttpMessage(
+				undefined,
 				this.#actorId,
 				this.#encodingKind,
 				this.#connectionId,

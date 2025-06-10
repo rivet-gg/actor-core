@@ -21,7 +21,7 @@ import type { DriverConfig } from "@/driver-helpers/config";
 import invariant from "invariant";
 
 export interface ConnectWebSocketOpts {
-	req: HonoRequest;
+	req?: HonoRequest;
 	encoding: Encoding;
 	params: unknown;
 	actorId: string;
@@ -34,7 +34,7 @@ export interface ConnectWebSocketOutput {
 }
 
 export interface ConnectSseOpts {
-	req: HonoRequest;
+	req?: HonoRequest;
 	encoding: Encoding;
 	params: unknown;
 	actorId: string;
@@ -46,7 +46,7 @@ export interface ConnectSseOutput {
 }
 
 export interface ActionOpts {
-	req: HonoRequest;
+	req?: HonoRequest;
 	params: unknown;
 	actionName: string;
 	actionArgs: unknown[];
@@ -58,7 +58,7 @@ export interface ActionOutput {
 }
 
 export interface ConnsMessageOpts {
-	req: HonoRequest;
+	req?: HonoRequest;
 	connId: string;
 	connToken: string;
 	message: messageToServer.ToServer;

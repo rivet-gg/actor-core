@@ -25,6 +25,7 @@ import {
 import type { ActionRequest } from "@/actor/protocol/http/action";
 import type { ActionResponse } from "@/actor/protocol/message/to-client";
 import { ClientDriver } from "./client";
+import { HonoRequest } from "hono";
 
 /**
  * Client driver that communicates with the manager via HTTP.
@@ -45,6 +46,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 
 	const driver: ClientDriver = {
 		action: async <Args extends Array<unknown> = unknown[], Response = unknown>(
+			_req: HonoRequest | undefined,
 			actorQuery: ActorQuery,
 			encoding: Encoding,
 			params: unknown,
@@ -77,6 +79,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		resolveActorId: async (
+			_req: HonoRequest | undefined,
 			actorQuery: ActorQuery,
 			encodingKind: Encoding,
 		): Promise<string> => {
@@ -112,6 +115,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		connectWebSocket: async (
+			_req: HonoRequest | undefined,
 			actorQuery: ActorQuery,
 			encodingKind: Encoding,
 		): Promise<WebSocket> => {
@@ -140,6 +144,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		connectSse: async (
+			_req: HonoRequest | undefined,
 			actorQuery: ActorQuery,
 			encodingKind: Encoding,
 			params: unknown,
@@ -170,6 +175,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		sendHttpMessage: async (
+			_req: HonoRequest | undefined,
 			actorId: string,
 			encoding: Encoding,
 			connectionId: string,

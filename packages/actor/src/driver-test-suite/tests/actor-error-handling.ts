@@ -1,6 +1,6 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
-import { setupDriverTest, waitFor } from "../utils";
+import { setupDriverTest } from "../utils";
 import { ERROR_HANDLING_APP_PATH, type ErrorHandlingApp } from "../test-apps";
 
 export function runActorErrorHandlingTests(driverTestConfig: DriverTestConfig) {

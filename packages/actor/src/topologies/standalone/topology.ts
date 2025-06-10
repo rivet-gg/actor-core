@@ -32,6 +32,10 @@ import type {
 	ActionOutput,
 	ConnectionHandlers,
 } from "@/actor/router-endpoints";
+import { createInlineClientDriver } from "@/app/inline-client-driver";
+import invariant from "invariant";
+import { ClientDriver } from "@/client/client";
+import { ConnRoutingHandler } from "@/actor/conn-routing-handler";
 
 class ActorHandler {
 	/** Will be undefined if not yet loaded. */
@@ -48,10 +52,8 @@ class ActorHandler {
  * Manages actors in a single instance without distributed coordination.
  */
 export class StandaloneTopology {
-	/**
-	 * The router instance.
-	 */
-	readonly router: Hono;
+	clientDriver: ClientDriver;
+	router: Hono;
 
 	#appConfig: AppConfig;
 	#driverConfig: DriverConfig;
@@ -139,7 +141,7 @@ export class StandaloneTopology {
 
 				const connId = generateConnId();
 				const connToken = generateConnToken();
-				const connState = await actor.prepareConn(opts.params, opts.req.raw);
+				const connState = await actor.prepareConn(opts.params, opts.req?.raw);
 
 				let conn: AnyConn | undefined;
 				return {
@@ -181,7 +183,7 @@ export class StandaloneTopology {
 
 				const connId = generateConnId();
 				const connToken = generateConnToken();
-				const connState = await actor.prepareConn(opts.params, opts.req.raw);
+				const connState = await actor.prepareConn(opts.params, opts.req?.raw);
 
 				let conn: AnyConn | undefined;
 				return {
@@ -214,7 +216,7 @@ export class StandaloneTopology {
 					const { actor } = await this.#getActor(opts.actorId);
 
 					// Create conn
-					const connState = await actor.prepareConn(opts.params, opts.req.raw);
+					const connState = await actor.prepareConn(opts.params, opts.req?.raw);
 					conn = await actor.createConn(
 						generateConnId(),
 						generateConnToken(),
@@ -259,13 +261,18 @@ export class StandaloneTopology {
 			},
 		};
 
+		const routingHandler: ConnRoutingHandler = {
+			inline: { handlers: sharedConnectionHandlers },
+		};
+
+		// Build client driver
+		const managerDriver = this.#driverConfig.drivers.manager;
+		invariant(managerDriver, "missing manager driver");
+		this.clientDriver = createInlineClientDriver(managerDriver, routingHandler);
+
 		// Build manager router
 		const managerRouter = createManagerRouter(appConfig, driverConfig, {
-			proxyMode: {
-				inline: {
-					handlers: sharedConnectionHandlers,
-				},
-			},
+			routingHandler,
 			onConnectInspector: async () => {
 				const inspector = driverConfig.drivers?.manager?.inspector;
 				if (!inspector) throw new errors.Unsupported("inspector");

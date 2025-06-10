@@ -1,5 +1,3 @@
-import { serveSse } from "./router/sse";
-import { serveWebSocket } from "./router/websocket";
 import { Node } from "./node/mod";
 import type { ActorPeer } from "./actor-peer";
 import * as errors from "@/actor/errors";
@@ -7,7 +5,6 @@ import * as events from "node:events";
 import { publishMessageToLeader } from "./node/message";
 import type { RelayConn } from "./conn/mod";
 import { Hono } from "hono";
-import { createActorRouter } from "@/actor/router";
 import { handleRouteError, handleRouteNotFound } from "@/common/router";
 import type { DriverConfig } from "@/driver-helpers/config";
 import type { AppConfig } from "@/app/config";
@@ -22,6 +19,12 @@ import type {
 	ActionOutput,
 	ConnectionHandlers,
 } from "@/actor/router-endpoints";
+import invariant from "invariant";
+import { createInlineClientDriver } from "@/app/inline-client-driver";
+import { serveWebSocket } from "./router/websocket";
+import { serveSse } from "./router/sse";
+import { ClientDriver } from "@/client/client";
+import { ConnRoutingHandler } from "@/actor/conn-routing-handler";
 
 export interface GlobalState {
 	nodeId: string;
@@ -34,6 +37,7 @@ export interface GlobalState {
 }
 
 export class CoordinateTopology {
+	public readonly clientDriver: ClientDriver;
 	public readonly router: Hono;
 
 	constructor(appConfig: AppConfig, driverConfig: DriverConfig) {
@@ -110,18 +114,23 @@ export class CoordinateTopology {
 							},
 						},
 					},
-					opts.req.raw.signal,
+					opts.req?.raw.signal,
 				);
 			},
 		};
 
+		const routingHandler: ConnRoutingHandler = {
+			inline: { handlers: connectionHandlers },
+		};
+
+		// Create driver
+		const managerDriver = driverConfig.drivers.manager;
+		invariant(managerDriver, "missing manager driver");
+		this.clientDriver = createInlineClientDriver(managerDriver, routingHandler);
+
 		// Build manager router
 		const managerRouter = createManagerRouter(appConfig, driverConfig, {
-			proxyMode: {
-				inline: {
-					handlers: connectionHandlers,
-				},
-			},
+			routingHandler,
 			onConnectInspector: () => {
 				throw new errors.Unsupported("inspect");
 			},

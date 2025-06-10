@@ -49,39 +49,11 @@ import {
 } from "./protocol/query";
 import type { ActorQuery } from "./protocol/query";
 import { VERSION } from "@/utils";
-
-type ProxyMode =
-	| {
-			inline: {
-				handlers: ConnectionHandlers;
-			};
-	  }
-	| {
-			custom: {
-				onProxyRequest: OnProxyRequest;
-				onProxyWebSocket: OnProxyWebSocket;
-			};
-	  };
-
-export type BuildProxyEndpoint = (c: HonoContext, actorId: string) => string;
-
-export type OnProxyRequest = (
-	c: HonoContext,
-	actorRequest: Request,
-	actorId: string,
-	meta?: unknown,
-) => Promise<Response>;
-
-export type OnProxyWebSocket = (
-	c: HonoContext,
-	path: string,
-	actorId: string,
-	meta?: unknown,
-) => Promise<Response>;
+import { ConnRoutingHandler } from "@/actor/conn-routing-handler";
 
 type ManagerRouterHandler = {
 	onConnectInspector?: ManagerInspectorConnHandler;
-	proxyMode: ProxyMode;
+	routingHandler: ConnRoutingHandler;
 };
 
 const OPENAPI_ENCODING = z.string().openapi({
@@ -408,14 +380,14 @@ export async function queryActor(
 	let actorOutput: { actorId: string; meta?: unknown };
 	if ("getForId" in query) {
 		const output = await driver.getForId({
-			c,
+			req: c.req,
 			actorId: query.getForId.actorId,
 		});
 		if (!output) throw new errors.ActorNotFound(query.getForId.actorId);
 		actorOutput = output;
 	} else if ("getForKey" in query) {
 		const existingActor = await driver.getWithKey({
-			c,
+			req: c.req,
 			name: query.getForKey.name,
 			key: query.getForKey.key,
 		});
@@ -427,7 +399,7 @@ export async function queryActor(
 		actorOutput = existingActor;
 	} else if ("getOrCreateForKey" in query) {
 		const getOrCreateOutput = await driver.getOrCreateWithKey({
-			c,
+			req: c.req,
 			name: query.getOrCreateForKey.name,
 			key: query.getOrCreateForKey.key,
 			input: query.getOrCreateForKey.input,
@@ -439,7 +411,7 @@ export async function queryActor(
 		};
 	} else if ("create" in query) {
 		const createOutput = await driver.createActor({
-			c,
+			req: c.req,
 			name: query.create.name,
 			key: query.create.key,
 			input: query.create.input,
@@ -496,17 +468,17 @@ async function handleSseConnectRequest(
 		logger().debug("sse connection to actor", { actorId, meta });
 
 		// Handle based on mode
-		if ("inline" in handler.proxyMode) {
+		if ("inline" in handler.routingHandler) {
 			logger().debug("using inline proxy mode for sse connection");
 			// Use the shared SSE handler
 			return await handleSseConnect(
 				c,
 				appConfig,
 				driverConfig,
-				handler.proxyMode.inline.handlers.onConnectSse,
+				handler.routingHandler.inline.handlers.onConnectSse,
 				actorId,
 			);
-		} else if ("custom" in handler.proxyMode) {
+		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for sse connection");
 			const url = new URL("http://actor/connect/sse");
 			const proxyRequest = new Request(url, c.req.raw);
@@ -514,14 +486,14 @@ async function handleSseConnectRequest(
 			if (params.data.connParams) {
 				proxyRequest.headers.set(HEADER_CONN_PARAMS, params.data.connParams);
 			}
-			return await handler.proxyMode.custom.onProxyRequest(
+			return await handler.routingHandler.custom.proxyRequest(
 				c,
 				proxyRequest,
 				actorId,
 				meta,
 			);
 		} else {
-			assertUnreachable(handler.proxyMode);
+			assertUnreachable(handler.routingHandler);
 		}
 	} catch (error) {
 		// If we receive an error during setup, we send the error and close the socket immediately
@@ -616,15 +588,15 @@ async function handleWebSocketConnectRequest(
 		logger().debug("found actor for websocket connection", { actorId, meta });
 		invariant(actorId, "missing actor id");
 
-		if ("inline" in handler.proxyMode) {
+		if ("inline" in handler.routingHandler) {
 			logger().debug("using inline proxy mode for websocket connection");
 			invariant(
-				handler.proxyMode.inline.handlers.onConnectWebSocket,
+				handler.routingHandler.inline.handlers.onConnectWebSocket,
 				"onConnectWebSocket not provided",
 			);
 
 			const onConnectWebSocket =
-				handler.proxyMode.inline.handlers.onConnectWebSocket;
+				handler.routingHandler.inline.handlers.onConnectWebSocket;
 			return upgradeWebSocket((c) => {
 				return handleWebSocketConnect(
 					c,
@@ -634,16 +606,16 @@ async function handleWebSocketConnectRequest(
 					actorId,
 				)();
 			})(c, noopNext());
-		} else if ("custom" in handler.proxyMode) {
+		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for websocket connection");
-			return await handler.proxyMode.custom.onProxyWebSocket(
+			return await handler.routingHandler.custom.proxyWebSocket(
 				c,
 				`/connect/websocket?encoding=${params.data.encoding}`,
 				actorId,
 				meta,
 			);
 		} else {
-			assertUnreachable(handler.proxyMode);
+			assertUnreachable(handler.routingHandler);
 		}
 	} catch (error) {
 		// If we receive an error during setup, we send the error and close the socket immediately
@@ -715,18 +687,18 @@ async function handleMessageRequest(
 		const { actorId, connId, encoding, connToken } = params.data;
 
 		// Handle based on mode
-		if ("inline" in handler.proxyMode) {
+		if ("inline" in handler.routingHandler) {
 			logger().debug("using inline proxy mode for connection message");
 			// Use shared connection message handler with direct parameters
 			return handleConnectionMessage(
 				c,
 				appConfig,
-				handler.proxyMode.inline.handlers.onConnMessage,
+				handler.routingHandler.inline.handlers.onConnMessage,
 				connId,
 				connToken as string,
 				actorId,
 			);
-		} else if ("custom" in handler.proxyMode) {
+		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for connection message");
 			const url = new URL(`http://actor/connections/message`);
 
@@ -735,13 +707,13 @@ async function handleMessageRequest(
 			proxyRequest.headers.set(HEADER_CONN_ID, connId);
 			proxyRequest.headers.set(HEADER_CONN_TOKEN, connToken);
 
-			return await handler.proxyMode.custom.onProxyRequest(
+			return await handler.routingHandler.custom.proxyRequest(
 				c,
 				proxyRequest,
 				actorId,
 			);
 		} else {
-			assertUnreachable(handler.proxyMode);
+			assertUnreachable(handler.routingHandler);
 		}
 	} catch (error) {
 		logger().error("error proxying connection message", { error });
@@ -788,31 +760,34 @@ async function handleActionRequest(
 		invariant(actorId, "Missing actor ID");
 
 		// Handle based on mode
-		if ("inline" in handler.proxyMode) {
+		if ("inline" in handler.routingHandler) {
 			logger().debug("using inline proxy mode for action call");
 			// Use shared action handler with direct parameter
 			return handleAction(
 				c,
 				appConfig,
 				driverConfig,
-				handler.proxyMode.inline.handlers.onAction,
+				handler.routingHandler.inline.handlers.onAction,
 				actionName,
 				actorId,
 			);
-		} else if ("custom" in handler.proxyMode) {
+		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for action call");
+
+			// TODO: Encoding
+			// TODO: Parameters
 			const url = new URL(
 				`http://actor/action/${encodeURIComponent(actionName)}`,
 			);
 			const proxyRequest = new Request(url, c.req.raw);
-			return await handler.proxyMode.custom.onProxyRequest(
+			return await handler.routingHandler.custom.proxyRequest(
 				c,
 				proxyRequest,
 				actorId,
 				meta,
 			);
 		} else {
-			assertUnreachable(handler.proxyMode);
+			assertUnreachable(handler.routingHandler);
 		}
 	} catch (error) {
 		logger().error("error in action handler", { error });

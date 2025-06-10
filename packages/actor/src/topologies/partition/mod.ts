@@ -1,1 +1,1 @@
-export { PartitionTopologyManager, PartitionTopologyActor } from "./toplogy";
+export { PartitionTopologyManager, PartitionTopologyActor } from "./topology";

@@ -1,7 +1,10 @@
 import type { ActorCoreApp } from "@/mod";
 import { type TestContext, vi } from "vitest";
 import { createClient, type Client } from "@/client/mod";
-import type { DriverTestConfig,  } from "./mod";
+import type { DriverTestConfig } from "./mod";
+import { assertUnreachable } from "@/actor/utils";
+import { createInlineClientDriver } from "@/app/inline-client-driver";
+import { createClientWithDriver } from "@/client/client";
 
 // Must use `TestContext` since global hooks do not work when running concurrently
 export async function setupDriverTest<A extends ActorCoreApp<any>>(
@@ -16,13 +19,24 @@ export async function setupDriverTest<A extends ActorCoreApp<any>>(
 	}
 
 	// Build drivers
-	const { endpoint, cleanup } = await driverTestConfig.start(appPath);
+	const { endpoint, inlineClientDriver, cleanup } =
+		await driverTestConfig.start(appPath);
 	c.onTestFinished(cleanup);
 
-	// Create client
-	const client = createClient<A>(endpoint, {
-		transport: driverTestConfig.transport,
-	});
+	let client: Client<A>;
+	if (driverTestConfig.clientType === "http") {
+		// Create client
+		client = createClient<A>(endpoint, {
+			transport: driverTestConfig.transport,
+		});
+	} else if (driverTestConfig.clientType === "inline") {
+		// Use inline client from driver
+		client = createClientWithDriver(inlineClientDriver);
+	} else {
+		assertUnreachable(driverTestConfig.clientType);
+	}
+
+	// Cleanup client
 	if (!driverTestConfig.HACK_skipCleanupNet) {
 		c.onTestFinished(async () => await client.dispose());
 	}

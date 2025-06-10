@@ -4,9 +4,9 @@ import { encodeDataToString, serialize } from "@/actor/protocol/serde";
 import type { CoordinateDriver } from "../driver";
 import { RelayConn } from "../conn/mod";
 import type { ActorDriver } from "@/actor/driver";
-import type { ConnectSseOpts, ConnectSseOutput } from "@/actor/router";
 import { DriverConfig } from "@/driver-helpers/config";
 import { AppConfig } from "@/app/config";
+import { ConnectSseOpts, ConnectSseOutput } from "@/actor/router-endpoints";
 
 export async function serveSse(
 	appConfig: AppConfig,
@@ -15,7 +15,7 @@ export async function serveSse(
 	CoordinateDriver: CoordinateDriver,
 	globalState: GlobalState,
 	actorId: string,
-	{ encoding, params: params }: ConnectSseOpts,
+	{ encoding, params }: ConnectSseOpts,
 ): Promise<ConnectSseOutput> {
 	let conn: RelayConn | undefined;
 	return {

@@ -41,7 +41,7 @@ function main() {
 	};
 
 	const managerRouter = createManagerRouter(appConfig, driverConfig, {
-		proxyMode: {
+		routingHandler: {
 			inline: {
 				handlers: sharedConnectionHandlers,
 			},
