@@ -129,17 +129,19 @@ export class CoordinateTopology {
 		this.clientDriver = createInlineClientDriver(managerDriver, routingHandler);
 
 		// Build manager router
-		const managerRouter = createManagerRouter(appConfig, driverConfig, {
-			routingHandler,
-			onConnectInspector: () => {
-				throw new errors.Unsupported("inspect");
+		const managerRouter = createManagerRouter(
+			appConfig,
+			driverConfig,
+			this.clientDriver,
+			{
+				routingHandler,
+				onConnectInspector: () => {
+					throw new errors.Unsupported("inspect");
+				},
 			},
-		});
+		);
 
 		app.route("/", managerRouter);
-
-		app.notFound(handleRouteNotFound);
-		app.onError(handleRouteError);
 
 		this.router = app;
 	}

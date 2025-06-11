@@ -19,7 +19,11 @@ import {
 } from "./client";
 import * as errors from "./errors";
 import { logger } from "./log";
-import { type WebSocketMessage as ConnMessage, messageLength, serializeWithEncoding } from "./utils";
+import {
+	type WebSocketMessage as ConnMessage,
+	messageLength,
+	serializeWithEncoding,
+} from "./utils";
 import {
 	HEADER_WORKER_ID,
 	HEADER_WORKER_QUERY,
@@ -254,20 +258,11 @@ enc
 			undefined,
 			this.#workerQuery,
 			this.#encodingKind,
+			this.#params,
 		);
 		this.#transport = { websocket: ws };
 		ws.onopen = () => {
 			logger().debug("websocket open");
-
-			// Set init message
-			this.#sendMessage(
-				{
-					b: { i: { p: this.#params } },
-				},
-				{ ephemeral: true },
-			);
-
-			// #handleOnOpen is called on "i" event from the server
 		};
 		ws.onmessage = async (ev) => {
 			this.#handleOnMessage(ev);
@@ -610,8 +605,7 @@ enc
 						message,
 					);
 					this.#transport.websocket.send(messageSerialized);
-					logger().debug("sent websocket message", {
-						message: message,
+					logger().trace("sent websocket message", {
 						len: messageLength(messageSerialized),
 					});
 				} catch (error) {
@@ -649,6 +643,10 @@ enc
 		try {
 			if (!this.#workerId || !this.#connectionId || !this.#connectionToken)
 				throw new errors.InternalError("Missing connection ID or token.");
+
+			logger().trace("sent http message", {
+				message: JSON.stringify(message).substring(0, 100) + "...",
+			});
 
 			const res = await this.#driver.sendHttpMessage(
 				undefined,
@@ -758,9 +756,10 @@ enc
 			// Nothing to do
 		} else if ("websocket" in this.#transport) {
 			const { promise, resolve } = Promise.withResolvers();
-			this.#transport.websocket.addEventListener("close", () =>
-				resolve(undefined),
-			);
+			this.#transport.websocket.addEventListener("close", () => {
+				logger().debug("ws closed");
+				resolve(undefined);
+			});
 			this.#transport.websocket.close();
 			await promise;
 		} else if ("sse" in this.#transport) {

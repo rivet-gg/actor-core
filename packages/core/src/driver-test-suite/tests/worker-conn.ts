@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
 import {
@@ -246,22 +246,22 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 
 				// Verify lifecycle events were triggered
 				const events = await connection.getEvents();
-
-				// Check lifecycle hooks were called in the correct order
-				expect(events).toContain("onStart");
-				expect(events).toContain("onBeforeConnect");
-				expect(events).toContain("onConnect");
+				expect(events).toEqual(["onStart", "onBeforeConnect", "onConnect"]);
 
 				// Disconnect should trigger onDisconnect
 				await connection.dispose();
 
 				// Reconnect to check if onDisconnect was called
 				const newConnection = handle.connect();
-
+				//await vi.waitFor(async () => {
 				const finalEvents = await newConnection.getEvents();
-				expect(finalEvents).toContain("onDisconnect");
-
-				// Clean up
+				expect(finalEvents).toEqual([
+					"onStart",
+					"onBeforeConnect",
+					"onConnect",
+					"onDisconnect",
+				]);
+				//});
 				await newConnection.dispose();
 			});
 		});

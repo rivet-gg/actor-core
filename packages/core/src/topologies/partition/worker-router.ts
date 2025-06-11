@@ -182,7 +182,12 @@ export function createWorkerRouter(
 	}
 
 	app.notFound(handleRouteNotFound);
-	app.onError(handleRouteError);
+	app.onError(
+		handleRouteError.bind(undefined, {
+			// All headers to this endpoint are considered secure, so we can enable the expose internal error header for requests from the internal client
+			enableExposeInternalError: true,
+		}),
+	);
 
 	return app;
 }

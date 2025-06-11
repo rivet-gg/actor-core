@@ -10,6 +10,7 @@ import { WorkerAlreadyExists } from "rivetkit/errors";
 import { Bindings } from "./mod";
 import { logger } from "./log";
 import { serializeNameAndKey, serializeKey } from "./util";
+import { getCloudflareAmbientEnv } from "./handler";
 
 // Worker metadata structure
 interface WorkerData {
@@ -36,10 +37,10 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		c,
 		workerId,
 	}: GetForIdInput<{ Bindings: Bindings }>): Promise<WorkerOutput | undefined> {
-		if (!c) throw new Error("Missing Hono context");
+		const env = getCloudflareAmbientEnv();
 
 		// Get worker metadata from KV (combined name and key)
-		const workerData = (await c.env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
+		const workerData = (await env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
 			type: "json",
 		})) as WorkerData | null;
 
@@ -49,7 +50,7 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		}
 
 		// Generate durable ID from workerId for meta
-		const durableId = c.env.WORKER_DO.idFromString(workerId);
+		const durableId = env.WORKER_DO.idFromString(workerId);
 
 		return {
 			workerId,
@@ -66,24 +67,23 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 	}: GetWithKeyInput<{ Bindings: Bindings }>): Promise<
 		WorkerOutput | undefined
 	> {
-		if (!c) throw new Error("Missing Hono context");
-		const log = logger();
+		const env = getCloudflareAmbientEnv();
 
-		log.debug("getWithKey: searching for worker", { name, key });
+		logger().debug("getWithKey: searching for worker", { name, key });
 
 		// Generate deterministic ID from the name and key
 		// This is aligned with how createWorker generates IDs
 		const nameKeyString = serializeNameAndKey(name, key);
-		const durableId = c.env.WORKER_DO.idFromName(nameKeyString);
+		const durableId = env.WORKER_DO.idFromName(nameKeyString);
 		const workerId = durableId.toString();
 
 		// Check if the worker metadata exists
-		const workerData = await c.env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
+		const workerData = await env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
 			type: "json",
 		});
 
 		if (!workerData) {
-			log.debug("getWithKey: no worker found with matching name and key", {
+			logger().debug("getWithKey: no worker found with matching name and key", {
 				name,
 				key,
 				workerId,
@@ -91,7 +91,7 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 			return undefined;
 		}
 
-		log.debug("getWithKey: found worker with matching name and key", {
+		logger().debug("getWithKey: found worker with matching name and key", {
 			workerId,
 			name,
 			key,
@@ -117,8 +117,7 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		key,
 		input,
 	}: CreateInput<{ Bindings: Bindings }>): Promise<WorkerOutput> {
-		if (!c) throw new Error("Missing Hono context");
-		const log = logger();
+		const env = getCloudflareAmbientEnv();
 
 		// Check if worker with the same name and key already exists
 		const existingWorker = await this.getWithKey({ c, name, key });
@@ -129,11 +128,11 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		// Create a deterministic ID from the worker name and key
 		// This ensures that workers with the same name and key will have the same ID
 		const nameKeyString = serializeNameAndKey(name, key);
-		const durableId = c.env.WORKER_DO.idFromName(nameKeyString);
+		const durableId = env.WORKER_DO.idFromName(nameKeyString);
 		const workerId = durableId.toString();
 
 		// Init worker
-		const worker = c.env.WORKER_DO.get(durableId);
+		const worker = env.WORKER_DO.get(durableId);
 		await worker.initialize({
 			name,
 			key,
@@ -142,13 +141,13 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 
 		// Store combined worker metadata (name and key)
 		const workerData: WorkerData = { name, key };
-		await c.env.WORKER_KV.put(
+		await env.WORKER_KV.put(
 			KEYS.WORKER.metadata(workerId),
 			JSON.stringify(workerData),
 		);
 
 		// Add to key index for lookups by name and key
-		await c.env.WORKER_KV.put(KEYS.WORKER.keyIndex(name, key), workerId);
+		await env.WORKER_KV.put(KEYS.WORKER.keyIndex(name, key), workerId);
 
 		return {
 			workerId,
@@ -163,7 +162,9 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		c: any,
 		workerId: string,
 	): Promise<WorkerOutput | undefined> {
-		const workerData = (await c.env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
+		const env = getCloudflareAmbientEnv();
+
+		const workerData = (await env.WORKER_KV.get(KEYS.WORKER.metadata(workerId), {
 			type: "json",
 		})) as WorkerData | null;
 
@@ -172,7 +173,7 @@ export class CloudflareWorkersManagerDriver implements ManagerDriver {
 		}
 
 		// Generate durable ID for meta
-		const durableId = c.env.WORKER_DO.idFromString(workerId);
+		const durableId = env.WORKER_DO.idFromString(workerId);
 
 		return {
 			workerId,

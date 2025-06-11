@@ -4,7 +4,6 @@ import { z } from "zod";
 import type { cors } from "hono/cors";
 import { WorkerDefinition, AnyWorkerDefinition } from "@/worker/definition";
 import { InspectorConfigSchema } from "@/inspector/config";
-
 // Define CORS options schema
 type CorsOptions = NonNullable<Parameters<typeof cors>[0]>;
 
@@ -48,6 +47,9 @@ export const WorkersSchema = z.record(
 );
 export type Workers = z.infer<typeof WorkersSchema>;
 
+export const TestConfigSchema = z.object({ enabled: z.boolean() });
+export type TestConfig = z.infer<typeof TestConfigSchema>;
+
 /** Base config used for the worker config across all platforms. */
 export const AppConfigSchema = z.object({
 	workers: z.record(z.string(), z.custom<AnyWorkerDefinition>()),
@@ -71,6 +73,14 @@ export const AppConfigSchema = z.object({
 
 	/** Inspector configuration. */
 	inspector: InspectorConfigSchema.optional().default({ enabled: false }),
+
+	// TODO: Find a better way of passing around the test config
+	/** 
+	 * Test configuration.
+	 *
+	 * DO NOT MANUALLY ENABLE. THIS IS USED INTERNALLY.
+	 **/
+	test: TestConfigSchema.optional().default({ enabled: false }),
 });
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 export type AppConfigInput<A extends Workers> = Omit<

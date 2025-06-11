@@ -3,8 +3,8 @@ import { type TestContext, vi } from "vitest";
 import { createClient, type Client } from "@/client/mod";
 import type { DriverTestConfig } from "./mod";
 import { assertUnreachable } from "@/worker/utils";
-import { createInlineClientDriver } from "@/app/inline-client-driver";
 import { createClientWithDriver } from "@/client/client";
+import { createTestInlineClientDriver } from "./test-inline-client-driver";
 
 // Must use `TestContext` since global hooks do not work when running concurrently
 export async function setupDriverTest<A extends WorkerCoreApp<any>>(
@@ -19,8 +19,7 @@ export async function setupDriverTest<A extends WorkerCoreApp<any>>(
 	}
 
 	// Build drivers
-	const { endpoint, inlineClientDriver, cleanup } =
-		await driverTestConfig.start(appPath);
+	const { endpoint, cleanup } = await driverTestConfig.start(appPath);
 	c.onTestFinished(cleanup);
 
 	let client: Client<A>;
@@ -31,7 +30,8 @@ export async function setupDriverTest<A extends WorkerCoreApp<any>>(
 		});
 	} else if (driverTestConfig.clientType === "inline") {
 		// Use inline client from driver
-		client = createClientWithDriver(inlineClientDriver);
+		const clientDriver = createTestInlineClientDriver(endpoint, driverTestConfig.transport ?? "websocket");
+		client = createClientWithDriver(clientDriver);
 	} else {
 		assertUnreachable(driverTestConfig.clientType);
 	}

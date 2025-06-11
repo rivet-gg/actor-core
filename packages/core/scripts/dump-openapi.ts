@@ -1,5 +1,5 @@
 import { createManagerRouter } from "@/manager/router";
-import { AppConfig, AppConfigSchema, setup } from "@/mod";
+import { AppConfig, AppConfigSchema, Encoding, setup } from "@/mod";
 import { ConnectionHandlers } from "@/worker/router-endpoints";
 import { DriverConfig } from "@/driver-helpers/config";
 import {
@@ -11,6 +11,11 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { VERSION } from "@/utils";
 import * as fs from "node:fs/promises";
 import { resolve } from "node:path";
+import { ClientDriver } from "@/client/client";
+import { WorkerQuery } from "@/manager/protocol/query";
+import { ToServer } from "@/worker/protocol/message/to-server";
+import { EventSource } from "eventsource";
+import { Context } from "hono";
 
 function main() {
 	const appConfig: AppConfig = AppConfigSchema.parse({ workers: {} });
@@ -40,13 +45,26 @@ function main() {
 		},
 	};
 
-	const managerRouter = createManagerRouter(appConfig, driverConfig, {
-		routingHandler: {
-			inline: {
-				handlers: sharedConnectionHandlers,
+	const inlineClientDriver: ClientDriver = {
+		action: unimplemented,
+		resolveWorkerId: unimplemented,
+		connectWebSocket: unimplemented,
+		connectSse: unimplemented,
+		sendHttpMessage: unimplemented,
+	};
+
+	const managerRouter = createManagerRouter(
+		appConfig,
+		driverConfig,
+		inlineClientDriver,
+		{
+			routingHandler: {
+				inline: {
+					handlers: sharedConnectionHandlers,
+				},
 			},
 		},
-	}) as unknown as OpenAPIHono;
+	) as unknown as OpenAPIHono;
 
 	const openApiDoc = managerRouter.getOpenAPIDocument({
 		openapi: "3.0.0",

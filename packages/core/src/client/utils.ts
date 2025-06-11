@@ -74,7 +74,7 @@ export async function sendHttpRequest<
 						: {}),
 					"User-Agent": httpUserAgent(),
 				},
-				body: bodyData
+				body: bodyData,
 			}),
 		);
 	} catch (error) {

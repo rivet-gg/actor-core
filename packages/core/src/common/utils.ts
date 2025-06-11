@@ -116,7 +116,9 @@ export function isJsonSerializable(
 }
 
 export interface DeconstructedError {
+	__type: "WorkerError";
 	statusCode: ContentfulStatusCode;
+	public: boolean;
 	code: string;
 	message: string;
 	metadata?: unknown;
@@ -127,18 +129,21 @@ export function deconstructError(
 	error: unknown,
 	logger: Logger,
 	extraLog: Record<string, unknown>,
-) {
+	exposeInternalError = false,
+): DeconstructedError {
 	// Build response error information. Only return errors if flagged as public in order to prevent leaking internal behavior.
 	//
 	// We log the error here instead of after generating the code & message because we need to log the original error, not the masked internal error.
 	let statusCode: ContentfulStatusCode;
+	let public_: boolean;
 	let code: string;
 	let message: string;
 	let metadata: unknown = undefined;
 	if (errors.WorkerError.isWorkerError(error) && error.public) {
 		statusCode = 400;
+		public_ = true;
 		code = error.code;
-		message = String(error);
+		message = getErrorMessage(error);
 		metadata = error.metadata;
 
 		logger.info("public error", {
@@ -146,8 +151,34 @@ export function deconstructError(
 			message,
 			...extraLog,
 		});
+	} else if (exposeInternalError) {
+		if (errors.WorkerError.isWorkerError(error)) {
+			statusCode = 500;
+			public_ = false;
+			code = error.code;
+			message = getErrorMessage(error);
+			metadata = error.metadata;
+
+			logger.info("internal error", {
+				code,
+				message,
+				...extraLog,
+			});
+		} else {
+			statusCode = 500;
+			public_ = false;
+			code = errors.INTERNAL_ERROR_CODE;
+			message = getErrorMessage(error);
+
+			logger.info("internal error", {
+				code,
+				message,
+				...extraLog,
+			});
+		}
 	} else {
 		statusCode = 500;
+		public_ = false;
 		code = errors.INTERNAL_ERROR_CODE;
 		message = errors.INTERNAL_ERROR_DESCRIPTION;
 		metadata = {
@@ -155,13 +186,20 @@ export function deconstructError(
 		} satisfies errors.InternalErrorMetadata;
 
 		logger.warn("internal error", {
-			error: String(error),
+			error: getErrorMessage(error),
 			stack: (error as Error)?.stack,
 			...extraLog,
 		});
 	}
 
-	return { statusCode, code, message, metadata };
+	return {
+		__type: "WorkerError",
+		statusCode,
+		public: public_,
+		code,
+		message,
+		metadata,
+	};
 }
 
 export function stringifyError(error: unknown): string {
@@ -180,6 +218,19 @@ export function stringifyError(error: unknown): string {
 			return "[cannot stringify error]";
 		}
 	} else {
-		return `Unknown error: ${String(error)}`;
+		return `Unknown error: ${getErrorMessage(error)}`;
+	}
+}
+
+function getErrorMessage(err: unknown): string {
+	if (
+		err &&
+		typeof err === "object" &&
+		"message" in err &&
+		typeof err.message === "string"
+	) {
+		return err.message;
+	} else {
+		return String(err);
 	}
 }

@@ -14,6 +14,7 @@ import type { WorkerCoreApp } from "@/mod";
 import type { AnyWorkerDefinition } from "@/worker/definition";
 import type * as wsToServer from "@/worker/protocol/message/to-server";
 import type { EventSource } from "eventsource";
+import type { Context as HonoContext } from "hono";
 import { createHttpClientDriver } from "./http-client-driver";
 import { HonoRequest } from "hono";
 
@@ -160,7 +161,7 @@ export const TRANSPORT_SYMBOL = Symbol("transport");
 
 export interface ClientDriver {
 	action<Args extends Array<unknown> = unknown[], Response = unknown>(
-		req: HonoRequest | undefined,
+		c: HonoContext | undefined,
 		workerQuery: WorkerQuery,
 		encoding: Encoding,
 		params: unknown,
@@ -168,23 +169,24 @@ export interface ClientDriver {
 		...args: Args
 	): Promise<Response>;
 	resolveWorkerId(
-		req: HonoRequest | undefined,
+		c: HonoContext | undefined,
 		workerQuery: WorkerQuery,
 		encodingKind: Encoding,
 	): Promise<string>;
 	connectWebSocket(
-		req: HonoRequest | undefined,
+		c: HonoContext | undefined,
 		workerQuery: WorkerQuery,
 		encodingKind: Encoding,
+		params: unknown,
 	): Promise<WebSocket>;
 	connectSse(
-		req: HonoRequest | undefined,
+		c: HonoContext | undefined,
 		workerQuery: WorkerQuery,
 		encodingKind: Encoding,
 		params: unknown,
 	): Promise<EventSource>;
 	sendHttpMessage(
-		req: HonoRequest | undefined,
+		c: HonoContext | undefined,
 		workerId: string,
 		encoding: Encoding,
 		connectionId: string,

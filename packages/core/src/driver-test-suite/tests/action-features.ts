@@ -135,7 +135,6 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 					await instance.asyncWithError(true);
 					expect.fail("did not error");
 				} catch (error) {
-					expect(error).toBeInstanceOf(WorkerError);
 					expect((error as WorkerError).message).toBe("Intentional error");
 				}
 			});
