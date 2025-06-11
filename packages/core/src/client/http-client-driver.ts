@@ -53,6 +53,22 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 			name: string,
 			...args: Args
 		): Promise<Response> => {
+			let maybeActionOpts = args.at(-1);
+			if (maybeActionOpts && typeof maybeActionOpts === "object") {
+				// If the last argument is an options object, we remove it from the args
+				// and pass it as the params to the request.
+				if (
+					"signal" in maybeActionOpts &&
+					maybeActionOpts.signal instanceof AbortSignal
+				) {
+					// If the options object has a signal, we remove it from the args
+					// and pass it as the signal to the request.
+					args = args.slice(0, -1);
+				} else {
+					maybeActionOpts = undefined;
+				}
+			}
+
 			logger().debug("worker handle action", {
 				name,
 				args,
@@ -72,6 +88,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 					},
 					body: { a: args } satisfies ActionRequest,
 					encoding: encoding,
+					signal: maybeActionOpts?.signal,
 				},
 			);
 

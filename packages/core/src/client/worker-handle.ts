@@ -99,7 +99,7 @@ export class WorkerHandleRaw {
 	 *
 	 * @returns {Promise<string>} - A promise that resolves to the worker's ID
 	 */
-	async resolve(): Promise<string> {
+	async resolve({ signal }: { signal?: AbortSignal } = {}): Promise<string> {
 		if (
 			"getForKey" in this.#workerQuery ||
 			"getOrCreateForKey" in this.#workerQuery
@@ -109,6 +109,11 @@ export class WorkerHandleRaw {
 				undefined,
 				this.#workerQuery,
 				this.#encodingKind,
+				signal
+					? {
+							signal,
+						}
+					: undefined,
 			);
 			this.#workerQuery = { getForId: { workerId } };
 			return workerId;

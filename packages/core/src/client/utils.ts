@@ -31,6 +31,7 @@ export interface HttpRequestOpts<Body> {
 	body?: Body;
 	encoding: Encoding;
 	skipParseResponse?: boolean;
+	signal?: AbortSignal;
 	customFetch?: (req: Request) => Promise<Response>;
 }
 
@@ -74,7 +75,8 @@ export async function sendHttpRequest<
 						: {}),
 					"User-Agent": httpUserAgent(),
 				},
-				body: bodyData
+				body: bodyData,
+				signal: opts.signal,
 			}),
 		);
 	} catch (error) {
