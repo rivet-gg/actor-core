@@ -271,7 +271,7 @@ export class StandaloneTopology {
 		this.clientDriver = createInlineClientDriver(managerDriver, routingHandler);
 
 		// Build manager router
-		const managerRouter = createManagerRouter(appConfig, driverConfig, {
+		const managerRouter = createManagerRouter(appConfig, driverConfig, this.clientDriver, {
 			routingHandler,
 			onConnectInspector: async () => {
 				const inspector = driverConfig.drivers?.manager?.inspector;

@@ -9,13 +9,29 @@ import type { Hono } from "hono";
 import { PartitionTopologyManager } from "rivetkit/topologies/partition";
 import { logger } from "./log";
 import { CloudflareWorkersManagerDriver } from "./manager-driver";
-import { WorkerCoreApp } from "rivetkit";
+import { Encoding, WorkerCoreApp } from "rivetkit";
 import { upgradeWebSocket } from "./websocket";
+import invariant from "invariant";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { InternalError } from "rivetkit/errors";
 
 /** Cloudflare Workers env */
 export interface Bindings {
 	WORKER_KV: KVNamespace;
 	WORKER_DO: DurableObjectNamespace<WorkerHandlerInterface>;
+}
+
+/**
+ * Stores the env for the current request. Required since some contexts like the inline client driver does not have access to the Hono context.
+ *
+ * Use getCloudflareAmbientEnv unless using CF_AMBIENT_ENV.run.
+ */
+export const CF_AMBIENT_ENV = new AsyncLocalStorage<Bindings>();
+
+export function getCloudflareAmbientEnv(): Bindings {
+	const env = CF_AMBIENT_ENV.getStore();
+	invariant(env, "missing CF_AMBIENT_ENV");
+	return env;
 }
 
 export function createHandler(
@@ -30,7 +46,9 @@ export function createHandler(
 
 	// Create Cloudflare handler
 	const handler = {
-		fetch: router.fetch,
+		fetch: (request, env, ctx) => {
+			return CF_AMBIENT_ENV.run(env, () => router.fetch(request, env, ctx));
+		},
 	} satisfies ExportedHandler<Bindings>;
 
 	return { handler, WorkerHandler };
@@ -45,7 +63,7 @@ export function createRouter(
 } {
 	const driverConfig = ConfigSchema.parse(inputConfig);
 
-	// Configur drivers
+	// Configure drivers
 	//
 	// Worker driver will get set in `WorkerHandler`
 	if (!driverConfig.drivers) driverConfig.drivers = {};
@@ -65,7 +83,64 @@ export function createRouter(
 			app.config,
 			driverConfig,
 			{
-				onProxyRequest: async (c, workerRequest, workerId): Promise<Response> => {
+				sendRequest: async (
+					workerId,
+					meta,
+					workerRequest,
+				): Promise<Response> => {
+					const env = getCloudflareAmbientEnv();
+
+					logger().debug("sending request to durable object", {
+						workerId,
+						method: workerRequest.method,
+						url: workerRequest.url,
+					});
+
+					const id = env.WORKER_DO.idFromString(workerId);
+					const stub = env.WORKER_DO.get(id);
+
+					return await stub.fetch(workerRequest);
+				},
+
+				openWebSocket: async (
+					workerId,
+					meta,
+					encodingKind: Encoding,
+				): Promise<WebSocket> => {
+					const env = getCloudflareAmbientEnv();
+
+					logger().debug("opening websocket to durable object", { workerId });
+
+					// Make a fetch request to the Durable Object with WebSocket upgrade
+					const id = env.WORKER_DO.idFromString(workerId);
+					const stub = env.WORKER_DO.get(id);
+
+					// TODO: this doesn't call on open
+					const url = `http://worker/connect/websocket?encoding=${encodingKind}&expose-internal-error=true`;
+					const response = await stub.fetch(url, {
+						headers: {
+							Upgrade: "websocket",
+							Connection: "Upgrade",
+						},
+					});
+					const webSocket = response.webSocket;
+
+					if (!webSocket) {
+						throw new InternalError(
+							"missing websocket connection in response from DO",
+						);
+					}
+
+					logger().debug("druable object websocket connection open", {
+						workerId,
+					});
+
+					webSocket.accept();
+
+					return webSocket;
+				},
+
+				proxyRequest: async (c, workerRequest, workerId): Promise<Response> => {
 					logger().debug("forwarding request to durable object", {
 						workerId,
 						method: workerRequest.method,
@@ -77,7 +152,7 @@ export function createRouter(
 
 					return await stub.fetch(workerRequest);
 				},
-				onProxyWebSocket: async (c, path, workerId) => {
+				proxyWebSocket: async (c, path, workerId) => {
 					logger().debug("forwarding websocket to durable object", {
 						workerId,
 						path,

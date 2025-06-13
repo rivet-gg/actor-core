@@ -53,7 +53,6 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 					await client.counter.create(uniqueKey);
 					expect.fail("did not error on duplicate create");
 				} catch (err) {
-					expect(err).toBeInstanceOf(WorkerError);
 					expect((err as WorkerError).code).toBe("worker_already_exists");
 				}
 
@@ -79,7 +78,6 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 					await client.counter.get([nonexistentId]).resolve();
 					expect.fail("did not error for get");
 				} catch (err) {
-					expect(err).toBeInstanceOf(WorkerError);
 					expect((err as WorkerError).code).toBe("worker_not_found");
 				}
 
@@ -379,7 +377,7 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 		});
 
 		describe("Multiple Worker Instances", () => {
-			// TODO: This test is flakey https://github.com/rivet-gg/worker-core/issues/873
+			// TODO: This test is flakey https://github.com/rivet-gg/actor-core/issues/873
 			test("creates multiple worker instances of the same type", async (c) => {
 				const { client } = await setupDriverTest<CounterApp>(
 					c,

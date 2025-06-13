@@ -89,6 +89,10 @@ export function handleWebSocketConnect(
 ) {
 	return async () => {
 		const encoding = getRequestEncoding(context.req, true);
+		const exposeInternalError = getRequestExposeInternalError(
+			context.req,
+			false,
+		);
 
 		let sharedWs: WSContext | undefined = undefined;
 
@@ -158,7 +162,12 @@ export function handleWebSocketConnect(
 							// Allow all other events to proceed
 							onInitResolve(wsHandler);
 						} catch (error) {
-							deconstructError(error, logger(), { wsEvent: "open" });
+							deconstructError(
+								error,
+								logger(),
+								{ wsEvent: "open" },
+								exposeInternalError,
+							);
 							onInitReject(error);
 							ws.close(1011, "internal error");
 						}
@@ -171,9 +180,14 @@ export function handleWebSocketConnect(
 						await wsHandler.onMessage(message);
 					}
 				} catch (error) {
-					const { code } = deconstructError(error, logger(), {
-						wsEvent: "message",
-					});
+					const { code } = deconstructError(
+						error,
+						logger(),
+						{
+							wsEvent: "message",
+						},
+						exposeInternalError,
+					);
 					ws.close(1011, code);
 				}
 			},
@@ -199,7 +213,7 @@ export function handleWebSocketConnect(
 					});
 				}
 
-				// HACK: Close socket in order to fix bug with Cloudflare Durable Objects leaving WS in closing state
+				// HACK: Close socket in order to fix bug with Cloudflare leaving WS in closing state
 				// https://github.com/cloudflare/workerd/issues/2569
 				ws.close(1000, "hack_force_close");
 
@@ -207,7 +221,12 @@ export function handleWebSocketConnect(
 					const wsHandler = await onInitPromise;
 					await wsHandler.onClose();
 				} catch (error) {
-					deconstructError(error, logger(), { wsEvent: "close" });
+					deconstructError(
+						error,
+						logger(),
+						{ wsEvent: "close" },
+						exposeInternalError,
+					);
 				}
 			},
 			onError: async (_error: unknown) => {
@@ -215,7 +234,12 @@ export function handleWebSocketConnect(
 					// Workers don't need to know about this, since it's abstracted away
 					logger().warn("websocket error");
 				} catch (error) {
-					deconstructError(error, logger(), { wsEvent: "error" });
+					deconstructError(
+						error,
+						logger(),
+						{ wsEvent: "error" },
+						exposeInternalError,
+					);
 				}
 			},
 		};
@@ -245,17 +269,29 @@ export async function handleSseConnect(
 	return streamSSE(c, async (stream) => {
 		try {
 			await sseHandler.onOpen(stream);
+			logger().debug("sse open");
+
+			// HACK: This is required so the abort handler below works
+			//
+			// See https://github.com/honojs/hono/issues/1770#issuecomment-2461966225
+			stream.onAbort(() => {});
 
 			// Wait for close
 			const abortResolver = Promise.withResolvers();
 			c.req.raw.signal.addEventListener("abort", async () => {
 				try {
-					abortResolver.resolve(undefined);
+					logger().debug("sse shutting down");
 					await sseHandler.onClose();
+					abortResolver.resolve(undefined);
 				} catch (error) {
 					logger().error("error closing sse connection", { error });
 				}
 			});
+
+			// HACK: Will throw if not configured
+			try {
+				c.executionCtx.waitUntil(abortResolver.promise);
+			} catch {}
 
 			// Wait until connection aborted
 			await abortResolver.promise;
@@ -280,7 +316,7 @@ export async function handleAction(
 	const encoding = getRequestEncoding(c.req, false);
 	const parameters = getRequestConnParams(c.req, appConfig, driverConfig);
 
-	logger().debug("handling action", {  actionName, encoding });
+	logger().debug("handling action", { actionName, encoding });
 
 	// Validate incoming request
 	let actionArgs: unknown[];
@@ -292,7 +328,9 @@ export async function handleAction(
 		}
 
 		if (!Array.isArray(actionArgs)) {
-			throw new errors.InvalidActionRequest("Action arguments must be an array");
+			throw new errors.InvalidActionRequest(
+				"Action arguments must be an array",
+			);
 		}
 	} else if (encoding === "cbor") {
 		try {
@@ -304,7 +342,8 @@ export async function handleAction(
 			);
 
 			// Validate using the action schema
-			const result = protoHttpAction.ActionRequestSchema.safeParse(deserialized);
+			const result =
+				protoHttpAction.ActionRequestSchema.safeParse(deserialized);
 			if (!result.success) {
 				throw new errors.InvalidActionRequest("Invalid action request format");
 			}
@@ -415,6 +454,20 @@ export function getRequestEncoding(
 	return result.data;
 }
 
+export function getRequestExposeInternalError(
+	req: HonoRequest,
+	useQuery: boolean,
+): boolean {
+	const param = useQuery
+		? req.query("expose-internal-error")
+		: req.header(HEADER_EXPOSE_INTERNAL_ERROR);
+	if (!param) {
+		return false;
+	}
+
+	return param === "true";
+}
+
 export function getRequestQuery(c: HonoContext, useQuery: boolean): unknown {
 	// Get query parameters for worker lookup
 	const queryParam = useQuery
@@ -438,6 +491,7 @@ export function getRequestQuery(c: HonoContext, useQuery: boolean): unknown {
 export const HEADER_WORKER_QUERY = "X-AC-Query";
 
 export const HEADER_ENCODING = "X-AC-Encoding";
+export const HEADER_EXPOSE_INTERNAL_ERROR = "X-AC-Expose-Internal-Error";
 
 // IMPORTANT: Params must be in headers or in an E2EE part of the request (i.e. NOT the URL or query string) in order to ensure that tokens can be securely passed in params.
 export const HEADER_CONN_PARAMS = "X-AC-Conn-Params";

@@ -25,7 +25,7 @@ import {
 import type { ActionRequest } from "@/worker/protocol/http/action";
 import type { ActionResponse } from "@/worker/protocol/message/to-client";
 import { ClientDriver } from "./client";
-import { HonoRequest } from "hono";
+import { HonoRequest, Context as HonoContext } from "hono";
 
 /**
  * Client driver that communicates with the manager via HTTP.
@@ -46,7 +46,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 
 	const driver: ClientDriver = {
 		action: async <Args extends Array<unknown> = unknown[], Response = unknown>(
-			_req: HonoRequest | undefined,
+			_c: HonoContext | undefined,
 			workerQuery: WorkerQuery,
 			encoding: Encoding,
 			params: unknown,
@@ -79,7 +79,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		resolveWorkerId: async (
-			_req: HonoRequest | undefined,
+			_c: HonoContext | undefined,
 			workerQuery: WorkerQuery,
 			encodingKind: Encoding,
 		): Promise<string> => {
@@ -115,9 +115,10 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		connectWebSocket: async (
-			_req: HonoRequest | undefined,
+			_c: HonoContext | undefined,
 			workerQuery: WorkerQuery,
 			encodingKind: Encoding,
+			params: unknown,
 		): Promise<WebSocket> => {
 			const { WebSocket } = await dynamicImports;
 
@@ -140,11 +141,22 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 				assertUnreachable(encodingKind);
 			}
 
+			ws.addEventListener("open", () => {
+				// Send init message with the initialization data
+				//
+				// We can't pass this data in the query string since it might include sensitive data which would get logged
+				const messageSerialized = serializeWithEncoding(encodingKind, {
+					b: { i: { p: params } },
+				});
+				ws.send(messageSerialized);
+				logger().debug("sent websocket init message");
+			});
+
 			return ws;
 		},
 
 		connectSse: async (
-			_req: HonoRequest | undefined,
+			_c: HonoContext | undefined,
 			workerQuery: WorkerQuery,
 			encodingKind: Encoding,
 			params: unknown,
@@ -175,7 +187,7 @@ export function createHttpClientDriver(managerEndpoint: string): ClientDriver {
 		},
 
 		sendHttpMessage: async (
-			_req: HonoRequest | undefined,
+			_c: HonoContext | undefined,
 			workerId: string,
 			encoding: Encoding,
 			connectionId: string,

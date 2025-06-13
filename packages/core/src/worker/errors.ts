@@ -1,3 +1,5 @@
+import { DeconstructedError } from "@/common/utils";
+
 export const INTERNAL_ERROR_CODE = "internal_error";
 export const INTERNAL_ERROR_DESCRIPTION =
 	"Internal error. Read the worker logs for more details.";
@@ -17,11 +19,22 @@ export class WorkerError extends Error {
 
 	public public: boolean;
 	public metadata?: unknown;
-	public statusCode: number = 500;
+	public statusCode = 500;
 
-	public static isWorkerError(error: unknown): error is WorkerError {
+	public static isWorkerError(
+		error: unknown,
+	): error is WorkerError | DeconstructedError {
+		console.trace(
+			"checking error",
+			error,
+			typeof error,
+			(error as WorkerError | DeconstructedError).__type,
+			typeof error === "object" &&
+				(error as WorkerError | DeconstructedError).__type === "WorkerError",
+		);
 		return (
-			typeof error === "object" && (error as WorkerError).__type === "WorkerError"
+			typeof error === "object" &&
+			(error as WorkerError | DeconstructedError).__type === "WorkerError"
 		);
 	}
 

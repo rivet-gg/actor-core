@@ -2,8 +2,15 @@ import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
 import { ERROR_HANDLING_APP_PATH, type ErrorHandlingApp } from "../test-apps";
+import { assertUnreachable } from "@/worker/utils";
+import {
+	INTERNAL_ERROR_CODE,
+	INTERNAL_ERROR_DESCRIPTION,
+} from "@/worker/errors";
 
-export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) {
+export function runWorkerErrorHandlingTests(
+	driverTestConfig: DriverTestConfig,
+) {
 	describe("Worker Error Handling Tests", () => {
 		describe("UserError Handling", () => {
 			test("should handle simple UserError with message", async (c) => {
@@ -71,10 +78,18 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 					// If we get here, the test should fail
 					expect(true).toBe(false); // This should not be reached
 				} catch (error: any) {
-					// Verify the error is converted to a safe format
-					expect(error.code).toBe("internal_error");
-					// Original error details should not be exposed
-					expect(error.message).not.toBe("This is an internal error");
+					if (driverTestConfig.clientType === "http") {
+						// Verify the error is converted to a safe format
+						expect(error.code).toBe(INTERNAL_ERROR_CODE);
+						// Original error details should not be exposed
+						expect(error.message).toBe(INTERNAL_ERROR_DESCRIPTION);
+					} else if (driverTestConfig.clientType === "inline") {
+						// Verify that original error is preserved
+						expect(error.code).toBe(INTERNAL_ERROR_CODE);
+						expect(error.message).toBe("This is an internal error");
+					} else {
+						assertUnreachable(driverTestConfig.clientType);
+					}
 				}
 			});
 		});
@@ -172,4 +187,3 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 		});
 	});
 }
-

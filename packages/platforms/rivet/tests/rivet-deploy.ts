@@ -39,12 +39,9 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 		private: true,
 		version: "1.0.0",
 		type: "module",
-		scripts: {
-			deploy: "rivetkit deploy rivet app.ts --env prod",
-		},
 		dependencies: {
 			"@rivetkit/rivet": "workspace:*",
-			"rivetkit": "workspace:*",
+			rivetkit: "workspace:*",
 		},
 		packageManager:
 			"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
@@ -54,6 +51,57 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 		path.join(tmpDir, "package.json"),
 		JSON.stringify(packageJson, null, 2),
 	);
+
+	// Create rivet.json with workspace dependencies
+	const rivetJson = {
+		functions: {
+			manager: {
+				dockerfile: "Dockerfile",
+			},
+		},
+		actors: {
+			worker: {
+				script: "src/index.ts",
+			},
+		},
+	};
+	console.log("Writing rivet.json");
+	await fs.writeFile(
+		path.join(tmpDir, "rivet.json"),
+		JSON.stringify(rivetJson, null, 2),
+	);
+
+	// Create Dockerfile
+	const dockerfile = `
+# Build stage
+FROM node:22 as builder
+WORKDIR /app
+COPY package.json yarn.lock ./
+RUN yarn install
+COPY . .
+RUN yarn build
+
+# Production stage
+FROM node:22-slim
+WORKDIR /app
+
+# Create rivet user and set proper permissions
+RUN groupadd -r rivet && useradd -r -g rivet rivet
+COPY package.json yarn.lock ./
+RUN yarn install --production && \
+    chown -R rivet:rivet /app
+
+COPY --from=builder /app/dist ./dist
+RUN chown -R rivet:rivet /app/dist
+
+# Switch to non-root user
+USER rivet
+
+# Start the server
+CMD ["node", "dist/src/main.js"]
+`;
+	console.log("Writing Dockerfile");
+	await fs.writeFile(path.join(tmpDir, "Dockerfile"), dockerfile);
 
 	// Disable PnP
 	const yarnPnp = "nodeLinker: node-modules";
@@ -90,21 +138,23 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 	console.log(`Creating app.ts with content: ${appTsContent}`);
 	await fs.writeFile(path.join(tmpDir, "app.ts"), appTsContent);
 
+	const mainTsContent = `export { createHandler } from "@rivetkit/rivet"`;
+	console.log(`Creating main.ts with content: ${mainTsContent}`);
+	await fs.writeFile(path.join(tmpDir, "main.ts"), mainTsContent);
+
 	// Build and deploy to Rivet using worker-core CLI
 	console.log("Building and deploying to Rivet...");
 
 	if (!process.env._RIVET_SKIP_DEPLOY) {
-		// Deploy using the worker-core CLI
-		console.log("Spawning rivetkit/cli deploy command...");
+		// Deploy using the rivet CLI
+		console.log("Spawning rivet deploy command...");
 		const deployProcess = spawn(
-			"npx",
+			"rivet",
 			[
-				"@rivetkit/cli",
 				"deploy",
-				"rivet",
-				"app.ts",
-				"--env",
+				"--environment",
 				ENV,
+				"--non-interactive",
 				...(deployManager ? [] : ["--skip-manager"]),
 			],
 			{
@@ -143,10 +193,10 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 	console.log("Getting Rivet endpoint...");
 
 	// Get the endpoint using the CLI endpoint command
-	console.log("Spawning rivetkit/cli endpoint command...");
+	console.log("Spawning rivet function endpoint command...");
 	const endpointProcess = spawn(
-		"npx",
-		["@rivetkit/cli", "endpoint", "rivet", "--env", ENV, "--plain"],
+		"rivet",
+		["function", "endpoint", "--environment", ENV, "manager"],
 		{
 			cwd: tmpDir,
 			env: {

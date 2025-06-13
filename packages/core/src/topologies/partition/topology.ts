@@ -76,33 +76,38 @@ export class PartitionTopologyManager {
 		invariant(managerDriver, "missing manager driver");
 		this.clientDriver = createInlineClientDriver(managerDriver, routingHandler);
 
-		this.router = createManagerRouter(appConfig, driverConfig, {
-			routingHandler,
-			onConnectInspector: async () => {
-				const inspector = driverConfig.drivers?.manager?.inspector;
-				if (!inspector) throw new errors.Unsupported("inspector");
+		this.router = createManagerRouter(
+			appConfig,
+			driverConfig,
+			this.clientDriver,
+			{
+				routingHandler,
+				onConnectInspector: async () => {
+					const inspector = driverConfig.drivers?.manager?.inspector;
+					if (!inspector) throw new errors.Unsupported("inspector");
 
-				let conn: ManagerInspectorConnection | undefined;
-				return {
-					onOpen: async (ws) => {
-						conn = inspector.createConnection(ws);
-					},
-					onMessage: async (message) => {
-						if (!conn) {
-							logger().warn("`conn` does not exist");
-							return;
-						}
+					let conn: ManagerInspectorConnection | undefined;
+					return {
+						onOpen: async (ws) => {
+							conn = inspector.createConnection(ws);
+						},
+						onMessage: async (message) => {
+							if (!conn) {
+								logger().warn("`conn` does not exist");
+								return;
+							}
 
-						inspector.processMessage(conn, message);
-					},
-					onClose: async () => {
-						if (conn) {
-							inspector.removeConnection(conn);
-						}
-					},
-				};
+							inspector.processMessage(conn, message);
+						},
+						onClose: async () => {
+							if (conn) {
+								inspector.removeConnection(conn);
+							}
+						},
+					};
+				},
 			},
-		});
+		);
 	}
 }
 
@@ -135,7 +140,8 @@ export class PartitionTopologyWorker {
 		// TODO: Store this worker router globally so we're not re-initializing it for every DO
 		this.router = createWorkerRouter(appConfig, driverConfig, {
 			getWorkerId: async () => {
-				if (this.#workerStartedPromise) await this.#workerStartedPromise.promise;
+				if (this.#workerStartedPromise)
+					await this.#workerStartedPromise.promise;
 				return this.worker.id;
 			},
 			connectionHandlers: {
@@ -150,7 +156,10 @@ export class PartitionTopologyWorker {
 
 					const connId = generateConnId();
 					const connToken = generateConnToken();
-					const connState = await worker.prepareConn(opts.params, opts.req?.raw);
+					const connState = await worker.prepareConn(
+						opts.params,
+						opts.req?.raw,
+					);
 
 					let conn: AnyConn | undefined;
 					return {
@@ -200,7 +209,10 @@ export class PartitionTopologyWorker {
 
 					const connId = generateConnId();
 					const connToken = generateConnToken();
-					const connState = await worker.prepareConn(opts.params, opts.req?.raw);
+					const connState = await worker.prepareConn(
+						opts.params,
+						opts.req?.raw,
+					);
 
 					let conn: AnyConn | undefined;
 					return {
@@ -290,7 +302,8 @@ export class PartitionTopologyWorker {
 				},
 			},
 			onConnectInspector: async () => {
-				if (this.#workerStartedPromise) await this.#workerStartedPromise.promise;
+				if (this.#workerStartedPromise)
+					await this.#workerStartedPromise.promise;
 
 				const worker = this.#worker;
 				if (!worker) throw new Error("Worker should be defined");

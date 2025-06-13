@@ -1,7 +1,10 @@
 import type { Context as HonoContext, Next } from "hono";
 import { getLogger, Logger } from "./log";
 import { deconstructError } from "./utils";
-import { getRequestEncoding } from "@/worker/router-endpoints";
+import {
+	getRequestEncoding,
+	getRequestExposeInternalError,
+} from "@/worker/router-endpoints";
 import { serialize } from "@/worker/protocol/serde";
 import { ResponseError } from "@/worker/protocol/http/error";
 
@@ -34,7 +37,19 @@ export function handleRouteNotFound(c: HonoContext) {
 	return c.text("Not Found (WorkerCore)", 404);
 }
 
-export function handleRouteError(error: unknown, c: HonoContext) {
+export interface HandleRouterErrorOpts {
+	enableExposeInternalError?: boolean;
+}
+
+export function handleRouteError(
+	opts: HandleRouterErrorOpts,
+	error: unknown,
+	c: HonoContext,
+) {
+	const exposeInternalError =
+		opts.enableExposeInternalError &&
+		getRequestExposeInternalError(c.req, false);
+
 	const { statusCode, code, message, metadata } = deconstructError(
 		error,
 		logger(),
@@ -42,6 +57,7 @@ export function handleRouteError(error: unknown, c: HonoContext) {
 			method: c.req.method,
 			path: c.req.path,
 		},
+		exposeInternalError,
 	);
 
 	const encoding = getRequestEncoding(c.req, false);
