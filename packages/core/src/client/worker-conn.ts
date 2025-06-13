@@ -19,7 +19,11 @@ import {
 } from "./client";
 import * as errors from "./errors";
 import { logger } from "./log";
-import { type WebSocketMessage as ConnMessage, messageLength, serializeWithEncoding } from "./utils";
+import {
+	type WebSocketMessage as ConnMessage,
+	messageLength,
+	serializeWithEncoding,
+} from "./utils";
 import {
 	HEADER_WORKER_ID,
 	HEADER_WORKER_QUERY,
@@ -58,6 +62,7 @@ export type WorkerErrorCallback = (error: errors.WorkerError) => void;
 
 export interface SendHttpMessageOpts {
 	ephemeral: boolean;
+	signal?: AbortSignal;
 }
 
 export type ConnTransport = { websocket: WebSocket } | { sse: EventSource };
@@ -249,11 +254,12 @@ enc
 		}
 	}
 
-	async #connectWebSocket() {
+	async #connectWebSocket({ signal }: { signal?: AbortSignal } = {}) {
 		const ws = await this.#driver.connectWebSocket(
 			undefined,
 			this.#workerQuery,
 			this.#encodingKind,
+			signal ? { signal } : undefined,
 		);
 		this.#transport = { websocket: ws };
 		ws.onopen = () => {
@@ -280,12 +286,13 @@ enc
 		};
 	}
 
-	async #connectSse() {
+	async #connectSse({ signal }: { signal?: AbortSignal } = {}) {
 		const eventSource = await this.#driver.connectSse(
 			undefined,
 			this.#workerQuery,
 			this.#encodingKind,
 			this.#params,
+			signal ? { signal } : undefined,
 		);
 		this.#transport = { sse: eventSource };
 		eventSource.onopen = () => {
@@ -657,6 +664,7 @@ enc
 				this.#connectionId,
 				this.#connectionToken,
 				message,
+				opts?.signal ? { signal: opts.signal } : undefined,
 			);
 
 			if (!res.ok) {

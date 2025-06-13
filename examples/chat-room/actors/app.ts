@@ -1,11 +1,11 @@
-import { actor, setup } from "rivetkit";
+import { worker, setup } from "rivetkit";
 
 // state managed by the actor
 export interface State {
 	messages: { username: string; message: string }[];
 }
 
-export const chatRoom = actor({
+export const chatRoom = worker({
 	// initialize state
 	state: { messages: [] } as State,
 
@@ -28,7 +28,7 @@ export const chatRoom = actor({
 
 // Create and export the app
 export const app = setup({
-	actors: { chatRoom },
+	workers: { chatRoom },
 });
 
 // Export type for client type checking

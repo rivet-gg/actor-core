@@ -166,11 +166,12 @@ export function deconstructError(
 
 export function stringifyError(error: unknown): string {
 	if (error instanceof Error) {
-		if (process.env._WORKER_CORE_ERROR_STACK === "1") {
-			return `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ""}`;
-		} else {
-			return `${error.name}: ${error.message}`;
-		}
+		// if (process.env._WORKER_CORE_ERROR_STACK === "1") {
+		// 	return `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ""}`;
+		// } else {
+		// 	return `${error.name}: ${error.message}`;
+		// }
+		return `${error.name}: ${error.message}`;
 	} else if (typeof error === "string") {
 		return error;
 	} else if (typeof error === "object" && error !== null) {

@@ -96,6 +96,8 @@ export interface ClientOptions {
 export interface QueryOptions {
 	/** Parameters to pass to the connection. */
 	params?: unknown;
+	/** Signal to abort the request. */
+	signal?: AbortSignal;
 }
 
 /**
@@ -171,17 +173,20 @@ export interface ClientDriver {
 		req: HonoRequest | undefined,
 		workerQuery: WorkerQuery,
 		encodingKind: Encoding,
+		opts: { signal?: AbortSignal } | undefined,
 	): Promise<string>;
 	connectWebSocket(
 		req: HonoRequest | undefined,
 		workerQuery: WorkerQuery,
 		encodingKind: Encoding,
+		opts: { signal?: AbortSignal } | undefined,
 	): Promise<WebSocket>;
 	connectSse(
 		req: HonoRequest | undefined,
 		workerQuery: WorkerQuery,
 		encodingKind: Encoding,
 		params: unknown,
+		opts: { signal?: AbortSignal } | undefined,
 	): Promise<EventSource>;
 	sendHttpMessage(
 		req: HonoRequest | undefined,
@@ -190,6 +195,7 @@ export interface ClientDriver {
 		connectionId: string,
 		connectionToken: string,
 		message: wsToServer.ToServer,
+		opts: { signal?: AbortSignal } | undefined,
 	): Promise<Response>;
 }
 
@@ -362,6 +368,7 @@ export class ClientRaw {
 			undefined,
 			createQuery,
 			this.#encodingKind,
+			opts?.signal ? { signal: opts.signal } : undefined,
 		);
 		logger().debug("created worker with ID", {
 			name,
