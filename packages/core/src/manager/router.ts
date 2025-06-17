@@ -1,7 +1,12 @@
 import * as errors from "@/worker/errors";
+import * as cbor from "cbor-x";
 import type * as protoHttpResolve from "@/worker/protocol/http/resolve";
 import type { ToClient } from "@/worker/protocol/message/to-client";
-import { type Encoding, serialize } from "@/worker/protocol/serde";
+import {
+	type Encoding,
+	EncodingSchema,
+	serialize,
+} from "@/worker/protocol/serde";
 import {
 	type ConnectionHandlers,
 	getRequestEncoding,
@@ -25,7 +30,7 @@ import {
 	handleRouteNotFound,
 	loggerMiddleware,
 } from "@/common/router";
-import { deconstructError } from "@/common/utils";
+import { DeconstructedError, deconstructError } from "@/common/utils";
 import type { DriverConfig } from "@/driver-helpers/config";
 import {
 	type ManagerInspectorConnHandler,
@@ -50,6 +55,8 @@ import {
 import type { WorkerQuery } from "./protocol/query";
 import { VERSION } from "@/utils";
 import { ConnRoutingHandler } from "@/worker/conn-routing-handler";
+import { ClientDriver, createClientWithDriver } from "@/client/client";
+import { Transport, TransportSchema } from "@/worker/protocol/message/mod";
 
 type ManagerRouterHandler = {
 	onConnectInspector?: ManagerInspectorConnHandler;
@@ -105,6 +112,7 @@ function buildOpenApiResponses<T>(schema: T) {
 export function createManagerRouter(
 	appConfig: AppConfig,
 	driverConfig: DriverConfig,
+	inlineClientDriver: ClientDriver,
 	handler: ManagerRouterHandler,
 ) {
 	if (!driverConfig.drivers?.manager) {
@@ -354,6 +362,188 @@ export function createManagerRouter(
 		);
 	}
 
+	if (appConfig.test.enabled) {
+		// Add HTTP endpoint to test the inline client
+		//
+		// We have to do this in a router since this needs to run in the same server as the RivetKit app. Some test contexts to not run in the same server.
+		app.post(".test/inline-driver/call", async (c) => {
+			// TODO: use openapi instead
+			const buffer = await c.req.arrayBuffer();
+			const { encoding, transport, method, args }: TestInlineDriverCallRequest =
+				cbor.decode(new Uint8Array(buffer));
+
+			logger().info("received inline request", {
+				encoding,
+				transport,
+				method,
+				args,
+			});
+
+			// Forward inline driver request
+			let response: TestInlineDriverCallResponse<unknown>;
+			try {
+				const output = await ((inlineClientDriver as any)[method] as any)(
+					...args,
+				);
+				response = { ok: output };
+			} catch (rawErr) {
+				const err = deconstructError(rawErr, logger(), {}, true);
+				response = { err };
+			}
+
+			return c.body(cbor.encode(response));
+		});
+
+		if (upgradeWebSocket) {
+			app.get(
+				".test/inline-driver/connect-websocket",
+				upgradeWebSocket(async (c) => {
+					const {
+						workerQuery: workerQueryRaw,
+						params: paramsRaw,
+						encodingKind,
+					} = c.req.query() as {
+						workerQuery: string;
+						params?: string;
+						encodingKind: Encoding;
+					};
+					const workerQuery = JSON.parse(workerQueryRaw);
+					const params =
+						paramsRaw !== undefined ? JSON.parse(paramsRaw) : undefined;
+
+					logger().debug("received test inline driver websocket", {
+						workerQuery,
+						params,
+						encodingKind,
+					});
+
+					// Connect to the worker using the inline client driver - this returns a Promise<WebSocket>
+					const clientWsPromise = inlineClientDriver.connectWebSocket(
+						undefined,
+						workerQuery,
+						encodingKind,
+						params,
+					);
+
+					// Store a reference to the resolved WebSocket
+					let clientWs: WebSocket | null = null;
+
+					// Create WebSocket proxy handlers to relay messages between client and server
+					return {
+						onOpen: async (_evt: any, serverWs: WSContext) => {
+							logger().debug("test websocket connection opened");
+
+							try {
+								// Resolve the client WebSocket promise
+								clientWs = await clientWsPromise;
+
+								// Add message handler to forward messages from client to server
+								clientWs.onmessage = (clientEvt: MessageEvent) => {
+									logger().debug("test websocket connection message");
+
+									if (serverWs.readyState === 1) {
+										// OPEN
+										serverWs.send(clientEvt.data);
+									}
+								};
+
+								// Add close handler to close server when client closes
+								clientWs.onclose = (clientEvt: CloseEvent) => {
+									logger().debug("test websocket connection closed");
+
+									if (serverWs.readyState !== 3) {
+										// Not CLOSED
+										serverWs.close(clientEvt.code, clientEvt.reason);
+									}
+								};
+
+								// Add error handler
+								clientWs.onerror = () => {
+									logger().debug("test websocket connection error");
+
+									if (serverWs.readyState !== 3) {
+										// Not CLOSED
+										serverWs.close(1011, "Error in client websocket");
+									}
+								};
+							} catch (error) {
+								logger().error(
+									"failed to establish client websocket connection",
+									{ error },
+								);
+								serverWs.close(1011, "Failed to establish connection");
+							}
+						},
+						onMessage: async (evt: { data: any }, serverWs: WSContext) => {
+							// If clientWs hasn't been resolved yet, messages will be lost
+							if (!clientWs) {
+								logger().debug(
+									"received server message before client WebSocket connected",
+								);
+								return;
+							}
+
+							logger().debug("received message from server", {
+								dataType: typeof evt.data,
+							});
+
+							// Forward messages from server websocket to client websocket
+							if (clientWs.readyState === 1) {
+								// OPEN
+								clientWs.send(evt.data);
+							}
+						},
+						onClose: async (
+							event: {
+								wasClean: boolean;
+								code: number;
+								reason: string;
+							},
+							serverWs: WSContext,
+						) => {
+							logger().debug("server websocket closed", {
+								wasClean: event.wasClean,
+								code: event.code,
+								reason: event.reason,
+							});
+
+							// HACK: Close socket in order to fix bug with Cloudflare leaving WS in closing state
+							// https://github.com/cloudflare/workerd/issues/2569
+							serverWs.close(1000, "hack_force_close");
+
+							// Close the client websocket when the server websocket closes
+							if (
+								clientWs &&
+								clientWs.readyState !== clientWs.CLOSED &&
+								clientWs.readyState !== clientWs.CLOSING
+							) {
+								clientWs.close(event.code, event.reason);
+							}
+						},
+						onError: async (error: unknown) => {
+							logger().error("error in server websocket", { error });
+
+							// Close the client websocket on error
+							if (
+								clientWs &&
+								clientWs.readyState !== clientWs.CLOSED &&
+								clientWs.readyState !== clientWs.CLOSING
+							) {
+								clientWs.close(1011, "Error in server websocket");
+							}
+						},
+					};
+				}),
+			);
+		} else {
+			app.get(".test/inline-driver/connect-websocket", (c) => {
+				throw new Error(
+					"websocket unsupported, fix the test to exclude websockets for this platform",
+				);
+			});
+		}
+	}
+
 	app.doc("/openapi.json", {
 		openapi: "3.0.0",
 		info: {
@@ -363,10 +553,25 @@ export function createManagerRouter(
 	});
 
 	app.notFound(handleRouteNotFound);
-	app.onError(handleRouteError);
+	app.onError(handleRouteError.bind(undefined, {}));
 
 	return app as unknown as Hono;
 }
+
+export interface TestInlineDriverCallRequest {
+	encoding: Encoding;
+	transport: Transport;
+	method: string;
+	args: unknown[];
+}
+
+export type TestInlineDriverCallResponse<T> =
+	| {
+			ok: T;
+	  }
+	| {
+			err: DeconstructedError;
+	  };
 
 /**
  * Query the manager driver to get or create a worker based on the provided query
@@ -380,14 +585,14 @@ export async function queryWorker(
 	let workerOutput: { workerId: string; meta?: unknown };
 	if ("getForId" in query) {
 		const output = await driver.getForId({
-			req: c.req,
+			c,
 			workerId: query.getForId.workerId,
 		});
 		if (!output) throw new errors.WorkerNotFound(query.getForId.workerId);
 		workerOutput = output;
 	} else if ("getForKey" in query) {
 		const existingWorker = await driver.getWithKey({
-			req: c.req,
+			c,
 			name: query.getForKey.name,
 			key: query.getForKey.key,
 		});
@@ -399,7 +604,7 @@ export async function queryWorker(
 		workerOutput = existingWorker;
 	} else if ("getOrCreateForKey" in query) {
 		const getOrCreateOutput = await driver.getOrCreateWithKey({
-			req: c.req,
+			c,
 			name: query.getOrCreateForKey.name,
 			key: query.getOrCreateForKey.key,
 			input: query.getOrCreateForKey.input,
@@ -411,7 +616,7 @@ export async function queryWorker(
 		};
 	} else if ("create" in query) {
 		const createOutput = await driver.createWorker({
-			req: c.req,
+			c,
 			name: query.create.name,
 			key: query.create.key,
 			input: query.create.input,
@@ -450,7 +655,7 @@ async function handleSseConnectRequest(
 		const params = ConnectRequestSchema.safeParse({
 			query: getRequestQuery(c, false),
 			encoding: c.req.header(HEADER_ENCODING),
-			params: c.req.header(HEADER_CONN_PARAMS),
+			connParams: c.req.header(HEADER_CONN_PARAMS),
 		});
 
 		if (!params.success) {
@@ -481,7 +686,9 @@ async function handleSseConnectRequest(
 		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for sse connection");
 			const url = new URL("http://worker/connect/sse");
-			const proxyRequest = new Request(url, c.req.raw);
+
+			// Always build fresh request to prevent forwarding unwanted headers
+			const proxyRequest = new Request(url);
 			proxyRequest.headers.set(HEADER_ENCODING, params.data.encoding);
 			if (params.data.connParams) {
 				proxyRequest.headers.set(HEADER_CONN_PARAMS, params.data.connParams);
@@ -608,11 +815,18 @@ async function handleWebSocketConnectRequest(
 			})(c, noopNext());
 		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for websocket connection");
+
+			// Proxy the WebSocket connection to the worker
+			// The proxyWebSocket handler will:
+			// 1. Validate the WebSocket upgrade request
+			// 2. Forward the request to the worker with the appropriate path
+			// 3. Handle the WebSocket pair and proxy messages between client and worker
 			return await handler.routingHandler.custom.proxyWebSocket(
 				c,
 				`/connect/websocket?encoding=${params.data.encoding}`,
 				workerId,
 				meta,
+				upgradeWebSocket,
 			);
 		} else {
 			assertUnreachable(handler.routingHandler);
@@ -700,9 +914,13 @@ async function handleMessageRequest(
 			);
 		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for connection message");
-			const url = new URL(`http://worker/connections/message`);
+			const url = new URL("http://worker/connections/message");
 
-			const proxyRequest = new Request(url, c.req.raw);
+			// Always build fresh request to prevent forwarding unwanted headers
+			const proxyRequest = new Request(url, {
+				method: "POST",
+				body: c.req.raw.body,
+			});
 			proxyRequest.headers.set(HEADER_ENCODING, encoding);
 			proxyRequest.headers.set(HEADER_CONN_ID, connId);
 			proxyRequest.headers.set(HEADER_CONN_TOKEN, connToken);
@@ -744,7 +962,7 @@ async function handleActionRequest(
 		const params = ConnectRequestSchema.safeParse({
 			query: getRequestQuery(c, false),
 			encoding: c.req.header(HEADER_ENCODING),
-			params: c.req.header(HEADER_CONN_PARAMS),
+			connParams: c.req.header(HEADER_CONN_PARAMS),
 		});
 
 		if (!params.success) {
@@ -774,12 +992,19 @@ async function handleActionRequest(
 		} else if ("custom" in handler.routingHandler) {
 			logger().debug("using custom proxy mode for action call");
 
-			// TODO: Encoding
-			// TODO: Parameters
 			const url = new URL(
 				`http://worker/action/${encodeURIComponent(actionName)}`,
 			);
-			const proxyRequest = new Request(url, c.req.raw);
+
+			// Always build fresh request to prevent forwarding unwanted headers
+			const proxyRequest = new Request(url, {
+				method: "POST",
+				body: c.req.raw.body,
+			});
+			proxyRequest.headers.set(HEADER_ENCODING, params.data.encoding);
+			if (params.data.connParams)
+				proxyRequest.headers.set(HEADER_CONN_PARAMS, params.data.connParams);
+
 			return await handler.routingHandler.custom.proxyRequest(
 				c,
 				proxyRequest,

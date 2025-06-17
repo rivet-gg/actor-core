@@ -1,14 +1,14 @@
-import type { WorkerContext } from "@rivet-gg/worker-core";
+import { ActorContext } from "@rivet-gg/actor-core";
 import type { WorkerDriver, AnyWorkerInstance } from "rivetkit/driver-helpers";
 
 export interface WorkerDriverContext {
-	ctx: WorkerContext;
+	ctx: ActorContext;
 }
 
 export class RivetWorkerDriver implements WorkerDriver {
-	#ctx: WorkerContext;
+	#ctx: ActorContext;
 
-	constructor(ctx: WorkerContext) {
+	constructor(ctx: ActorContext) {
 		this.#ctx = ctx;
 	}
 

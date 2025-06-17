@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx rivetkit/cli@latest dev actors/app.ts",
+    "dev": "tsx src/server.ts",
     "check-types": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@date-fns/tz": "^1.2.0",
+    "@rivetkit/nodejs": "workspace:*",
     "date-fns": "^4.1.0",
     "resend": "^2.0.0"
   },

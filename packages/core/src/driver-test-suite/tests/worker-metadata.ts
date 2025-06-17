@@ -1,10 +1,6 @@
 import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
-import {
-  METADATA_APP_PATH,
-  type MetadataApp,
-} from "../test-apps";
 
 export function runWorkerMetadataTests(
   driverTestConfig: DriverTestConfig
@@ -12,10 +8,10 @@ export function runWorkerMetadataTests(
   describe("Worker Metadata Tests", () => {
     describe("Worker Name", () => {
       test("should provide access to worker name", async (c) => {
-        const { client } = await setupDriverTest<MetadataApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          METADATA_APP_PATH,
+          
         );
 
         // Get the worker name
@@ -27,10 +23,10 @@ export function runWorkerMetadataTests(
       });
 
       test("should preserve worker name in state during onStart", async (c) => {
-        const { client } = await setupDriverTest<MetadataApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          METADATA_APP_PATH,
+          
         );
 
         // Get the stored worker name
@@ -44,10 +40,10 @@ export function runWorkerMetadataTests(
 
     describe("Worker Tags", () => {
       test("should provide access to tags", async (c) => {
-        const { client } = await setupDriverTest<MetadataApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          METADATA_APP_PATH,
+          
         );
 
         // Create worker and set up test tags
@@ -68,10 +64,10 @@ export function runWorkerMetadataTests(
       });
 
       test("should allow accessing individual tags", async (c) => {
-        const { client } = await setupDriverTest<MetadataApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          METADATA_APP_PATH,
+          
         );
 
         // Create worker and set up test tags
@@ -95,10 +91,10 @@ export function runWorkerMetadataTests(
 
     describe("Metadata Structure", () => {
       test("should provide complete metadata object", async (c) => {
-        const { client } = await setupDriverTest<MetadataApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          METADATA_APP_PATH,
+          
         );
 
         // Create worker and set up test metadata
@@ -125,10 +121,10 @@ export function runWorkerMetadataTests(
 
     describe("Region Information", () => {
       test("should retrieve region information", async (c) => {
-        const { client } = await setupDriverTest<MetadataApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          METADATA_APP_PATH,
+          
         );
 
         // Create worker and set up test region

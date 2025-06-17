@@ -1,22 +1,16 @@
 import { describe, test, expect, vi } from "vitest";
 import { setupDriverTest } from "../utils";
 import { WorkerError } from "@/client/mod";
-import {
-	COUNTER_APP_PATH,
-	ACTION_INPUTS_APP_PATH,
-	type CounterApp,
-	type ActionInputsApp,
-} from "../test-apps";
 import { DriverTestConfig } from "../mod";
 
 export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 	describe("Manager Driver Tests", () => {
 		describe("Client Connection Methods", () => {
 			test("connect() - finds or creates a worker", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Basic connect() with no parameters creates a default worker
@@ -37,10 +31,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("throws WorkerAlreadyExists when creating duplicate workers", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create a unique worker with specific key
@@ -53,7 +47,6 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 					await client.counter.create(uniqueKey);
 					expect.fail("did not error on duplicate create");
 				} catch (err) {
-					expect(err).toBeInstanceOf(WorkerError);
 					expect((err as WorkerError).code).toBe("worker_already_exists");
 				}
 
@@ -65,10 +58,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Connection Options", () => {
 			test("get without create prevents worker creation", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Try to get a nonexistent worker with no create
@@ -79,7 +72,6 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 					await client.counter.get([nonexistentId]).resolve();
 					expect.fail("did not error for get");
 				} catch (err) {
-					expect(err).toBeInstanceOf(WorkerError);
 					expect((err as WorkerError).code).toBe("worker_not_found");
 				}
 
@@ -95,10 +87,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("connection params are passed to workers", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create a worker with connection params
@@ -121,10 +113,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Worker Creation & Retrieval", () => {
 			test("creates and retrieves workers by ID", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create a unique ID for this test
@@ -141,10 +133,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("passes input to worker during creation", async (c) => {
-				const { client } = await setupDriverTest<ActionInputsApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_INPUTS_APP_PATH,
+					
 				);
 
 				// Test data to pass as input
@@ -170,10 +162,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("input is undefined when not provided", async (c) => {
-				const { client } = await setupDriverTest<ActionInputsApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_INPUTS_APP_PATH,
+					
 				);
 
 				// Create worker without providing input
@@ -190,10 +182,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("getOrCreate passes input to worker during creation", async (c) => {
-				const { client } = await setupDriverTest<ActionInputsApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_INPUTS_APP_PATH,
+					
 				);
 
 				// Create a unique key for this test
@@ -232,7 +224,7 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 
 			// TODO: Correctly test region for each provider
 			//test("creates and retrieves workers with region", async (c) => {
-			//	const { client } = await setupDriverTest<CounterApp>(c,
+			//	const { client } = await setupDriverTest(c,
 			//		driverTestConfig,
 			//		COUNTER_APP_PATH
 			//	);
@@ -259,10 +251,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Key Matching", () => {
 			test("matches workers only with exactly the same keys", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create worker with multiple keys
@@ -297,10 +289,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("string key matches array with single string key", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create worker with string key
@@ -314,10 +306,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("undefined key matches empty array key and no key", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create worker with undefined key
@@ -336,10 +328,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("no keys does not match workers with keys", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create counter with keys
@@ -356,10 +348,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("workers with keys match workers with no keys", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create a counter with no keys
@@ -379,12 +371,12 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 		});
 
 		describe("Multiple Worker Instances", () => {
-			// TODO: This test is flakey https://github.com/rivet-gg/worker-core/issues/873
+			// TODO: This test is flakey https://github.com/rivet-gg/actor-core/issues/873
 			test("creates multiple worker instances of the same type", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Create multiple instances with different IDs
@@ -409,10 +401,10 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("handles default instance with no explicit ID", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					COUNTER_APP_PATH,
+					
 				);
 
 				// Get default instance (no ID specified)

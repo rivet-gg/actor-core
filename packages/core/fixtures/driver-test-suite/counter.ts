@@ -1,6 +1,6 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
-const counter = worker({
+export const counter = worker({
 	state: { count: 0 },
 	actions: {
 		increment: (c, x: number) => {
@@ -13,9 +13,3 @@ const counter = worker({
 		},
 	},
 });
-
-export const app = setup({
-	workers: { counter },
-});
-
-export type App = typeof app;

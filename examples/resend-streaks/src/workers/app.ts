@@ -1,9 +1,9 @@
 import { TZDate } from "@date-fns/tz";
-import { UserError, actor, setup } from "rivetkit";
+import { UserError, worker, setup } from "rivetkit";
 import { addDays, set } from "date-fns";
 import { Resend } from "resend";
 
-const user = actor({
+const user = worker({
 	state: {
 		email: null as string | null,
 		timeZone: "UTC",
@@ -105,7 +105,7 @@ function isSameDay(a: TZDate, b: TZDate) {
 }
 
 export const app = setup({
-	actors: { user },
+	workers: { user },
 });
 
 export type App = typeof app;

@@ -1,16 +1,22 @@
 import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
-import { ERROR_HANDLING_APP_PATH, type ErrorHandlingApp } from "../test-apps";
+import { assertUnreachable } from "@/worker/utils";
+import {
+	INTERNAL_ERROR_CODE,
+	INTERNAL_ERROR_DESCRIPTION,
+} from "@/worker/errors";
 
-export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) {
+export function runWorkerErrorHandlingTests(
+	driverTestConfig: DriverTestConfig,
+) {
 	describe("Worker Error Handling Tests", () => {
 		describe("UserError Handling", () => {
 			test("should handle simple UserError with message", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				// Try to call an action that throws a simple UserError
@@ -31,10 +37,10 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 			});
 
 			test("should handle detailed UserError with code and metadata", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				// Try to call an action that throws a detailed UserError
@@ -57,10 +63,10 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 
 		describe("Internal Error Handling", () => {
 			test("should convert internal errors to safe format", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				// Try to call an action that throws an internal error
@@ -71,10 +77,18 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 					// If we get here, the test should fail
 					expect(true).toBe(false); // This should not be reached
 				} catch (error: any) {
-					// Verify the error is converted to a safe format
-					expect(error.code).toBe("internal_error");
-					// Original error details should not be exposed
-					expect(error.message).not.toBe("This is an internal error");
+					if (driverTestConfig.clientType === "http") {
+						// Verify the error is converted to a safe format
+						expect(error.code).toBe(INTERNAL_ERROR_CODE);
+						// Original error details should not be exposed
+						expect(error.message).toBe(INTERNAL_ERROR_DESCRIPTION);
+					} else if (driverTestConfig.clientType === "inline") {
+						// Verify that original error is preserved
+						expect(error.code).toBe(INTERNAL_ERROR_CODE);
+						expect(error.message).toBe("This is an internal error");
+					} else {
+						assertUnreachable(driverTestConfig.clientType);
+					}
 				}
 			});
 		});
@@ -82,10 +96,10 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 		// TODO: Does not work with fake timers
 		describe.skip("Action Timeout", () => {
 			test("should handle action timeouts with custom duration", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				// Call an action that should time out
@@ -106,10 +120,10 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 			});
 
 			test("should successfully run actions within timeout", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				// Call an action with a delay shorter than the timeout
@@ -121,10 +135,10 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 			});
 
 			test("should respect different timeouts for different workers", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				// The following workers have different timeout settings:
@@ -150,10 +164,10 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 
 		describe("Error Recovery", () => {
 			test("should continue working after errors", async (c) => {
-				const { client } = await setupDriverTest<ErrorHandlingApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ERROR_HANDLING_APP_PATH,
+					
 				);
 
 				const handle = client.errorHandlingWorker.getOrCreate();
@@ -172,4 +186,3 @@ export function runWorkerErrorHandlingTests(driverTestConfig: DriverTestConfig) 
 		});
 	});
 }
-

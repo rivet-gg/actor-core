@@ -1,73 +1,50 @@
 import { runDriverTests } from "rivetkit/driver-test-suite";
-import { deployToRivet, RIVET_CLIENT_CONFIG } from "./rivet-deploy";
-import { type RivetClientConfig, rivetRequest } from "../src/rivet-client";
-import invariant from "invariant";
+import { deployToRivet, rivetClientConfig } from "./rivet-deploy";
+import { RivetClientConfig, rivetRequest } from "../src/rivet-client";
 
-let alreadyDeployedManager = false;
-const alreadyDeployedApps = new Set();
-let managerEndpoint: string | undefined = undefined;
+let deployProjectOnce: Promise<string> | undefined = undefined;
 
-const driverTestConfig = {
+// IMPORTANT: Unlike other tests, Rivet tests are ran without parallelism since we reuse the same shared environment. Eventually we can create an environment per test to create isolated instances.
+runDriverTests({
 	useRealTimers: true,
 	HACK_skipCleanupNet: true,
-	async start(appPath: string) {
-		console.log("Starting test", {
-			alreadyDeployedManager,
-			alreadyDeployedApps,
-			managerEndpoint,
-		});
+	async start(projectPath: string) {
+		// Setup project
+		if (!deployProjectOnce) {
+			deployProjectOnce = deployToRivet(projectPath);
+		}
+		const endpoint = await deployProjectOnce;
 
 		// Cleanup workers from previous tests
-		await deleteAllWorkers(RIVET_CLIENT_CONFIG, !alreadyDeployedManager);
+		await deleteAllWorkers(rivetClientConfig);
 
-		if (!alreadyDeployedApps.has(appPath)) {
-			console.log(`Starting Rivet driver tests with app: ${appPath}`);
-
-			// Deploy to Rivet
-			const result = await deployToRivet(appPath, !alreadyDeployedManager);
-			console.log(
-				`Deployed to Rivet at ${result.endpoint} (manager: ${!alreadyDeployedManager})`,
-			);
-
-			// Save as deployed
-			managerEndpoint = result.endpoint;
-			alreadyDeployedApps.add(appPath);
-			alreadyDeployedManager = true;
-		} else {
-			console.log(`Already deployed: ${appPath}`);
-		}
-
-		invariant(managerEndpoint, "missing manager endpoint");
 		return {
-			endpoint: managerEndpoint,
+			endpoint,
 			async cleanup() {
-				await deleteAllWorkers(RIVET_CLIENT_CONFIG, false);
+				// This takes time and slows down tests -- it's fine if we leak workers that'll be cleaned up in the next run
+				// await deleteAllWorkers(rivetClientConfig);
 			},
 		};
 	},
-};
+});
 
-async function deleteAllWorkers(
-	clientConfig: RivetClientConfig,
-	deleteManager: boolean,
-) {
+async function deleteAllWorkers(clientConfig: RivetClientConfig) {
+	// TODO: This is not paginated
+
 	console.log("Listing workers to delete");
-	const { workers } = await rivetRequest<
+	const { actors } = await rivetRequest<
 		void,
-		{ workers: { id: string; tags: Record<string, string> }[] }
-	>(clientConfig, "GET", "/workers");
+		{ actors: { id: string; tags: Record<string, string> }[] }
+	>(clientConfig, "GET", "/actors");
 
-	for (const worker of workers) {
-		if (!deleteManager && worker.tags.name === "manager") continue;
+	for (const actor of actors) {
+		if (actor.tags.role !== "worker") continue;
 
-		console.log(`Deleting worker ${worker.id} (${JSON.stringify(worker.tags)})`);
+		console.log(`Deleting worker ${actor.id} (${JSON.stringify(actor.tags)})`);
 		await rivetRequest<void, void>(
 			clientConfig,
 			"DELETE",
-			`/workers/${worker.id}`,
+			`/actors/${actor.id}`,
 		);
 	}
 }
-
-// Run the driver tests with our config
-runDriverTests(driverTestConfig);

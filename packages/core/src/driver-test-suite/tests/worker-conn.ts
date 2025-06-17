@@ -1,24 +1,12 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
-import {
-	COUNTER_APP_PATH,
-	CONN_PARAMS_APP_PATH,
-	LIFECYCLE_APP_PATH,
-	type CounterApp,
-	type ConnParamsApp,
-	type LifecycleApp,
-} from "../test-apps";
 
 export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 	describe("Worker Connection Tests", () => {
 		describe("Connection Methods", () => {
 			test("should connect using .get().connect()", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker
 				await client.counter.create(["test-get"]);
@@ -36,14 +24,12 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should connect using .getForId().connect()", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create a worker first to get its ID
-				const handle = client.counter.getOrCreate(["test-get-for-id"]);
+				const handle = client.counter.getOrCreate([
+					"test-get-for-id",
+				]);
 				await handle.increment(3);
 				const workerId = await handle.resolve();
 
@@ -60,14 +46,12 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should connect using .getOrCreate().connect()", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Get or create worker and connect
-				const handle = client.counter.getOrCreate(["test-get-or-create"]);
+				const handle = client.counter.getOrCreate([
+					"test-get-or-create",
+				]);
 				const connection = handle.connect();
 
 				// Verify connection works
@@ -79,11 +63,7 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should connect using (await create()).connect()", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker and connect
 				const handle = await client.counter.create(["test-create"]);
@@ -100,11 +80,7 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Event Communication", () => {
 			test("should receive events via broadcast", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker and connect
 				const handle = client.counter.getOrCreate(["test-broadcast"]);
@@ -129,11 +105,7 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should handle one-time events with once()", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker and connect
 				const handle = client.counter.getOrCreate(["test-once"]);
@@ -158,14 +130,12 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should unsubscribe from events", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker and connect
-				const handle = client.counter.getOrCreate(["test-unsubscribe"]);
+				const handle = client.counter.getOrCreate([
+					"test-unsubscribe",
+				]);
 				const connection = handle.connect();
 
 				// Set up event listener with unsubscribe
@@ -194,17 +164,13 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Connection Parameters", () => {
 			test("should pass connection parameters", async (c) => {
-				const { client } = await setupDriverTest<ConnParamsApp>(
-					c,
-					driverTestConfig,
-					CONN_PARAMS_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create two connections with different params
-				const handle1 = client.counter.getOrCreate(["test-params"], {
+				const handle1 = client.counterWithParams.getOrCreate(["test-params"], {
 					params: { name: "user1" },
 				});
-				const handle2 = client.counter.getOrCreate(["test-params"], {
+				const handle2 = client.counterWithParams.getOrCreate(["test-params"], {
 					params: { name: "user2" },
 				});
 
@@ -230,38 +196,37 @@ export function runWorkerConnTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Lifecycle Hooks", () => {
 			test("should trigger lifecycle hooks", async (c) => {
-				const { client } = await setupDriverTest<LifecycleApp>(
-					c,
-					driverTestConfig,
-					LIFECYCLE_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
-				const handle = client.counter.getOrCreate(["test-lifecycle"]);
+				const handle = client.counterWithLifecycle.getOrCreate(["test-lifecycle"]);
 
 				// Create and connect
-				const connHandle = client.counter.getOrCreate(["test-lifecycle"], {
-					params: { trackLifecycle: true },
-				});
+				const connHandle = client.counterWithLifecycle.getOrCreate(
+					["test-lifecycle"],
+					{
+						params: { trackLifecycle: true },
+					},
+				);
 				const connection = connHandle.connect();
 
 				// Verify lifecycle events were triggered
 				const events = await connection.getEvents();
-
-				// Check lifecycle hooks were called in the correct order
-				expect(events).toContain("onStart");
-				expect(events).toContain("onBeforeConnect");
-				expect(events).toContain("onConnect");
+				expect(events).toEqual(["onStart", "onBeforeConnect", "onConnect"]);
 
 				// Disconnect should trigger onDisconnect
 				await connection.dispose();
 
 				// Reconnect to check if onDisconnect was called
 				const newConnection = handle.connect();
-
+				//await vi.waitFor(async () => {
 				const finalEvents = await newConnection.getEvents();
-				expect(finalEvents).toContain("onDisconnect");
-
-				// Clean up
+				expect(finalEvents).toEqual([
+					"onStart",
+					"onBeforeConnect",
+					"onConnect",
+					"onDisconnect",
+				]);
+				//});
 				await newConnection.dispose();
 			});
 		});

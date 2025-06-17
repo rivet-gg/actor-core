@@ -1,4 +1,4 @@
-import { type ActionContextOf, type ActorContextOf, actor } from "rivetkit";
+import { type ActionContextOf, type WorkerContextOf, worker } from "rivetkit";
 import type {
 	CodingAgentState,
 	CodingAgentVars,
@@ -20,7 +20,7 @@ import {
 } from "./linear";
 
 export type Ctx =
-	| ActorContextOf<typeof codingAgent>
+	| WorkerContextOf<typeof codingAgent>
 	| ActionContextOf<typeof codingAgent>;
 
 /**
@@ -353,7 +353,7 @@ function enqueueRequest(c: Ctx, type: RequestType, data: LinearWebhookEvent): st
 	}
 }
 
-export const codingAgent = actor({
+export const codingAgent = worker({
 	// Initialize state
 	state: {
 		// Linear issue information

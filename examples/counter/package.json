@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx rivetkit/cli@latest dev actors/app.ts",
+    "dev": "tsx src/server.ts",
     "check-types": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -14,6 +14,9 @@
     "tsx": "^3.12.7",
     "typescript": "^5.7.3",
     "vitest": "^3.1.1"
+  },
+  "dependencies": {
+    "@rivetkit/nodejs": "workspace:*"
   },
   "example": {
     "platforms": [

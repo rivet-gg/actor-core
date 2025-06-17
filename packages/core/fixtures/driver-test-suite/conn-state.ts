@@ -1,13 +1,13 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
-type ConnState = {
+export type ConnState = {
 	username: string;
 	role: string;
 	counter: number;
 	createdAt: number;
 };
 
-const connStateWorker = worker({
+export const connStateWorker = worker({
 	state: {
 		sharedCounter: 0,
 		disconnectionCount: 0,
@@ -94,8 +94,3 @@ const connStateWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: { connStateWorker },
-});
-
-export type App = typeof app;

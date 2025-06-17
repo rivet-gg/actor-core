@@ -1,10 +1,6 @@
 import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
-import {
-  COUNTER_APP_PATH,
-  type CounterApp,
-} from "../test-apps";
 
 export function runWorkerStateTests(
   driverTestConfig: DriverTestConfig
@@ -12,10 +8,10 @@ export function runWorkerStateTests(
   describe("Worker State Tests", () => {
     describe("State Persistence", () => {
       test("persists state between worker instances", async (c) => {
-        const { client } = await setupDriverTest<CounterApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          COUNTER_APP_PATH,
+          
         );
 
         // Create instance and increment
@@ -30,10 +26,10 @@ export function runWorkerStateTests(
       });
 
       test("restores state after worker disconnect/reconnect", async (c) => {
-        const { client } = await setupDriverTest<CounterApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          COUNTER_APP_PATH,
+          
         );
 
         // Create worker and set initial state
@@ -47,10 +43,10 @@ export function runWorkerStateTests(
       });
 
       test("maintains separate state for different workers", async (c) => {
-        const { client } = await setupDriverTest<CounterApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          COUNTER_APP_PATH,
+          
         );
 
         // Create first counter with specific key

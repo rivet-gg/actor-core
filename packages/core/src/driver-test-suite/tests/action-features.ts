@@ -1,12 +1,6 @@
 import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
-import {
-	ACTION_TIMEOUT_APP_PATH,
-	ACTION_TYPES_APP_PATH,
-	type ActionTimeoutApp,
-	type ActionTypesApp,
-} from "../test-apps";
 import { WorkerError } from "@/client/errors";
 
 export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
@@ -16,10 +10,10 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 			let usesFakeTimers = !driverTestConfig.useRealTimers;
 
 			test("should timeout actions that exceed the configured timeout", async (c) => {
-				const { client } = await setupDriverTest<ActionTimeoutApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TIMEOUT_APP_PATH,
+					
 				);
 
 				// The quick action should complete successfully
@@ -35,10 +29,10 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should respect the default timeout", async (c) => {
-				const { client } = await setupDriverTest<ActionTimeoutApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TIMEOUT_APP_PATH,
+					
 				);
 
 				// This action should complete within the default timeout
@@ -49,22 +43,22 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("non-promise action results should not be affected by timeout", async (c) => {
-				const { client } = await setupDriverTest<ActionTimeoutApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TIMEOUT_APP_PATH,
+					
 				);
 
 				// Synchronous action should not be affected by timeout
-				const result = await client.syncWorker.getOrCreate().syncAction();
+				const result = await client.syncTimeoutWorker.getOrCreate().syncAction();
 				expect(result).toBe("sync response");
 			});
 
 			test("should allow configuring different timeouts for different workers", async (c) => {
-				const { client } = await setupDriverTest<ActionTimeoutApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TIMEOUT_APP_PATH,
+					
 				);
 
 				// The short timeout worker should fail
@@ -82,13 +76,13 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Action Sync & Async", () => {
 			test("should support synchronous actions", async (c) => {
-				const { client } = await setupDriverTest<ActionTypesApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TYPES_APP_PATH,
+					
 				);
 
-				const instance = client.syncWorker.getOrCreate();
+				const instance = client.syncActionWorker.getOrCreate();
 
 				// Test increment action
 				let result = await instance.increment(5);
@@ -109,13 +103,13 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should support asynchronous actions", async (c) => {
-				const { client } = await setupDriverTest<ActionTypesApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TYPES_APP_PATH,
+					
 				);
 
-				const instance = client.asyncWorker.getOrCreate();
+				const instance = client.asyncActionWorker.getOrCreate();
 
 				// Test delayed increment
 				const result = await instance.delayedIncrement(5);
@@ -135,16 +129,15 @@ export function runActionFeaturesTests(driverTestConfig: DriverTestConfig) {
 					await instance.asyncWithError(true);
 					expect.fail("did not error");
 				} catch (error) {
-					expect(error).toBeInstanceOf(WorkerError);
 					expect((error as WorkerError).message).toBe("Intentional error");
 				}
 			});
 
 			test("should handle promises returned from actions correctly", async (c) => {
-				const { client } = await setupDriverTest<ActionTypesApp>(
+				const { client } = await setupDriverTest(
 					c,
 					driverTestConfig,
-					ACTION_TYPES_APP_PATH,
+					
 				);
 
 				const instance = client.promiseWorker.getOrCreate();

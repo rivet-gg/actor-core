@@ -1,6 +1,6 @@
-import { actor, setup } from "rivetkit";
+import { worker, setup } from "rivetkit";
 
-const counter = actor({
+const counter = worker({
 	state: { count: 0 },
 	actions: {
 		increment: (c, x: number) => {
@@ -15,7 +15,7 @@ const counter = actor({
 });
 
 export const app = setup({
-	actors: { counter },
+	workers: { counter },
 });
 
 export type App = typeof app;

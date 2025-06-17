@@ -7,7 +7,7 @@ dotenv.config();
 
 // Create and export the app
 export const app = setup({
-	actors: { codingAgent },
+	workers: { codingAgent },
 });
 
 // Export type for client type checking

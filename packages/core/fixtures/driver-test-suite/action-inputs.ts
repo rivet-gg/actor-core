@@ -1,12 +1,12 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
-interface State {
+export interface State {
 	initialInput?: unknown;
 	onCreateInput?: unknown;
 }
 
 // Test worker that can capture input during creation
-const inputWorker = worker({
+export const inputWorker = worker({
 	createState: (c, { input }): State => {
 		return {
 			initialInput: input,
@@ -28,8 +28,3 @@ const inputWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: { inputWorker },
-});
-
-export type App = typeof app;

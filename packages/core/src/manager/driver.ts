@@ -1,3 +1,4 @@
+import { ClientDriver } from "@/client/client";
 import type { WorkerKey } from "@/common/utils";
 import type { ManagerInspector } from "@/inspector/manager";
 import type { Env, Context as HonoContext, HonoRequest } from "hono";
@@ -11,18 +12,18 @@ export interface ManagerDriver {
 	inspector?: ManagerInspector;
 }
 export interface GetForIdInput<E extends Env = any> {
-	req?: HonoRequest | undefined;
+	c?: HonoContext | undefined;
 	workerId: string;
 }
 
 export interface GetWithKeyInput<E extends Env = any> {
-	req?: HonoRequest | undefined;
+	c?: HonoContext | undefined;
 	name: string;
 	key: WorkerKey;
 }
 
 export interface GetOrCreateWithKeyInput<E extends Env = any> {
-	req?: HonoRequest | undefined;
+	c?: HonoContext | undefined;
 	name: string;
 	key: WorkerKey;
 	input?: unknown;
@@ -30,7 +31,7 @@ export interface GetOrCreateWithKeyInput<E extends Env = any> {
 }
 
 export interface CreateInput<E extends Env = any> {
-	req?: HonoRequest | undefined;
+	c?: HonoContext | undefined;
 	name: string;
 	key: WorkerKey;
 	input?: unknown;

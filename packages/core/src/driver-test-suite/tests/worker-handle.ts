@@ -1,22 +1,12 @@
 import { describe, test, expect, vi } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest, waitFor } from "../utils";
-import {
-	COUNTER_APP_PATH,
-	LIFECYCLE_APP_PATH,
-	type CounterApp,
-	type LifecycleApp,
-} from "../test-apps";
 
 export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 	describe("Worker Handle Tests", () => {
 		describe("Access Methods", () => {
 			test("should use .get() to access a worker", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker first
 				await client.counter.create(["test-get-handle"]);
@@ -33,11 +23,7 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should use .getForId() to access a worker by ID", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create a worker first to get its ID
 				const handle = client.counter.getOrCreate(["test-get-for-id-handle"]);
@@ -56,11 +42,7 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should use .getOrCreate() to access or create a worker", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Access using getOrCreate - should create the worker
 				const handle = client.counter.getOrCreate([
@@ -80,11 +62,7 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should use (await create()) to create and return a handle", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create worker and get handle
 				const handle = await client.counter.create(["test-create-handle"]);
@@ -100,11 +78,7 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Action Functionality", () => {
 			test("should call actions directly on the handle", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				const handle = client.counter.getOrCreate(["test-action-handle"]);
 
@@ -120,11 +94,7 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should handle independent handles to the same worker", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create two handles to the same worker
 				const handle1 = client.counter.getOrCreate(["test-multiple-handles"]);
@@ -145,11 +115,7 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should resolve a worker's ID", async (c) => {
-				const { client } = await setupDriverTest<CounterApp>(
-					c,
-					driverTestConfig,
-					COUNTER_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				const handle = client.counter.getOrCreate(["test-resolve-id"]);
 
@@ -172,21 +138,19 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 
 		describe("Lifecycle Hooks", () => {
 			test("should trigger lifecycle hooks on worker creation", async (c) => {
-				const { client } = await setupDriverTest<LifecycleApp>(
-					c,
-					driverTestConfig,
-					LIFECYCLE_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Get or create a new worker - this should trigger onStart
-				const handle = client.counter.getOrCreate(["test-lifecycle-handle"]);
+				const handle = client.counterWithLifecycle.getOrCreate([
+					"test-lifecycle-handle",
+				]);
 
 				// Verify onStart was triggered
 				const initialEvents = await handle.getEvents();
 				expect(initialEvents).toContain("onStart");
 
 				// Create a separate handle to the same worker
-				const sameHandle = client.counter.getOrCreate([
+				const sameHandle = client.counterWithLifecycle.getOrCreate([
 					"test-lifecycle-handle",
 				]);
 
@@ -198,15 +162,13 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 			});
 
 			test("should trigger lifecycle hooks for each Action call", async (c) => {
-				const { client } = await setupDriverTest<LifecycleApp>(
-					c,
-					driverTestConfig,
-					LIFECYCLE_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create a normal handle to view events
-				const viewHandle = client.counter.getOrCreate(["test-lifecycle-action"]);
-				
+				const viewHandle = client.counterWithLifecycle.getOrCreate([
+					"test-lifecycle-action",
+				]);
+
 				// Initial state should only have onStart
 				const initialEvents = await viewHandle.getEvents();
 				expect(initialEvents).toContain("onStart");
@@ -215,72 +177,82 @@ export function runWorkerHandleTests(driverTestConfig: DriverTestConfig) {
 				expect(initialEvents).not.toContain("onDisconnect");
 
 				// Create a handle with trackLifecycle enabled for testing Action calls
-				const trackingHandle = client.counter.getOrCreate(
+				const trackingHandle = client.counterWithLifecycle.getOrCreate(
 					["test-lifecycle-action"],
-					{ params: { trackLifecycle: true } }
+					{ params: { trackLifecycle: true } },
 				);
-				
+
 				// Make an Action call
 				await trackingHandle.increment(5);
-				
+
 				// Check that it triggered the lifecycle hooks
 				const eventsAfterAction = await viewHandle.getEvents();
-				
+
 				// Should have onBeforeConnect, onConnect, and onDisconnect for the Action call
 				expect(eventsAfterAction).toContain("onBeforeConnect");
 				expect(eventsAfterAction).toContain("onConnect");
 				expect(eventsAfterAction).toContain("onDisconnect");
-				
+
 				// Each should have count 1
-				expect(eventsAfterAction.filter(e => e === "onBeforeConnect").length).toBe(1);
-				expect(eventsAfterAction.filter(e => e === "onConnect").length).toBe(1);
-				expect(eventsAfterAction.filter(e => e === "onDisconnect").length).toBe(1);
-				
+				expect(
+					eventsAfterAction.filter((e) => e === "onBeforeConnect").length,
+				).toBe(1);
+				expect(eventsAfterAction.filter((e) => e === "onConnect").length).toBe(
+					1,
+				);
+				expect(
+					eventsAfterAction.filter((e) => e === "onDisconnect").length,
+				).toBe(1);
+
 				// Make another Action call
 				await trackingHandle.increment(10);
-				
+
 				// Check that it triggered another set of lifecycle hooks
 				const eventsAfterSecondAction = await viewHandle.getEvents();
-				
+
 				// Each hook should now have count 2
-				expect(eventsAfterSecondAction.filter(e => e === "onBeforeConnect").length).toBe(2);
-				expect(eventsAfterSecondAction.filter(e => e === "onConnect").length).toBe(2);
-				expect(eventsAfterSecondAction.filter(e => e === "onDisconnect").length).toBe(2);
+				expect(
+					eventsAfterSecondAction.filter((e) => e === "onBeforeConnect").length,
+				).toBe(2);
+				expect(
+					eventsAfterSecondAction.filter((e) => e === "onConnect").length,
+				).toBe(2);
+				expect(
+					eventsAfterSecondAction.filter((e) => e === "onDisconnect").length,
+				).toBe(2);
 			});
 
 			test("should trigger lifecycle hooks for each Action call across multiple handles", async (c) => {
-				const { client } = await setupDriverTest<LifecycleApp>(
-					c,
-					driverTestConfig,
-					LIFECYCLE_APP_PATH,
-				);
+				const { client } = await setupDriverTest(c, driverTestConfig);
 
 				// Create a normal handle to view events
-				const viewHandle = client.counter.getOrCreate(["test-lifecycle-multi-handle"]);
-				
+				const viewHandle = client.counterWithLifecycle.getOrCreate([
+					"test-lifecycle-multi-handle",
+				]);
+
 				// Create two tracking handles to the same worker
-				const trackingHandle1 = client.counter.getOrCreate(
+				const trackingHandle1 = client.counterWithLifecycle.getOrCreate(
 					["test-lifecycle-multi-handle"],
-					{ params: { trackLifecycle: true } }
+					{ params: { trackLifecycle: true } },
 				);
-				
-				const trackingHandle2 = client.counter.getOrCreate(
+
+				const trackingHandle2 = client.counterWithLifecycle.getOrCreate(
 					["test-lifecycle-multi-handle"],
-					{ params: { trackLifecycle: true } }
+					{ params: { trackLifecycle: true } },
 				);
-				
+
 				// Make Action calls on both handles
 				await trackingHandle1.increment(5);
 				await trackingHandle2.increment(10);
-				
+
 				// Check lifecycle hooks
 				const events = await viewHandle.getEvents();
-				
+
 				// Should have 1 onStart, 2 each of onBeforeConnect, onConnect, and onDisconnect
-				expect(events.filter(e => e === "onStart").length).toBe(1);
-				expect(events.filter(e => e === "onBeforeConnect").length).toBe(2);
-				expect(events.filter(e => e === "onConnect").length).toBe(2);
-				expect(events.filter(e => e === "onDisconnect").length).toBe(2);
+				expect(events.filter((e) => e === "onStart").length).toBe(1);
+				expect(events.filter((e) => e === "onBeforeConnect").length).toBe(2);
+				expect(events.filter((e) => e === "onConnect").length).toBe(2);
+				expect(events.filter((e) => e === "onDisconnect").length).toBe(2);
 			});
 		});
 	});

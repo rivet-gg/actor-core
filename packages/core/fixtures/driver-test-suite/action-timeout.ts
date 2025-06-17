@@ -1,7 +1,7 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
 // Short timeout worker
-const shortTimeoutWorker = worker({
+export const shortTimeoutWorker = worker({
 	state: { value: 0 },
 	options: {
 		action: {
@@ -21,7 +21,7 @@ const shortTimeoutWorker = worker({
 });
 
 // Long timeout worker
-const longTimeoutWorker = worker({
+export const longTimeoutWorker = worker({
 	state: { value: 0 },
 	options: {
 		action: {
@@ -38,7 +38,7 @@ const longTimeoutWorker = worker({
 });
 
 // Default timeout worker
-const defaultTimeoutWorker = worker({
+export const defaultTimeoutWorker = worker({
 	state: { value: 0 },
 	actions: {
 		normalAction: async (c) => {
@@ -49,7 +49,7 @@ const defaultTimeoutWorker = worker({
 });
 
 // Sync worker (timeout shouldn't apply)
-const syncWorker = worker({
+export const syncTimeoutWorker = worker({
 	state: { value: 0 },
 	options: {
 		action: {
@@ -63,14 +63,4 @@ const syncWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: {
-		shortTimeoutWorker,
-		longTimeoutWorker,
-		defaultTimeoutWorker,
-		syncWorker,
-	},
-});
-
-export type App = typeof app;
 

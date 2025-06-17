@@ -1,14 +1,12 @@
-import {
-	runDriverTests,
-	createTestRuntime,
-} from "@/driver-test-suite/mod";
+import { runDriverTests, createTestRuntime } from "@/driver-test-suite/mod";
 import { TestGlobalState } from "@/test/driver/global-state";
 import { TestWorkerDriver } from "@/test/driver/worker";
 import { TestManagerDriver } from "@/test/driver/manager";
+import { join } from "node:path";
 
 runDriverTests({
-	async start(appPath: string) {
-		return await createTestRuntime(appPath, async (app) => {
+	async start(projectPath: string) {
+		return await createTestRuntime(join(projectPath, "app.ts"), async (app) => {
 			const memoryState = new TestGlobalState();
 			return {
 				workerDriver: new TestWorkerDriver(memoryState),

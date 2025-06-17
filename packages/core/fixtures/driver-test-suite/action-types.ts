@@ -1,7 +1,7 @@
-import { worker, setup, UserError } from "rivetkit";
+import { worker, UserError } from "rivetkit";
 
 // Worker with synchronous actions
-const syncWorker = worker({
+export const syncActionWorker = worker({
 	state: { value: 0 },
 	actions: {
 		// Simple synchronous action that returns a value directly
@@ -24,7 +24,7 @@ const syncWorker = worker({
 });
 
 // Worker with asynchronous actions
-const asyncWorker = worker({
+export const asyncActionWorker = worker({
 	state: { value: 0, data: null as any },
 	actions: {
 		// Async action with a delay
@@ -56,7 +56,7 @@ const asyncWorker = worker({
 });
 
 // Worker with promise actions
-const promiseWorker = worker({
+export const promiseWorker = worker({
 	state: { results: [] as string[] },
 	actions: {
 		// Action that returns a resolved promise
@@ -81,12 +81,3 @@ const promiseWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: {
-		syncWorker,
-		asyncWorker,
-		promiseWorker,
-	},
-});
-
-export type App = typeof app;

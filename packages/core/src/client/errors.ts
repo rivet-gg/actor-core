@@ -25,6 +25,8 @@ export class MalformedResponseMessage extends WorkerClientError {
 }
 
 export class WorkerError extends WorkerClientError {
+	__type = "WorkerError";
+
 	constructor(
 		public readonly code: string,
 		message: string,

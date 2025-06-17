@@ -1,6 +1,6 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
-const scheduled = worker({
+export const scheduled = worker({
 	state: {
 		lastRun: 0,
 		scheduledCount: 0,
@@ -75,9 +75,4 @@ const scheduled = worker({
 	},
 });
 
-export const app = setup({
-	workers: { scheduled },
-});
-
-export type App = typeof app;
 

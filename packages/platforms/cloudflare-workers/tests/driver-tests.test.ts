@@ -13,108 +13,37 @@ const execPromise = promisify(exec);
 runDriverTests({
 	useRealTimers: true,
 	HACK_skipCleanupNet: true,
-	async start(appPath: string) {
+	async start(projectPath: string) {
+		// Setup project
+		if (!setupProjectOnce) {
+			setupProjectOnce = setupProject(projectPath);
+		}
+		const projectDir = await setupProjectOnce;
+
+		console.log("project dir", projectDir);
+
 		// Get an available port
 		const port = await getPort();
 		const inspectorPort = await getPort();
 
-		// Create a temporary directory for the test
-		const uuid = crypto.randomUUID();
-		const tmpDir = path.join(os.tmpdir(), `worker-core-cloudflare-test-${uuid}`);
-		await fs.mkdir(tmpDir, { recursive: true });
-
-		// Create package.json with workspace dependencies
-		const packageJson = {
-			name: "rivetkit-test",
-			private: true,
-			version: "1.0.0",
-			type: "module",
-			scripts: {
-				start: `wrangler dev --port ${port} --inspector-port ${inspectorPort} --local`,
-			},
-			dependencies: {
-				wrangler: "4.8.0",
-				"@rivetkit/cloudflare-workers": "workspace:*",
-				"rivetkit": "workspace:*",
-			},
-			packageManager:
-				"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
-		};
-		await fs.writeFile(
-			path.join(tmpDir, "package.json"),
-			JSON.stringify(packageJson, null, 2),
-		);
-
-		// Disable PnP
-		const yarnPnp = "nodeLinker: node-modules";
-		await fs.writeFile(path.join(tmpDir, ".yarnrc.yml"), yarnPnp);
-
-		// Get the current workspace root path and link the workspace
-		const workspaceRoot = path.resolve(__dirname, "../../../..");
-		await execPromise(`yarn link -A ${workspaceRoot}`, { cwd: tmpDir });
-
-		// Install deps
-		await execPromise("yarn install", { cwd: tmpDir });
-
-		// Create a wrangler.json file
-		const wranglerConfig = {
-			name: "rivetkit-test",
-			main: "src/index.ts",
-			compatibility_date: "2025-01-29",
-			compatibility_flags: ["nodejs_compat"],
-			dev: {
-				port,
-			},
-			migrations: [
-				{
-					new_classes: ["WorkerHandler"],
-					tag: "v1",
-				},
-			],
-			durable_objects: {
-				bindings: [
-					{
-						class_name: "WorkerHandler",
-						name: "WORKER_DO",
-					},
-				],
-			},
-			kv_namespaces: [
-				{
-					binding: "WORKER_KV",
-					id: "test", // Will be replaced with a mock in dev mode
-				},
-			],
-			observability: {
-				enabled: true,
-			},
-		};
-		await fs.writeFile(
-			path.join(tmpDir, "wrangler.json"),
-			JSON.stringify(wranglerConfig, null, 2),
-		);
-
-		// Create src directory
-		const srcDir = path.join(tmpDir, "src");
-		await fs.mkdir(srcDir, { recursive: true });
-
-		// Write the index.ts file based on the app path
-		const indexContent = `import { createHandler } from "@rivetkit/cloudflare-workers";
-import { app } from "${appPath.replace(/\.ts$/, "")}";
-
-// Create handlers for Cloudflare Workers
-const { handler, WorkerHandler } = createHandler(app);
-
-// Export the handlers for Cloudflare
-export { handler as default, WorkerHandler };
-`;
-		await fs.writeFile(path.join(srcDir, "index.ts"), indexContent);
-
 		// Start wrangler dev
-		const wranglerProcess = spawn("yarn", ["start"], {
-			cwd: tmpDir,
-			stdio: "pipe",
-		});
+		const wranglerProcess = spawn(
+			"yarn",
+			[
+				"start",
+				"src/index.ts",
+				"--port",
+				`${port}`,
+				"--inspector-port",
+				`${inspectorPort}`,
+				"--persist-to",
+				`/tmp/workers-test-${crypto.randomUUID()}`,
+			],
+			{
+				cwd: projectDir,
+				stdio: "pipe",
+			},
+		);
 
 		// Wait for wrangler to start
 		await new Promise<void>((resolve, reject) => {
@@ -165,10 +94,105 @@ export { handler as default, WorkerHandler };
 			async cleanup() {
 				// Shut down wrangler process
 				wranglerProcess.kill();
-
-				// Clean up temporary directory
-				await fs.rm(tmpDir, { recursive: true, force: true });
 			},
 		};
 	},
 });
+
+let setupProjectOnce: Promise<string> | undefined = undefined;
+
+async function setupProject(projectPath: string) {
+	// Create a temporary directory for the test
+	const uuid = crypto.randomUUID();
+	const tmpDir = path.join(os.tmpdir(), `worker-core-cloudflare-test-${uuid}`);
+	await fs.mkdir(tmpDir, { recursive: true });
+
+	// Create package.json with workspace dependencies
+	const packageJson = {
+		name: "rivetkit-test",
+		private: true,
+		version: "1.0.0",
+		type: "module",
+		scripts: {
+			start: "wrangler dev",
+		},
+		dependencies: {
+			wrangler: "4.8.0",
+			"@rivetkit/cloudflare-workers": "workspace:*",
+			rivetkit: "workspace:*",
+		},
+		packageManager:
+			"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
+	};
+	await fs.writeFile(
+		path.join(tmpDir, "package.json"),
+		JSON.stringify(packageJson, null, 2),
+	);
+
+	// Disable PnP
+	const yarnPnp = "nodeLinker: node-modules";
+	await fs.writeFile(path.join(tmpDir, ".yarnrc.yml"), yarnPnp);
+
+	// Get the current workspace root path and link the workspace
+	const workspaceRoot = path.resolve(__dirname, "../../../..");
+	await execPromise(`yarn link -A ${workspaceRoot}`, { cwd: tmpDir });
+
+	// Install deps
+	await execPromise("yarn install", { cwd: tmpDir });
+
+	// Create a wrangler.json file
+	const wranglerConfig = {
+		name: "rivetkit-test",
+		compatibility_date: "2025-01-29",
+		compatibility_flags: ["nodejs_compat"],
+		migrations: [
+			{
+				new_classes: ["WorkerHandler"],
+				tag: "v1",
+			},
+		],
+		durable_objects: {
+			bindings: [
+				{
+					class_name: "WorkerHandler",
+					name: "WORKER_DO",
+				},
+			],
+		},
+		kv_namespaces: [
+			{
+				binding: "WORKER_KV",
+				id: "test", // Will be replaced with a mock in dev mode
+			},
+		],
+		observability: {
+			enabled: true,
+		},
+	};
+	await fs.writeFile(
+		path.join(tmpDir, "wrangler.json"),
+		JSON.stringify(wranglerConfig, null, 2),
+	);
+
+	// Copy project to test directory
+	const projectDestDir = path.join(tmpDir, "src", "workers");
+	await fs.cp(projectPath, projectDestDir, { recursive: true });
+
+	// Write script
+	const indexContent = `import { createHandler } from "@rivetkit/cloudflare-workers";
+import { app } from "./workers/app";
+
+// TODO: Find a cleaner way of flagging an app as test mode (ideally not in the config itself)
+// Force enable test
+app.config.test.enabled = true;
+
+// Create handlers for Cloudflare Workers
+const { handler, WorkerHandler } = createHandler(app);
+
+// Export the handlers for Cloudflare
+export { handler as default, WorkerHandler };
+`;
+	await fs.writeFile(path.join(tmpDir, "src/index.ts"), indexContent);
+
+	return tmpDir;
+}

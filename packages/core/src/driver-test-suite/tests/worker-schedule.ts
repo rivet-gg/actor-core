@@ -1,10 +1,6 @@
 import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest, waitFor } from "../utils";
-import {
-  SCHEDULED_APP_PATH,
-  type ScheduledApp,
-} from "../test-apps";
 
 export function runWorkerScheduleTests(
   driverTestConfig: DriverTestConfig
@@ -12,10 +8,10 @@ export function runWorkerScheduleTests(
   describe("Worker Schedule Tests", () => {
     describe("Scheduled Alarms", () => {
       test("executes c.schedule.at() with specific timestamp", async (c) => {
-        const { client } = await setupDriverTest<ScheduledApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          SCHEDULED_APP_PATH,
+          
         );
 
         // Create instance
@@ -37,10 +33,10 @@ export function runWorkerScheduleTests(
       });
 
       test("executes c.schedule.after() with delay", async (c) => {
-        const { client } = await setupDriverTest<ScheduledApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          SCHEDULED_APP_PATH,
+          
         );
 
         // Create instance
@@ -61,10 +57,10 @@ export function runWorkerScheduleTests(
       });
 
       test("scheduled tasks persist across worker restarts", async (c) => {
-        const { client } = await setupDriverTest<ScheduledApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          SCHEDULED_APP_PATH,
+          
         );
 
         // Create instance and schedule
@@ -90,10 +86,10 @@ export function runWorkerScheduleTests(
       });
 
       test("multiple scheduled tasks execute in order", async (c) => {
-        const { client } = await setupDriverTest<ScheduledApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          SCHEDULED_APP_PATH,
+          
         );
 
         // Create instance

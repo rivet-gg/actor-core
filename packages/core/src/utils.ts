@@ -1,5 +1,6 @@
 export { assertUnreachable } from "./common/utils";
 export { stringifyError } from "@/common/utils";
+import { Context as HonoContext, Handler as HonoHandler } from "hono";
 
 import pkgJson from "../package.json" with { type: "json" };
 
@@ -24,3 +25,7 @@ export function httpUserAgent(): string {
 
 	return userAgent;
 }
+
+export type UpgradeWebSocket = (
+	createEvents: (c: HonoContext) => any,
+) => HonoHandler;

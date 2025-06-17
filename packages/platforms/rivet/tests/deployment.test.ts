@@ -1,8 +1,10 @@
 import { describe, test, expect, beforeAll, afterAll } from "vitest";
+import os from "node:os";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { deployToRivet } from "./rivet-deploy";
+import { randomUUID } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,20 +34,7 @@ export type App = typeof app;
 `;
 
 test("Rivet deployment tests", async () => {
-	// Create a temporary path for the counter worker
-	const tempFilePath = path.join(
-		__dirname,
-		"../../../..",
-		"target",
-		"temp-counter-app.ts",
-	);
-
-	// Ensure target directory exists
-	await fs.mkdir(path.dirname(tempFilePath), { recursive: true });
-
-	// Write the counter worker file
+	const tempFilePath = path.join(os.tmpdir(), `app-${randomUUID()}`);
 	await fs.writeFile(tempFilePath, COUNTER_WORKER);
-
-	// Run the deployment
-	const result = await deployToRivet(tempFilePath, true);
+	await deployToRivet("test-app", tempFilePath, true);
 });

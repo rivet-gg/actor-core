@@ -1,6 +1,6 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
-const counterWithParams = worker({
+export const counterWithParams = worker({
 	state: { count: 0, initializers: [] as string[] },
 	createConnState: (c, { params }: { params: { name?: string } }) => {
 		return {
@@ -26,8 +26,3 @@ const counterWithParams = worker({
 	},
 });
 
-export const app = setup({
-	workers: { counter: counterWithParams },
-});
-
-export type App = typeof app;

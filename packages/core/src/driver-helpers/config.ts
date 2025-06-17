@@ -13,13 +13,12 @@ import type {
 import type { CoordinateDriver } from "@/topologies/coordinate/driver";
 import type { ManagerDriver } from "@/manager/driver";
 import type { WorkerDriver } from "@/worker/driver";
+import { UpgradeWebSocket } from "@/utils";
 
 export const TopologySchema = z.enum(["standalone", "partition", "coordinate"]);
 export type Topology = z.infer<typeof TopologySchema>;
 
-export type GetUpgradeWebSocket = (
-	app: Hono,
-) => (createEvents: (c: HonoContext) => any) => HonoHandler;
+export type GetUpgradeWebSocket = (app: Hono) => UpgradeWebSocket;
 
 /** Base config used for the worker config across all platforms. */
 export const DriverConfigSchema = z.object({

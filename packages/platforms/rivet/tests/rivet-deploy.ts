@@ -5,75 +5,216 @@ import { spawn, exec } from "node:child_process";
 import crypto from "node:crypto";
 import { promisify } from "node:util";
 import invariant from "invariant";
-import type { RivetClientConfig } from "../src/rivet-client";
+import { RivetClient } from "@rivet-gg/api";
+import { RivetClientConfig } from "../src/rivet-client";
 
 const execPromise = promisify(exec);
-//const RIVET_API_ENDPOINT = "https://api.rivet.gg";
-const RIVET_API_ENDPOINT = "http://localhost:8080";
-const ENV = "default";
-
-const rivetCloudToken = process.env.RIVET_CLOUD_TOKEN;
+const apiEndpoint = process.env.RIVET_ENDPOINT!;
+invariant(apiEndpoint, "missing RIVET_ENDPOINT");
+const rivetCloudToken = process.env.RIVET_CLOUD_TOKEN!;
 invariant(rivetCloudToken, "missing RIVET_CLOUD_TOKEN");
-export const RIVET_CLIENT_CONFIG: RivetClientConfig = {
-	endpoint: RIVET_API_ENDPOINT,
+const project = process.env.RIVET_PROJECT!;
+invariant(project, "missing RIVET_PROJECT");
+const environment = process.env.RIVET_ENVIRONMENT!;
+invariant(environment, "missing RIVET_ENVIRONMENT");
+
+export const rivetClientConfig: RivetClientConfig = {
+	endpoint: apiEndpoint,
 	token: rivetCloudToken,
+	project,
+	environment,
 };
+
+const rivetClient = new RivetClient({
+	environment: apiEndpoint,
+	token: rivetCloudToken,
+});
+
+/**
+ * Helper function to write a file to the filesystem
+ */
+async function writeFile(
+	dirPath: string,
+	filename: string,
+	content: string | object,
+): Promise<void> {
+	const filePath = path.join(dirPath, filename);
+	const fileContent =
+		typeof content === "string" ? content : JSON.stringify(content, null, 2);
+
+	console.log(`Writing ${filename}`);
+	await fs.writeFile(filePath, fileContent);
+}
+
+/**
+ * Pack a package using yarn pack and return the path to the packed tarball
+ */
+async function packPackage(
+	packageDir: string,
+	tmpDir: string,
+	packageName: string,
+): Promise<string> {
+	console.log(`Packing package from ${packageDir}...`);
+	// Generate a unique filename
+	const outputFileName = `${packageName}-${crypto.randomUUID()}.tgz`;
+	const outputPath = path.join(tmpDir, outputFileName);
+
+	// Run yarn pack with specific output path
+	await execPromise(`yarn pack --install-if-needed --out ${outputPath}`, {
+		cwd: packageDir,
+	});
+	console.log(`Generated tarball at ${outputPath}`);
+	return outputFileName;
+}
 
 /**
  * Deploy an app to Rivet and return the endpoint
  */
-export async function deployToRivet(appPath: string, deployManager: boolean) {
+export async function deployToRivet(projectPath: string) {
 	console.log("=== START deployToRivet ===");
-	console.log(`Deploying app from path: ${appPath}`);
+	console.log(`Deploying app from path: ${projectPath}`);
 
 	// Create a temporary directory for the test
 	const uuid = crypto.randomUUID();
-	const appName = `worker-core-test-${uuid}`;
-	const tmpDir = path.join(os.tmpdir(), appName);
+	const tmpDirName = `worker-core-test-${uuid}`;
+	const tmpDir = path.join(os.tmpdir(), tmpDirName);
 	console.log(`Creating temp directory: ${tmpDir}`);
 	await fs.mkdir(tmpDir, { recursive: true });
 
-	// Create package.json with workspace dependencies
+	// Get the workspace root and package paths
+	const workspaceRoot = path.resolve(__dirname, "../../../..");
+	const rivetPlatformPath = path.resolve(__dirname, "../");
+	const rivetkitCorePath = path.resolve(workspaceRoot, "packages/core");
+
+	// Pack the required packages directly to the temp directory
+	console.log("Packing required packages...");
+	const rivetPlatformFilename = await packPackage(
+		rivetPlatformPath,
+		tmpDir,
+		"rivetkit-rivet",
+	);
+	const rivetkitFilename = await packPackage(
+		rivetkitCorePath,
+		tmpDir,
+		"rivetkit",
+	);
+
+	// Create package.json with file dependencies
 	const packageJson = {
 		name: "rivetkit-test",
 		private: true,
 		version: "1.0.0",
-		type: "module",
 		scripts: {
-			deploy: "rivetkit deploy rivet app.ts --env prod",
+			build: "tsc",
 		},
 		dependencies: {
-			"@rivetkit/rivet": "workspace:*",
-			"rivetkit": "workspace:*",
+			"@rivetkit/rivet": `file:./${rivetPlatformFilename}`,
+			rivetkit: `file:./${rivetkitFilename}`,
+		},
+		devDependencies: {
+			typescript: "^5.3.0",
 		},
 		packageManager:
 			"yarn@4.7.0+sha512.5a0afa1d4c1d844b3447ee3319633797bcd6385d9a44be07993ae52ff4facabccafb4af5dcd1c2f9a94ac113e5e9ff56f6130431905884414229e284e37bb7c9",
 	};
-	console.log("Writing package.json");
-	await fs.writeFile(
-		path.join(tmpDir, "package.json"),
-		JSON.stringify(packageJson, null, 2),
-	);
+	await writeFile(tmpDir, "package.json", packageJson);
+
+	// Create rivet.json with workspace dependencies
+	const rivetJson = {
+		functions: {
+			manager: {
+				tags: { role: "manager", framework: "rivetkit" },
+				dockerfile: "Dockerfile",
+				runtime: {
+					environment: {
+						RIVET_API_ENDPOINT: apiEndpoint,
+						RIVET_SERVICE_TOKEN: rivetCloudToken, // TODO: This should be a service token, but both work
+						RIVET_PROJECT: project,
+						RIVET_ENVIRONMENT: environment,
+						_LOG_LEVEL: "DEBUG",
+						_WORKER_LOG_LEVEL: "DEBUG",
+					},
+				},
+				resources: {
+					cpu: 250,
+					memory: 256,
+				},
+			},
+		},
+		actors: {
+			worker: {
+				tags: { role: "worker", framework: "rivetkit" },
+				script: "src/worker.ts",
+			},
+		},
+	};
+	await writeFile(tmpDir, "rivet.json", rivetJson);
+
+	// Create Dockerfile
+	const dockerfile = `
+FROM node:22-alpine AS builder
+
+RUN npm i -g corepack && corepack enable
+
+WORKDIR /app
+
+COPY package.json .yarnrc.yml ./
+COPY *.tgz ./
+
+RUN --mount=type=cache,target=/app/.yarn/cache \
+    yarn install
+
+COPY . .
+# HACK: Remove worker.ts bc file is invalid in Node
+RUN rm src/worker.ts && yarn build
+
+RUN --mount=type=cache,target=/app/.yarn/cache \
+    yarn workspaces focus --production
+
+FROM node:22-alpine AS runtime
+
+RUN addgroup -g 1001 -S rivet && \
+    adduser -S rivet -u 1001 -G rivet
+
+WORKDIR /app
+
+COPY --from=builder --chown=rivet:rivet /app/dist ./dist
+COPY --from=builder --chown=rivet:rivet /app/node_modules ./node_modules
+COPY --from=builder --chown=rivet:rivet /app/package.json ./
+
+USER rivet
+
+CMD ["node", "dist/server.js"]
+`;
+	await writeFile(tmpDir, "Dockerfile", dockerfile);
+
+	// Create .dockerignore
+	const dockerignore = `
+node_modules
+`;
+	await writeFile(tmpDir, ".dockerignore", dockerignore);
 
 	// Disable PnP
 	const yarnPnp = "nodeLinker: node-modules";
-	console.log("Configuring Yarn nodeLinker");
-	await fs.writeFile(path.join(tmpDir, ".yarnrc.yml"), yarnPnp);
+	await writeFile(tmpDir, ".yarnrc.yml", yarnPnp);
 
-	// Get the current workspace root path and link the workspace
-	const workspaceRoot = path.resolve(__dirname, "../../../..");
-	console.log(`Linking workspace from: ${workspaceRoot}`);
-
-	try {
-		console.log("Running yarn link command...");
-		const linkOutput = await execPromise(`yarn link -A ${workspaceRoot}`, {
-			cwd: tmpDir,
-		});
-		console.log("Yarn link output:", linkOutput.stdout);
-	} catch (error) {
-		console.error("Error linking workspace:", error);
-		throw error;
-	}
+	// Create tsconfig.json
+	const tsconfig = {
+		compilerOptions: {
+			target: "ESNext",
+			module: "NodeNext",
+			moduleResolution: "NodeNext",
+			esModuleInterop: true,
+			strict: true,
+			skipLibCheck: true,
+			forceConsistentCasingInFileNames: true,
+			outDir: "dist",
+			sourceMap: true,
+			declaration: true,
+		},
+		include: ["src/**/*.ts"],
+	};
+	await writeFile(tmpDir, "tsconfig.json", tsconfig);
 
 	// Install deps
 	console.log("Installing dependencies...");
@@ -85,36 +226,47 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 		throw error;
 	}
 
-	// Create app.ts file based on the app path
-	const appTsContent = `export { app } from "${appPath.replace(/\.ts$/, "")}"`;
-	console.log(`Creating app.ts with content: ${appTsContent}`);
-	await fs.writeFile(path.join(tmpDir, "app.ts"), appTsContent);
+	// Copy project to test directory
+	console.log(`Copying project from ${projectPath} to ${tmpDir}/src/workers`);
+	const projectDestDir = path.join(tmpDir, "src", "workers");
+	await fs.cp(projectPath, projectDestDir, { recursive: true });
+
+	const serverTsContent = `import { startManager } from "@rivetkit/rivet/manager";
+import { app } from "./workers/app";
+
+// TODO: Find a cleaner way of flagging an app as test mode (ideally not in the config itself)
+// Force enable test
+app.config.test.enabled = true;
+
+startManager(app);
+`;
+	await writeFile(tmpDir, "src/server.ts", serverTsContent);
+
+	const workerTsContent = `import { createWorkerHandler } from "@rivetkit/rivet/worker";
+import { app } from "./workers/app";
+
+// TODO: Find a cleaner way of flagging an app as test mode (ideally not in the config itself)
+// Force enable test
+app.config.test.enabled = true;
+
+export default createWorkerHandler(app);`;
+	await writeFile(tmpDir, "src/worker.ts", workerTsContent);
 
 	// Build and deploy to Rivet using worker-core CLI
 	console.log("Building and deploying to Rivet...");
 
 	if (!process.env._RIVET_SKIP_DEPLOY) {
-		// Deploy using the worker-core CLI
-		console.log("Spawning rivetkit/cli deploy command...");
+		// Deploy using the rivet CLI
+		console.log("Spawning rivet deploy command...");
 		const deployProcess = spawn(
-			"npx",
-			[
-				"@rivetkit/cli",
-				"deploy",
-				"rivet",
-				"app.ts",
-				"--env",
-				ENV,
-				...(deployManager ? [] : ["--skip-manager"]),
-			],
+			"rivet",
+			["deploy", "--environment", environment, "--non-interactive"],
 			{
 				cwd: tmpDir,
 				env: {
 					...process.env,
-					RIVET_ENDPOINT: RIVET_API_ENDPOINT,
+					RIVET_ENDPOINT: apiEndpoint,
 					RIVET_CLOUD_TOKEN: rivetCloudToken,
-					_RIVET_MANAGER_LOG_LEVEL: "DEBUG",
-					_RIVET_WORKER_LOG_LEVEL: "DEBUG",
 					//CI: "1",
 				},
 				stdio: "inherit", // Stream output directly to console
@@ -124,7 +276,6 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 		console.log("Waiting for deploy process to complete...");
 		await new Promise((resolve, reject) => {
 			deployProcess.on("exit", (code) => {
-				console.log(`Deploy process exited with code: ${code}`);
 				if (code === 0) {
 					resolve(undefined);
 				} else {
@@ -142,17 +293,31 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 	// Get the endpoint URL
 	console.log("Getting Rivet endpoint...");
 
+	// // HACK: We have to get the endpoint of the actor directly since we can't route functions with hostnames on localhost yet
+	// const { actors } = await rivetClient.actors.list({
+	// 	tagsJson: JSON.stringify({
+	// 		type: "function",
+	// 		function: "manager",
+	// 		appName,
+	// 	}),
+	// 	project,
+	// 	environment,
+	// });
+	// const managerActor = actors[0];
+	// invariant(managerActor, "missing manager actor");
+	// const endpoint = managerActor.network.ports.http?.url;
+	// invariant(endpoint, "missing manager actor endpoint");
+
+	// TODO: This doesn't work in local dev since we can't route functions on localhost yet
 	// Get the endpoint using the CLI endpoint command
-	console.log("Spawning rivetkit/cli endpoint command...");
+	console.log("Spawning rivet function endpoint command...");
 	const endpointProcess = spawn(
-		"npx",
-		["@rivetkit/cli", "endpoint", "rivet", "--env", ENV, "--plain"],
+		"rivet",
+		["function", "endpoint", "--environment", environment, "manager"],
 		{
 			cwd: tmpDir,
 			env: {
 				...process.env,
-				RIVET_ENDPOINT: RIVET_API_ENDPOINT,
-				RIVET_CLOUD_TOKEN: rivetCloudToken,
 				CI: "1",
 			},
 			stdio: ["inherit", "pipe", "inherit"], // Capture stdout
@@ -192,9 +357,9 @@ export async function deployToRivet(appPath: string, deployManager: boolean) {
 	const endpoint = lines[lines.length - 1];
 	invariant(endpoint, "endpoint not found");
 
+	console.log("Manager endpoint", endpoint);
+
 	console.log("=== END deployToRivet ===");
 
-	return {
-		endpoint,
-	};
+	return endpoint;
 }

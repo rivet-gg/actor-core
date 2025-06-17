@@ -1,6 +1,6 @@
 import { test, expect } from "vitest";
 import { setupTest } from "rivetkit/test";
-import { app } from "../actors/app";
+import { app } from "../src/workers/app";
 
 test("it should count", async (test) => {
 	const { client } = await setupTest(test, app);

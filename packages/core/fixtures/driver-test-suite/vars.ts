@@ -1,7 +1,7 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
 // Worker with static vars
-const staticVarWorker = worker({
+export const staticVarWorker = worker({
 	state: { value: 0 },
 	connState: { hello: "world" },
 	vars: { counter: 42, name: "test-worker" },
@@ -16,7 +16,7 @@ const staticVarWorker = worker({
 });
 
 // Worker with nested vars
-const nestedVarWorker = worker({
+export const nestedVarWorker = worker({
 	state: { value: 0 },
 	connState: { hello: "world" },
 	vars: {
@@ -42,7 +42,7 @@ const nestedVarWorker = worker({
 });
 
 // Worker with dynamic vars
-const dynamicVarWorker = worker({
+export const dynamicVarWorker = worker({
 	state: { value: 0 },
 	connState: { hello: "world" },
 	createVars: () => {
@@ -59,7 +59,7 @@ const dynamicVarWorker = worker({
 });
 
 // Worker with unique vars per instance
-const uniqueVarWorker = worker({
+export const uniqueVarWorker = worker({
 	state: { value: 0 },
 	connState: { hello: "world" },
 	createVars: () => {
@@ -75,7 +75,7 @@ const uniqueVarWorker = worker({
 });
 
 // Worker that uses driver context
-const driverCtxWorker = worker({
+export const driverCtxWorker = worker({
 	state: { value: 0 },
 	connState: { hello: "world" },
 	createVars: (c, driverCtx: any) => {
@@ -90,15 +90,4 @@ const driverCtxWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: {
-		staticVarWorker,
-		nestedVarWorker,
-		dynamicVarWorker,
-		uniqueVarWorker,
-		driverCtxWorker,
-	},
-});
-
-export type App = typeof app;
 

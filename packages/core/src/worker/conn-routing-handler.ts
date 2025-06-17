@@ -1,3 +1,5 @@
+import { UpgradeWebSocket } from "@/utils";
+import { Encoding } from "./protocol/serde";
 import type { ConnectionHandlers as ConnHandlers } from "./router-endpoints";
 import type { Context as HonoContext, HonoRequest } from "hono";
 
@@ -35,7 +37,8 @@ export type SendRequestHandler = (
 
 export type OpenWebSocketHandler = (
 	workerId: string,
-	meta?: unknown,
+	meta: unknown | undefined,
+	encodingKind: Encoding,
 ) => Promise<WebSocket>;
 
 export type ProxyRequestHandler = (
@@ -50,4 +53,5 @@ export type ProxyWebSocketHandler = (
 	path: string,
 	workerId: string,
 	meta?: unknown,
+	upgradeWebSocket?: UpgradeWebSocket,
 ) => Promise<Response>;

@@ -1,16 +1,15 @@
 import { describe, test, expect } from "vitest";
 import type { DriverTestConfig } from "../mod";
 import { setupDriverTest } from "../utils";
-import { VARS_APP_PATH, type VarsApp } from "../test-apps";
 
 export function runWorkerVarsTests(driverTestConfig: DriverTestConfig) {
   describe("Worker Variables", () => {
     describe("Static vars", () => {
       test("should provide access to static vars", async (c) => {
-        const { client } = await setupDriverTest<VarsApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          VARS_APP_PATH,
+          
         );
 
         const instance = client.staticVarWorker.getOrCreate();
@@ -27,10 +26,10 @@ export function runWorkerVarsTests(driverTestConfig: DriverTestConfig) {
 
     describe("Deep cloning of static vars", () => {
       test("should deep clone static vars between worker instances", async (c) => {
-        const { client } = await setupDriverTest<VarsApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          VARS_APP_PATH,
+          
         );
 
         // Create two separate instances
@@ -53,10 +52,10 @@ export function runWorkerVarsTests(driverTestConfig: DriverTestConfig) {
 
     describe("createVars", () => {
       test("should support dynamic vars creation", async (c) => {
-        const { client } = await setupDriverTest<VarsApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          VARS_APP_PATH,
+          
         );
 
         // Create an instance
@@ -72,10 +71,10 @@ export function runWorkerVarsTests(driverTestConfig: DriverTestConfig) {
       });
 
       test("should create different vars for different instances", async (c) => {
-        const { client } = await setupDriverTest<VarsApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          VARS_APP_PATH,
+          
         );
 
         // Create two separate instances
@@ -93,10 +92,10 @@ export function runWorkerVarsTests(driverTestConfig: DriverTestConfig) {
 
     describe("Driver Context", () => {
       test("should provide access to driver context", async (c) => {
-        const { client } = await setupDriverTest<VarsApp>(
+        const { client } = await setupDriverTest(
           c,
           driverTestConfig,
-          VARS_APP_PATH,
+          
         );
 
         // Create an instance

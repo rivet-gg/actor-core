@@ -7,6 +7,8 @@ import {
 	CloudflareDurableObjectGlobalState,
 	CloudflareWorkersWorkerDriver,
 } from "./worker-driver";
+import { Bindings, CF_AMBIENT_ENV } from "./handler";
+import { ExecutionContext } from "hono";
 
 export const KEYS = {
 	INITIALIZED: "rivetkit:initialized",
@@ -32,8 +34,8 @@ interface InitializedData {
 }
 
 export type DurableObjectConstructor = new (
-	...args: ConstructorParameters<typeof DurableObject>
-) => DurableObject;
+	...args: ConstructorParameters<typeof DurableObject<Bindings>>
+) => DurableObject<Bindings>;
 
 interface LoadedWorker {
 	workerTopology: PartitionTopologyWorker;
@@ -52,7 +54,7 @@ export function createWorkerDurableObject(
 	 * 3. Start service requests
 	 */
 	return class WorkerHandler
-		extends DurableObject
+		extends DurableObject<Bindings>
 		implements WorkerHandlerInterface
 	{
 		#initialized?: InitializedData;
@@ -61,6 +63,8 @@ export function createWorkerDurableObject(
 		#worker?: LoadedWorker;
 
 		async #loadWorker(): Promise<LoadedWorker> {
+			// This is always called from another context using CF_AMBIENT_ENV
+
 			// Wait for init
 			if (!this.#initialized) {
 				// Wait for init
@@ -131,31 +135,51 @@ export function createWorkerDurableObject(
 		async initialize(req: WorkerInitRequest) {
 			// TODO: Need to add this to a core promise that needs to be resolved before start
 
-			await this.ctx.storage.put({
-				[KEYS.INITIALIZED]: true,
-				[KEYS.NAME]: req.name,
-				[KEYS.KEY]: req.key,
-				[KEYS.INPUT]: req.input,
+			return await CF_AMBIENT_ENV.run(this.env, async () => {
+				await this.ctx.storage.put({
+					[KEYS.INITIALIZED]: true,
+					[KEYS.NAME]: req.name,
+					[KEYS.KEY]: req.key,
+					[KEYS.INPUT]: req.input,
+				});
+				this.#initialized = {
+					name: req.name,
+					key: req.key,
+				};
+
+				logger().debug("initialized worker", { key: req.key });
+
+				// Preemptively worker so the lifecycle hooks are called
+				await this.#loadWorker();
 			});
-			this.#initialized = {
-				name: req.name,
-				key: req.key,
-			};
-
-			logger().debug("initialized worker", { key: req.key });
-
-			// Preemptively worker so the lifecycle hooks are called
-			await this.#loadWorker();
 		}
 
 		async fetch(request: Request): Promise<Response> {
-			const { workerTopology } = await this.#loadWorker();
-			return await workerTopology.router.fetch(request);
+			return await CF_AMBIENT_ENV.run(this.env, async () => {
+				const { workerTopology } = await this.#loadWorker();
+
+				const ctx = this.ctx;
+				return await workerTopology.router.fetch(
+					request,
+					this.env,
+					// Implement execution context so we can wait on requests
+					{
+						waitUntil(promise: Promise<unknown>) {
+							ctx.waitUntil(promise);
+						},
+						passThroughOnException() {
+							// Do nothing
+						},
+					} satisfies ExecutionContext,
+				);
+			});
 		}
 
 		async alarm(): Promise<void> {
-			const { workerTopology } = await this.#loadWorker();
-			await workerTopology.worker.onAlarm();
+			return await CF_AMBIENT_ENV.run(this.env, async () => {
+				const { workerTopology } = await this.#loadWorker();
+				await workerTopology.worker.onAlarm();
+			});
 		}
 	};
 }

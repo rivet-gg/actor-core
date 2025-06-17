@@ -920,6 +920,9 @@ export class WorkerInstance<S, CP, CS, V> {
 				isPromise: output instanceof Promise,
 			});
 
+			// This output *might* reference a part of the state (using onChange), but
+			// that's OK since this value always gets serialized and sent over the
+			// network.
 			return output;
 		} catch (error) {
 			if (error instanceof DeadlineError) {

@@ -1,37 +1,41 @@
-import type { WorkerCoreApp } from "@/mod";
 import { type TestContext, vi } from "vitest";
 import { createClient, type Client } from "@/client/mod";
 import type { DriverTestConfig } from "./mod";
 import { assertUnreachable } from "@/worker/utils";
-import { createInlineClientDriver } from "@/app/inline-client-driver";
 import { createClientWithDriver } from "@/client/client";
+import { createTestInlineClientDriver } from "./test-inline-client-driver";
+import { resolve } from "node:path";
+import type { App } from "../../fixtures/driver-test-suite/app";
 
 // Must use `TestContext` since global hooks do not work when running concurrently
-export async function setupDriverTest<A extends WorkerCoreApp<any>>(
+export async function setupDriverTest(
 	c: TestContext,
 	driverTestConfig: DriverTestConfig,
-	appPath: string,
 ): Promise<{
-	client: Client<A>;
+	client: Client<App>;
 }> {
 	if (!driverTestConfig.useRealTimers) {
 		vi.useFakeTimers();
 	}
 
 	// Build drivers
-	const { endpoint, inlineClientDriver, cleanup } =
-		await driverTestConfig.start(appPath);
+	const projectPath = resolve(__dirname, "../../fixtures/driver-test-suite");
+	const { endpoint, cleanup } = await driverTestConfig.start(projectPath);
 	c.onTestFinished(cleanup);
 
-	let client: Client<A>;
+	let client: Client<App>;
 	if (driverTestConfig.clientType === "http") {
 		// Create client
-		client = createClient<A>(endpoint, {
+		client = createClient<App>(endpoint, {
 			transport: driverTestConfig.transport,
 		});
 	} else if (driverTestConfig.clientType === "inline") {
 		// Use inline client from driver
-		client = createClientWithDriver(inlineClientDriver);
+		const clientDriver = createTestInlineClientDriver(
+			endpoint,
+			driverTestConfig.transport ?? "websocket",
+		);
+		client = createClientWithDriver(clientDriver);
 	} else {
 		assertUnreachable(driverTestConfig.clientType);
 	}

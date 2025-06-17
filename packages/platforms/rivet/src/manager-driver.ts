@@ -28,37 +28,39 @@ export class RivetManagerDriver implements ManagerDriver {
 		this.#clientConfig = clientConfig;
 	}
 
-	async getForId({ workerId }: GetForIdInput): Promise<WorkerOutput | undefined> {
+	async getForId({
+		workerId,
+	}: GetForIdInput): Promise<WorkerOutput | undefined> {
 		try {
-			// Get worker
-			const res = await rivetRequest<void, { worker: RivetWorker }>(
+			// Get actor
+			const res = await rivetRequest<void, { actor: RivetActor }>(
 				this.#clientConfig,
 				"GET",
-				`/workers/${encodeURIComponent(workerId)}`,
+				`/actors/${encodeURIComponent(workerId)}`,
 			);
 
 			// Check if worker exists and not destroyed
-			if (res.worker.destroyedAt) {
+			if (res.actor.destroyedAt) {
 				return undefined;
 			}
 
 			// Ensure worker has required tags
-			if (!("name" in res.worker.tags)) {
-				throw new Error(`Worker ${res.worker.id} missing 'name' in tags.`);
+			if (!("name" in res.actor.tags)) {
+				throw new Error(`Worker ${res.actor.id} missing 'name' in tags.`);
 			}
-			if (res.worker.tags.role !== "worker") {
-				throw new Error(`Worker ${res.worker.id} does not have a worker role.`);
+			if (res.actor.tags.role !== "worker") {
+				throw new Error(`Worker ${res.actor.id} does not have a worker role.`);
 			}
-			if (res.worker.tags.framework !== "rivetkit") {
-				throw new Error(`Worker ${res.worker.id} is not an WorkerCore worker.`);
+			if (res.actor.tags.framework !== "rivetkit") {
+				throw new Error(`Worker ${res.actor.id} is not an WorkerCore worker.`);
 			}
 
 			return {
-				workerId: res.worker.id,
-				name: res.worker.tags.name,
-				key: this.#extractKeyFromRivetTags(res.worker.tags),
+				workerId: res.actor.id,
+				name: res.actor.tags.name,
+				key: this.#extractKeyFromRivetTags(res.actor.tags),
 				meta: {
-					endpoint: buildWorkerEndpoint(res.worker),
+					endpoint: buildWorkerEndpoint(res.actor),
 				} satisfies GetWorkerMeta,
 			};
 		} catch (error) {
@@ -74,15 +76,15 @@ export class RivetManagerDriver implements ManagerDriver {
 		// Convert key array to Rivet's tag format
 		const rivetTags = this.#convertKeyToRivetTags(name, key);
 
-		// Query workers with matching tags
-		const { workers } = await rivetRequest<void, { workers: RivetWorker[] }>(
+		// Query actors with matching tags
+		const { actors } = await rivetRequest<void, { actors: RivetActor[] }>(
 			this.#clientConfig,
 			"GET",
-			`/workers?tags_json=${encodeURIComponent(JSON.stringify(rivetTags))}`,
+			`/actors?tags_json=${encodeURIComponent(JSON.stringify(rivetTags))}`,
 		);
 
 		// Filter workers to ensure they're valid
-		const validWorkers = workers.filter((a: RivetWorker) => {
+		const validActors = actors.filter((a: RivetActor) => {
 			// Verify all ports have hostname and port
 			for (const portName in a.network.ports) {
 				const port = a.network.ports[portName];
@@ -91,27 +93,27 @@ export class RivetManagerDriver implements ManagerDriver {
 			return true;
 		});
 
-		if (validWorkers.length === 0) {
+		if (validActors.length === 0) {
 			return undefined;
 		}
 
-		// For consistent results, sort by ID if multiple workers match
-		const worker =
-			validWorkers.length > 1
-				? validWorkers.sort((a, b) => a.id.localeCompare(b.id))[0]
-				: validWorkers[0];
+		// For consistent results, sort by ID if multiple actors match
+		const actor =
+			validActors.length > 1
+				? validActors.sort((a, b) => a.id.localeCompare(b.id))[0]
+				: validActors[0];
 
-		// Ensure worker has required tags
-		if (!("name" in worker.tags)) {
-			throw new Error(`Worker ${worker.id} missing 'name' in tags.`);
+		// Ensure actor has required tags
+		if (!("name" in actor.tags)) {
+			throw new Error(`Worker ${actor.id} missing 'name' in tags.`);
 		}
 
 		return {
-			workerId: worker.id,
-			name: worker.tags.name,
-			key: this.#extractKeyFromRivetTags(worker.tags),
+			workerId: actor.id,
+			name: actor.tags.name,
+			key: this.#extractKeyFromRivetTags(actor.tags),
 			meta: {
-				endpoint: buildWorkerEndpoint(worker),
+				endpoint: buildWorkerEndpoint(actor),
 			} satisfies GetWorkerMeta,
 		};
 	}
@@ -151,7 +153,6 @@ export class RivetManagerDriver implements ManagerDriver {
 		const createRequest = {
 			tags: this.#convertKeyToRivetTags(name, key),
 			build_tags: {
-				name,
 				role: "worker",
 				framework: "rivetkit",
 				current: "true",
@@ -177,19 +178,22 @@ export class RivetManagerDriver implements ManagerDriver {
 			},
 		};
 
-		logger().info("creating worker", { ...createRequest });
+		logger().info("creating actor", { ...createRequest });
 
 		// Create the worker
-		const { worker } = await rivetRequest<
+		const { actor } = await rivetRequest<
 			typeof createRequest,
-			{ worker: RivetWorker }
-		>(this.#clientConfig, "POST", "/workers", createRequest);
+			{ actor: RivetActor }
+		>(this.#clientConfig, "POST", "/actors", createRequest);
 
 		// Initialize the worker
 		try {
-			const endpoint = buildWorkerEndpoint(worker);
+			const endpoint = buildWorkerEndpoint(actor);
 			const url = `${endpoint}/initialize`;
-			logger().debug("initializing worker", { url, input: JSON.stringify(input) });
+			logger().debug("initializing worker", {
+				url,
+				input: JSON.stringify(input),
+			});
 
 			const res = await fetch(url, {
 				method: "POST",
@@ -205,26 +209,26 @@ export class RivetManagerDriver implements ManagerDriver {
 			}
 		} catch (error) {
 			logger().error("failed to initialize worker, destroying worker", {
-				workerId: worker.id,
+				workerId: actor.id,
 				error,
 			});
 
 			// Destroy the worker since it failed to initialize
-			await rivetRequest<typeof createRequest, { worker: RivetWorker }>(
+			await rivetRequest<typeof createRequest, { worker: RivetActor }>(
 				this.#clientConfig,
 				"DELETE",
-				`/workers/${worker.id}`,
+				`/actors/${actor.id}`,
 			);
 
 			throw error;
 		}
 
 		return {
-			workerId: worker.id,
+			workerId: actor.id,
 			name,
-			key: this.#extractKeyFromRivetTags(worker.tags),
+			key: this.#extractKeyFromRivetTags(actor.tags),
 			meta: {
-				endpoint: buildWorkerEndpoint(worker),
+				endpoint: buildWorkerEndpoint(actor),
 			} satisfies GetWorkerMeta,
 		};
 	}
@@ -265,7 +269,7 @@ export class RivetManagerDriver implements ManagerDriver {
 	}
 }
 
-function buildWorkerEndpoint(worker: RivetWorker): string {
+function buildWorkerEndpoint(worker: RivetActor): string {
 	// Fetch port
 	const httpPort = worker.network.ports.http;
 	if (!httpPort) throw new Error("missing http port");
@@ -299,6 +303,6 @@ function buildWorkerEndpoint(worker: RivetWorker): string {
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: will add api types later
-type RivetWorker = any;
+type RivetActor = any;
 // biome-ignore lint/suspicious/noExplicitAny: will add api types later
 type RivetBuild = any;

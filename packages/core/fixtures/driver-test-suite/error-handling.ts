@@ -1,6 +1,6 @@
-import { worker, setup, UserError } from "rivetkit";
+import { worker, UserError } from "rivetkit";
 
-const errorHandlingWorker = worker({
+export const errorHandlingWorker = worker({
 	state: {
 		errorLog: [] as string[],
 	},
@@ -76,7 +76,7 @@ const errorHandlingWorker = worker({
 });
 
 // Worker with custom timeout
-const customTimeoutWorker = worker({
+export const customTimeoutWorker = worker({
 	state: {},
 	actions: {
 		quickAction: async () => {
@@ -95,11 +95,3 @@ const customTimeoutWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: {
-		errorHandlingWorker,
-		customTimeoutWorker,
-	},
-});
-
-export type App = typeof app;

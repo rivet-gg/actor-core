@@ -1,6 +1,6 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
-const lifecycleWorker = worker({
+export const counterWithLifecycle = worker({
 	state: {
 		count: 0,
 		events: [] as string[],
@@ -34,8 +34,3 @@ const lifecycleWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: { counter: lifecycleWorker },
-});
-
-export type App = typeof app;

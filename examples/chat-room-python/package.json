@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npx rivetkit/cli@latest dev actors/app.ts",
+    "dev": "tsx src/server.ts",
     "check-types": "tsc --noEmit",
     "pytest": "pytest tests/test_chat_room.py -v"
   },
@@ -13,6 +13,9 @@
     "rivetkit": "workspace:*",
     "tsx": "^3.12.7",
     "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "@rivetkit/nodejs": "workspace:*"
   },
   "example": {
     "platforms": [

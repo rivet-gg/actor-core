@@ -1,8 +1,8 @@
-import { worker, setup } from "rivetkit";
+import { worker } from "rivetkit";
 
 // Note: For testing only - metadata API will need to be mocked
 // in tests since this is implementation-specific
-const metadataWorker = worker({
+export const metadataWorker = worker({
 	state: {
 		lastMetadata: null as any,
 		workerName: "",
@@ -74,9 +74,4 @@ const metadataWorker = worker({
 	},
 });
 
-export const app = setup({
-	workers: { metadataWorker },
-});
-
-export type App = typeof app;
 
