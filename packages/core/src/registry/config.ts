@@ -43,7 +43,7 @@ export type WorkerPeerConfig = z.infer<typeof WorkerPeerConfigSchema>;
 
 export const WorkersSchema = z.record(
 	z.string(),
-	z.custom<WorkerDefinition<any, any, any, any, any, any, any>>(),
+	z.custom<WorkerDefinition<any, any, any, any, any, any, any, any>>(),
 );
 export type Workers = z.infer<typeof WorkersSchema>;
 
@@ -75,10 +75,11 @@ export const RegistryConfigSchema = z.object({
 	inspector: InspectorConfigSchema.optional().default({ enabled: false }),
 
 	// TODO: Find a better way of passing around the test config
-	/** 
+	/**
 	 * Test configuration.
 	 *
 	 * DO NOT MANUALLY ENABLE. THIS IS USED INTERNALLY.
+	 * @internal
 	 **/
 	test: TestConfigSchema.optional().default({ enabled: false }),
 });

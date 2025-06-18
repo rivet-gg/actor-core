@@ -15,7 +15,7 @@ import { instanceLogger, logger } from "./log";
 import type { ActionContext } from "./action";
 import { DeadlineError, Lock, deadline } from "./utils";
 import { Schedule } from "./schedule";
-import * as wsToClient from "@/worker/protocol/message/to-client";
+import type * as wsToClient from "@/worker/protocol/message/to-client";
 import type * as wsToServer from "@/worker/protocol/message/to-server";
 import { CachedSerializer } from "./protocol/serde";
 import { WorkerInspector } from "@/inspector/worker";
@@ -38,12 +38,28 @@ export interface SaveStateOptions {
 }
 
 /** Worker type alias with all `any` types. Used for `extends` in classes referencing this worker. */
-// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
-export type AnyWorkerInstance = WorkerInstance<any, any, any, any, any, any>;
+export type AnyWorkerInstance = WorkerInstance<
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any,
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any,
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any,
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any,
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any,
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any,
+	// biome-ignore lint/suspicious/noExplicitAny: Needs to be used in `extends`
+	any
+>;
 
 export type ExtractWorkerState<A extends AnyWorkerInstance> =
 	A extends WorkerInstance<
 		infer State,
+		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
+		any,
 		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
 		any,
 		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
@@ -70,6 +86,8 @@ export type ExtractWorkerConnParams<A extends AnyWorkerInstance> =
 		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
 		any,
 		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
+		any,
+		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
 		any
 	>
 		? ConnParams
@@ -87,14 +105,16 @@ export type ExtractWorkerConnState<A extends AnyWorkerInstance> =
 		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
 		any,
 		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
+		any,
+		// biome-ignore lint/suspicious/noExplicitAny: Must be used for `extends`
 		any
 	>
 		? ConnState
 		: never;
 
-export class WorkerInstance<S, CP, CS, V, I, AD> {
+export class WorkerInstance<S, CP, CS, V, I, AD, DB> {
 	// Shared worker context for this instance
-	workerContext: WorkerContext<S, CP, CS, V, I, AD>;
+	workerContext: WorkerContext<S, CP, CS, V, I, AD, DB>;
 	isStopping = false;
 
 	#persistChanged = false;
@@ -117,7 +137,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	#vars?: V;
 
 	#backgroundPromises: Promise<void>[] = [];
-	#config: WorkerConfig<S, CP, CS, V, I, AD>;
+	#config: WorkerConfig<S, CP, CS, V, I, AD, DB>;
 	#connectionDrivers!: ConnDrivers;
 	#workerDriver!: WorkerDriver;
 	#workerId!: string;
@@ -126,10 +146,12 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	#region!: string;
 	#ready = false;
 
-	#connections = new Map<ConnId, Conn<S, CP, CS, V, I, AD>>();
-	#subscriptionIndex = new Map<string, Set<Conn<S, CP, CS, V, I, AD>>>();
+	#connections = new Map<ConnId, Conn<S, CP, CS, V, I, AD, DB>>();
+	#subscriptionIndex = new Map<string, Set<Conn<S, CP, CS, V, I, AD, DB>>>();
 
 	#schedule!: Schedule;
+
+	#db!: DB;
 
 	/**
 	 * Inspector for the worker.
@@ -148,7 +170,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	 *
 	 * @private
 	 */
-	constructor(config: WorkerConfig<S, CP, CS, V, I, AD>) {
+	constructor(config: WorkerConfig<S, CP, CS, V, I, AD, DB>) {
 		this.#config = config;
 		this.workerContext = new WorkerContext(this);
 	}
@@ -181,6 +203,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 			if ("createVars" in this.#config) {
 				const dataOrPromise = this.#config.createVars(
 					this.workerContext as unknown as WorkerContext<
+						undefined,
 						undefined,
 						undefined,
 						undefined,
@@ -496,7 +519,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 			for (const connPersist of this.#persist.c) {
 				// Create connections
 				const driver = this.__getConnDriver(connPersist.d);
-				const conn = new Conn<S, CP, CS, V, I, AD>(
+				const conn = new Conn<S, CP, CS, V, I, AD, DB>(
 					this,
 					connPersist,
 					driver,
@@ -525,6 +548,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 					// Convert state to undefined since state is not defined yet here
 					stateData = await this.#config.createState(
 						this.workerContext as unknown as WorkerContext<
+							undefined,
 							undefined,
 							undefined,
 							undefined,
@@ -562,14 +586,14 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 		}
 	}
 
-	__getConnForId(id: string): Conn<S, CP, CS, V, I, AD> | undefined {
+	__getConnForId(id: string): Conn<S, CP, CS, V, I, AD, DB> | undefined {
 		return this.#connections.get(id);
 	}
 
 	/**
 	 * Removes a connection and cleans up its resources.
 	 */
-	__removeConn(conn: Conn<S, CP, CS, V, I, AD> | undefined) {
+	__removeConn(conn: Conn<S, CP, CS, V, I, AD, DB> | undefined) {
 		if (!conn) {
 			logger().warn("`conn` does not exist");
 			return;
@@ -643,6 +667,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 						undefined,
 						undefined,
 						undefined,
+						undefined,
 						undefined
 					>,
 					onBeforeConnectOpts,
@@ -685,7 +710,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 		driverId: string,
 		driverState: unknown,
 		authData: unknown,
-	): Promise<Conn<S, CP, CS, V, I, AD>> {
+	): Promise<Conn<S, CP, CS, V, I, AD, DB>> {
 		if (this.#connections.has(connectionId)) {
 			throw new Error(`Connection already exists: ${connectionId}`);
 		}
@@ -702,7 +727,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 			a: authData,
 			su: [],
 		};
-		const conn = new Conn<S, CP, CS, V, I, AD>(
+		const conn = new Conn<S, CP, CS, V, I, AD, DB>(
 			this,
 			persist,
 			driver,
@@ -758,7 +783,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	// MARK: Messages
 	async processMessage(
 		message: wsToServer.ToServer,
-		conn: Conn<S, CP, CS, V, I, AD>,
+		conn: Conn<S, CP, CS, V, I, AD, DB>,
 	) {
 		await processMessage(message, this, conn, {
 			onExecuteAction: async (ctx, name, args) => {
@@ -776,7 +801,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	// MARK: Events
 	#addSubscription(
 		eventName: string,
-		connection: Conn<S, CP, CS, V, I, AD>,
+		connection: Conn<S, CP, CS, V, I, AD, DB>,
 		fromPersist: boolean,
 	) {
 		if (connection.subscriptions.has(eventName)) {
@@ -806,7 +831,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 
 	#removeSubscription(
 		eventName: string,
-		connection: Conn<S, CP, CS, V, I, AD>,
+		connection: Conn<S, CP, CS, V, I, AD, DB>,
 		fromRemoveConn: boolean,
 	) {
 		if (!connection.subscriptions.has(eventName)) {
@@ -865,7 +890,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	 * @internal
 	 */
 	async executeAction(
-		ctx: ActionContext<S, CP, CS, V, I, AD>,
+		ctx: ActionContext<S, CP, CS, V, I, AD, DB>,
 		actionName: string,
 		args: unknown[],
 	): Promise<unknown> {
@@ -878,7 +903,6 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 		}
 
 		// Check if the method exists on this object
-		// biome-ignore lint/suspicious/noExplicitAny: action name is dynamic from client
 		const actionFunction = this.#config.actions[actionName];
 		if (typeof actionFunction !== "function") {
 			logger().warn("action not found", { actionName: actionName });
@@ -1009,7 +1033,7 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	/**
 	 * Gets the map of connections.
 	 */
-	get conns(): Map<ConnId, Conn<S, CP, CS, V, I, AD>> {
+	get conns(): Map<ConnId, Conn<S, CP, CS, V, I, AD, DB>> {
 		return this.#connections;
 	}
 
@@ -1021,6 +1045,18 @@ export class WorkerInstance<S, CP, CS, V, I, AD> {
 	get state(): S {
 		this.#validateStateEnabled();
 		return this.#persist.s;
+	}
+
+	/**
+	 * Gets the database.
+	 * @experimental
+	 * @throws {DatabaseNotEnabled} If the database is not enabled.
+	 */
+	get db(): DB {
+		if (!this.#db) {
+			throw new errors.DatabaseNotEnabled();
+		}
+		return this.#db;
 	}
 
 	/**
