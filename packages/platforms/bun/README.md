@@ -1,11 +1,11 @@
-# ActorCore for Bun
+# RivetKit for Bun
 
 _The Stateful Serverless Framework_
 
 ## Resources
 
-- [Bun Quickstart](https://actorcore.org/platforms/bun)
-- [ActorCore Package](http://npmjs.com/actor-core)
+- [Bun Quickstart](https://rivetkit.org/platforms/bun)
+- [RivetKit Package](http://npmjs.com/rivetkit)
 
 ## License
 

@@ -149,7 +149,7 @@ export function createManagerRouter(
 	// GET /
 	app.get("/", (c) => {
 		return c.text(
-			"This is an WorkerCore server.\n\nLearn more at https://workercore.org",
+			"This is an RivetKit server.\n\nLearn more at https://rivetkit.org",
 		);
 	});
 
@@ -548,7 +548,7 @@ export function createManagerRouter(
 		openapi: "3.0.0",
 		info: {
 			version: VERSION,
-			title: "WorkerCore API",
+			title: "RivetKit API",
 		},
 	});
 

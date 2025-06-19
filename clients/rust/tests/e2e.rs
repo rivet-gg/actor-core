@@ -24,15 +24,15 @@ impl MockServer {
             .find(|p| p.join("package.json").exists())
             .expect("Failed to find repo root");
 
-        // Run `yarn build -F actor-core` in the root of this repo
+        // Run `yarn build -F rivetkit` in the root of this repo
         let status = Command::new("yarn")
             .args(["build", "-F", "rivetkit"])
             .current_dir(&repo_root)
             .status()
-            .expect("Failed to build actor-core");
+            .expect("Failed to build rivetkit");
 
         if !status.success() {
-            panic!("Failed to build actor-core");
+            panic!("Failed to build rivetkit");
         }
 
         // Create a temporary directory for the test server
@@ -46,7 +46,7 @@ impl MockServer {
 
         // Define packages to pack
         let packages = [
-            ("rivetkit", repo_root.join("packages/actor-core")),
+            ("rivetkit", repo_root.join("packages/rivetkit")),
             ("nodejs", repo_root.join("packages/platforms/nodejs")),
             ("memory", repo_root.join("packages/drivers/memory")),
             ("file-system", repo_root.join("packages/drivers/file-system")),
@@ -112,7 +112,7 @@ serve(app, { port: PORT, mode: "memory" });
         "tsx": "^3.12.7"
     }}
 }}"#,
-            vendor_dir.join("rivetkit-actor-core.tgz").display(),
+            vendor_dir.join("rivetkit-rivetkit.tgz").display(),
             vendor_dir.join("rivetkit-nodejs.tgz").display(),
             vendor_dir.join("rivetkit-memory.tgz").display(),
             vendor_dir.join("rivetkit-file-system.tgz").display()

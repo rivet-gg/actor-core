@@ -1,6 +1,6 @@
-# ActorCore React
+# RivetKit React
 
-🎭 React integration for [ActorCore](https://actorcore.org/introduction)
+🎭 React integration for [RivetKit](https://rivetkit.org/introduction)
 
 
 ## Installation
@@ -30,7 +30,7 @@ import type { App } from "../counter/src/index";
 import React, { useState } from "react";
 
 // Create a client
-const client = createClient<App>("http://your-actor-core-server.com");
+const client = createClient<App>("http://your-rivetkit-server.com");
 
 // Create React hooks for your actors
 const { useActor, useActorEvent } = createReactActorCore(client);

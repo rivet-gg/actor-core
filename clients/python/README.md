@@ -1,21 +1,21 @@
-# ActorCore Python Client
+# RivetKit Python Client
 
-_The Python client for ActorCore, the Stateful Serverless Framework_
+_The Python client for RivetKit, the Stateful Serverless Framework_
 
-Use this client to connect to ActorCore services from Python applications.
+Use this client to connect to RivetKit services from Python applications.
 
 ## Resources
 
-- [Quickstart](https://actorcore.org/introduction)
-- [Documentation](https://actorcore.org/clients/python)
-- [Examples](https://github.com/rivet-gg/actor-core/tree/main/examples)
+- [Quickstart](https://rivetkit.org/introduction)
+- [Documentation](https://rivetkit.org/clients/python)
+- [Examples](https://github.com/rivet-gg/rivetkit/tree/main/examples)
 
 ## Getting Started
 
 ### Step 1: Installation
 
 ```bash
-pip install python-actor-core-client
+pip install python-rivetkit-client
 ```
 
 ### Step 2: Connect to Actor
@@ -25,7 +25,7 @@ from python_actor_core_client import AsyncClient as ActorClient
 import asyncio
 
 async def main():
-    # Create a client connected to your ActorCore manager
+    # Create a client connected to your RivetKit manager
     client = ActorClient("http://localhost:6420")
 
     # Connect to a chat room actor
@@ -57,8 +57,8 @@ if __name__ == "__main__":
 - Join our [Discord](https://rivet.gg/discord)
 - Follow us on [X](https://x.com/rivet_gg)
 - Follow us on [Bluesky](https://bsky.app/profile/rivet.gg)
-- File bug reports in [GitHub Issues](https://github.com/rivet-gg/actor-core/issues)
-- Post questions & ideas in [GitHub Discussions](https://github.com/rivet-gg/actor-core/discussions)
+- File bug reports in [GitHub Issues](https://github.com/rivet-gg/rivetkit/issues)
+- Post questions & ideas in [GitHub Discussions](https://github.com/rivet-gg/rivetkit/discussions)
 
 ## License
 

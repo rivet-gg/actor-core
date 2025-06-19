@@ -65,11 +65,11 @@ The ngrok URL can be used to configure a Linear webhook.
 
 ##### Starting the Actor Core Server
 
-This starts the ActorCore server that hosts the coding agent:
+This starts the RivetKit server that hosts the coding agent:
 
 ```
 npm run dev
-# Or using the ActorCore CLI
+# Or using the RivetKit CLI
 npx rivetkit/cli dev src/actors/app.ts
 ```
 
@@ -179,7 +179,7 @@ Set the following environment variables:
 
 ## Architecture
 
-The agent is built using the ActorCore framework and consists of:
+The agent is built using the RivetKit framework and consists of:
 
 - **Coding Agent**: Main actor that handles Linear webhook events
 - **GitHub Integration**: API client for branch, PR, and file operations

@@ -10,7 +10,7 @@ import { WorkerAlreadyExists } from "rivetkit/errors";
 import type { MemoryGlobalState } from "./global-state";
 import * as crypto from "node:crypto";
 import { ManagerInspector } from "rivetkit/inspector";
-import type { WorkerCoreApp } from "rivetkit";
+import type { App } from "rivetkit";
 
 export class MemoryManagerDriver implements ManagerDriver {
 	#state: MemoryGlobalState;
@@ -24,7 +24,7 @@ export class MemoryManagerDriver implements ManagerDriver {
 	});
 
 	constructor(
-		private readonly app: WorkerCoreApp<any>,
+		private readonly app: App<any>,
 		state: MemoryGlobalState,
 	) {
 		this.#state = state;

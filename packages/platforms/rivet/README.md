@@ -1,11 +1,11 @@
-# ActorCore for Rivet
+# RivetKit for Rivet
 
 _The Stateful Serverless Framework_
 
 ## Resources
 
-- [Rivet Quickstart](https://actorcore.org/platforms/rivet)
-- [ActorCore Package](http://npmjs.com/actor-core)
+- [Rivet Quickstart](https://rivetkit.org/platforms/rivet)
+- [RivetKit Package](http://npmjs.com/rivetkit)
 
 ## License
 

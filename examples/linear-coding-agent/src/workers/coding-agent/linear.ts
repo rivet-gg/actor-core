@@ -593,7 +593,7 @@ async function createPRForIssue(
 		c.state.github.prInfo = await github.createPullRequest(
 			c,
 			`${title}`, // Just use the issue title
-			`Closes ${issueFriendlyId}\n\nImplements changes requested in Linear issue.\n\n${summary}\n\n*Authored by ActorCore Coding Agent*`, // Include "Closes" keyword
+			`Closes ${issueFriendlyId}\n\nImplements changes requested in Linear issue.\n\n${summary}\n\n*Authored by RivetKit Coding Agent*`, // Include "Closes" keyword
 			c.state.github.branchName,
 			c.state.github.baseBranch,
 		);

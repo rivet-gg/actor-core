@@ -1,29 +1,29 @@
-# ActorCore Development Guide
+# RivetKit Development Guide
 
 ## Project Naming
 
-- Use `ActorCore` when referring to the project in documentation and plain English
-- Use `actor-core` (kebab-case) when referring to the project in code, package names, and imports
+- Use `RivetKit` when referring to the project in documentation and plain English
+- Use `rivetkit` when referring to the project in code, package names, and imports
 
 ## Common Terminology
 
-- **Actor**: A stateful, long-lived entity that processes messages and maintains state
-- **Manager**: Component responsible for creating, routing, and managing actor instances
-- **Remote Procedure Call (RPC)**: Method for an actor to expose callable functions to clients
-- **Event**: Asynchronous message sent from an actor to connected clients
+- **Worker**: A stateful, long-lived entity that processes messages and maintains state
+- **Manager**: Component responsible for creating, routing, and managing worker instances
+- **Remote Procedure Call (RPC)**: Method for an worker to expose callable functions to clients
+- **Event**: Asynchronous message sent from an worker to connected clients
 - **Alarm**: Scheduled callback that triggers at a specific time
 
 ### Coordinated Topology Terminology
 
-- **Peer**: Individual actor instance in a coordinated network
-- **Node**: Physical or logical host running one or more actor peers
+- **Peer**: Individual worker instance in a coordinated network
+- **Node**: Physical or logical host running one or more worker peers
 
 ## Build Commands
 
 - **Type Check:** `yarn check-types` - Verify TypeScript types
-- **Check specific package:** `yarn check-types -F actor-core` - Check only specified package
+- **Check specific package:** `yarn check-types -F rivetkit` - Check only specified package
 - **Build:** `yarn build` - Production build using Turbopack
-- **Build specific package:** `yarn build -F actor-core` - Build only specified package
+- **Build specific package:** `yarn build -F rivetkit` - Build only specified package
 - **Format:** `yarn fmt` - Format code with Biome
 - Do not run the format command automatically.
 
@@ -31,19 +31,19 @@
 
 ### Topologies
 
-Actor-Core supports three topologies that define how actors communicate and scale:
+rivetkit supports three topologies that define how workers communicate and scale:
 
-- **Singleton:** A single instance of an actor running in one location
-- **Partition:** Multiple instances of an actor type partitioned by ID, useful for horizontal scaling 
-- **Coordinate:** Actors connected in a peer-to-peer network, sharing state between instances
+- **Singleton:** A single instance of an worker running in one location
+- **Partition:** Multiple instances of an worker type partitioned by ID, useful for horizontal scaling 
+- **Coordinate:** Workers connected in a peer-to-peer network, sharing state between instances
 
 ### Driver Interfaces
 
-Driver interfaces define the contract between Actor-Core and various backends:
+Driver interfaces define the contract between rivetkit and various backends:
 
-- **ActorDriver:** Manages actor state, lifecycle, and persistence
-- **ManagerDriver:** Manages actor discovery, routing, and scaling
-- **CoordinateDriver:** Handles peer-to-peer communication between actor instances
+- **WorkerDriver:** Manages worker state, lifecycle, and persistence
+- **ManagerDriver:** Manages worker discovery, routing, and scaling
+- **CoordinateDriver:** Handles peer-to-peer communication between worker instances
 
 ### Driver Implementations
 
@@ -54,7 +54,7 @@ Located in `packages/drivers/`, these implement the driver interfaces:
 
 ### Platforms
 
-Located in `packages/platforms/`, these adapt Actor-Core to specific runtime environments:
+Located in `packages/platforms/`, these adapt rivetkit to specific runtime environments:
 
 - **NodeJS:** Standard Node.js server environment
 - **Cloudflare Workers:** Edge computing environment
@@ -83,17 +83,17 @@ This ensures imports resolve correctly across different build environments and p
   - UPPER_CASE for constants
   - Use `#` prefix for private class members (not `private` keyword)
 - **Error Handling:** 
-  - Extend from `ActorError` base class
+  - Extend from `WorkerError` base class
   - Use `UserError` for client-safe errors
   - Use `InternalError` for internal errors
 - Don't try to fix type issues by casting to unknown or any. If you need to do this, then stop and ask me to manually intervene.
 - Write log messages in lowercase
-- Instead of returning raw HTTP responses with c.json, use or write an error in packages/actor-core/src/actor/errors.ts and throw that instead. The middleware will automatically serialize the response for you.
+- Instead of returning raw HTTP responses with c.json, use or write an error in packages/rivetkit/src/worker/errors.ts and throw that instead. The middleware will automatically serialize the response for you.
 
 ## Project Structure
 
 - Monorepo with Yarn workspaces and Turborepo
-- Core code in `packages/actor-core/`
+- Core code in `packages/rivetkit/`
 - Platform implementations in `packages/platforms/`
 - Driver implementations in `packages/drivers/`
 

@@ -1,4 +1,4 @@
-# ActorCore Snippets
+# RivetKit Snippets
 
 This directory contains the full source code for examples shown in the documentation.
 

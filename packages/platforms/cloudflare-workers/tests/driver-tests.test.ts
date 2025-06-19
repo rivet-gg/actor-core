@@ -104,7 +104,7 @@ let setupProjectOnce: Promise<string> | undefined = undefined;
 async function setupProject(projectPath: string) {
 	// Create a temporary directory for the test
 	const uuid = crypto.randomUUID();
-	const tmpDir = path.join(os.tmpdir(), `worker-core-cloudflare-test-${uuid}`);
+	const tmpDir = path.join(os.tmpdir(), `rivetkit-test-${uuid}`);
 	await fs.mkdir(tmpDir, { recursive: true });
 
 	// Create package.json with workspace dependencies

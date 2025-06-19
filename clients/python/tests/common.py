@@ -39,8 +39,8 @@ def start_mock_server():
     repo_root = find_repo_root()
     logger.info(f"Found repo root: {repo_root}")
     
-    # Build actor-core
-    logger.info("Building actor-core")
+    # Build rivetkit
+    logger.info("Building rivetkit")
     subprocess.run(
         ["yarn", "build", "-F", "rivetkit"],
         cwd=repo_root,
@@ -58,7 +58,7 @@ def start_mock_server():
     
     # Pack packages
     packages = [
-        ("rivetkit", repo_root / "packages/actor-core"),
+        ("rivetkit", repo_root / "packages/rivetkit"),
         ("nodejs", repo_root / "packages/platforms/nodejs"),
         ("memory", repo_root / "packages/drivers/memory"),
         ("file-system", repo_root / "packages/drivers/file-system")
@@ -103,10 +103,10 @@ serve(app, {{ port: {port}, mode: "memory" }});
         "private": True,
         "type": "module",
         "dependencies": {
-            "rivetkit": f"file:{vendor_dir}/actor-core-actor-core.tgz",
-            "@rivetkit/nodejs": f"file:{vendor_dir}/actor-core-nodejs.tgz",
-            "@rivetkit/memory": f"file:{vendor_dir}/actor-core-memory.tgz",
-            "@rivetkit/file-system": f"file:{vendor_dir}/actor-core-file-system.tgz",
+            "rivetkit": f"file:{vendor_dir}/rivetkit-rivetkit.tgz",
+            "@rivetkit/nodejs": f"file:{vendor_dir}/rivetkit-nodejs.tgz",
+            "@rivetkit/memory": f"file:{vendor_dir}/rivetkit-memory.tgz",
+            "@rivetkit/file-system": f"file:{vendor_dir}/rivetkit-file-system.tgz",
         },
         "devDependencies": {
             "tsx": "^3.12.7"

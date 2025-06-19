@@ -9,7 +9,7 @@ import type { Hono } from "hono";
 import { PartitionTopologyManager } from "rivetkit/topologies/partition";
 import { logger } from "./log";
 import { CloudflareWorkersManagerDriver } from "./manager-driver";
-import { Encoding, WorkerCoreApp } from "rivetkit";
+import { Encoding, App } from "rivetkit";
 import { upgradeWebSocket } from "./websocket";
 import invariant from "invariant";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -35,7 +35,7 @@ export function getCloudflareAmbientEnv(): Bindings {
 }
 
 export function createHandler(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): {
 	handler: ExportedHandler<Bindings>;
@@ -55,7 +55,7 @@ export function createHandler(
 }
 
 export function createRouter(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): {
 	router: Hono<{ Bindings: Bindings }>;

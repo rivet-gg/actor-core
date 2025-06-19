@@ -4,7 +4,7 @@ import { assertUnreachable } from "rivetkit/utils";
 import { CoordinateTopology } from "rivetkit/topologies/coordinate";
 import { logger } from "./log";
 import type { Hono } from "hono";
-import { StandaloneTopology, type WorkerCoreApp } from "rivetkit";
+import { StandaloneTopology, type App } from "rivetkit";
 import {
 	MemoryGlobalState,
 	MemoryManagerDriver,
@@ -20,7 +20,7 @@ import {
 export { InputConfig as Config } from "./config";
 
 export function createRouter(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): {
 	router: Hono;
@@ -81,7 +81,7 @@ export function createRouter(
 }
 
 export function serve(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): ServerType {
 	const config = ConfigSchema.parse(inputConfig);
@@ -95,7 +95,7 @@ export function serve(
 	});
 	injectWebSocket(server);
 
-	logger().info("workercore started", {
+	logger().info("rivetkit started", {
 		hostname: config.hostname,
 		port: config.port,
 	});

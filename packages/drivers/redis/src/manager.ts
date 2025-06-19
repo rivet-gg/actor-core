@@ -11,7 +11,7 @@ import type Redis from "ioredis";
 import * as crypto from "node:crypto";
 import { KEYS } from "./keys";
 import { ManagerInspector } from "rivetkit/inspector";
-import type { WorkerCoreApp } from "rivetkit";
+import type { App } from "rivetkit";
 
 interface Worker {
 	id: string;
@@ -22,13 +22,9 @@ interface Worker {
 	destroyedAt?: string;
 }
 
-/**
- * Redis Manager Driver for Worker-Core
- * Handles worker creation and lookup by ID or key
- */
 export class RedisManagerDriver implements ManagerDriver {
 	#redis: Redis;
-	#app?: WorkerCoreApp<any>;
+	#app?: App<any>;
 
 	/**
 	 * @internal
@@ -49,7 +45,7 @@ export class RedisManagerDriver implements ManagerDriver {
 		},
 	});
 
-	constructor(redis: Redis, app?: WorkerCoreApp<any>) {
+	constructor(redis: Redis, app?: App<any>) {
 		this.#redis = redis;
 		this.#app = app;
 	}

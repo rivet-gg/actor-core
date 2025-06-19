@@ -52,7 +52,7 @@ export class RivetManagerDriver implements ManagerDriver {
 				throw new Error(`Worker ${res.actor.id} does not have a worker role.`);
 			}
 			if (res.actor.tags.framework !== "rivetkit") {
-				throw new Error(`Worker ${res.actor.id} is not an WorkerCore worker.`);
+				throw new Error(`Worker ${res.actor.id} is not an RivetKit worker.`);
 			}
 
 			return {

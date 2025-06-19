@@ -371,7 +371,7 @@ export function runManagerDriverTests(driverTestConfig: DriverTestConfig) {
 		});
 
 		describe("Multiple Worker Instances", () => {
-			// TODO: This test is flakey https://github.com/rivet-gg/actor-core/issues/873
+			// TODO: This test is flakey https://github.com/rivet-gg/rivetkit/issues/873
 			test("creates multiple worker instances of the same type", async (c) => {
 				const { client } = await setupDriverTest(
 					c,

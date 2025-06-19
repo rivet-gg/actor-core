@@ -70,7 +70,7 @@ function main() {
 		openapi: "3.0.0",
 		info: {
 			version: VERSION,
-			title: "WorkerCore API",
+			title: "RivetKit API",
 		},
 	});
 

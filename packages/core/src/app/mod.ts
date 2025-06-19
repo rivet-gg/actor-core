@@ -5,7 +5,7 @@ import {
 	AppConfigSchema,
 } from "./config";
 
-export class WorkerCoreApp<A extends Workers> {
+export class App<A extends Workers> {
 	#config: AppConfig;
 
 	public get config(): AppConfig {
@@ -19,9 +19,9 @@ export class WorkerCoreApp<A extends Workers> {
 
 export function setup<A extends Workers>(
 	input: AppConfigInput<A>,
-): WorkerCoreApp<A> {
+): App<A> {
 	const config = AppConfigSchema.parse(input);
-	return new WorkerCoreApp(config);
+	return new App(config);
 }
 
 export type { AppConfig };

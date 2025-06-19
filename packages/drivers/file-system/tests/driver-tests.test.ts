@@ -17,7 +17,7 @@ runDriverTests({
 			// Create a unique temp directory for each test
 			const testDir = path.join(
 				os.tmpdir(),
-				`worker-core-fs-tests-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+				`rivetkit-test-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
 			);
 			await fs.mkdir(testDir, { recursive: true });
 

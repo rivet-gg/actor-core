@@ -8,7 +8,7 @@ import {
 import { runWorkerDriverTests } from "./tests/worker-driver";
 import { runManagerDriverTests } from "./tests/manager-driver";
 import { describe } from "vitest";
-import { CoordinateTopology, StandaloneTopology, WorkerCoreApp } from "@/mod";
+import { CoordinateTopology, StandaloneTopology, App } from "@/mod";
 import { createNodeWebSocket, type NodeWebSocket } from "@hono/node-ws";
 import invariant from "invariant";
 import { bundleRequire } from "bundle-require";
@@ -101,7 +101,7 @@ export function runDriverTests(
  */
 export async function createTestRuntime(
 	appPath: string,
-	driverFactory: (app: WorkerCoreApp<any>) => Promise<{
+	driverFactory: (app: App<any>) => Promise<{
 		workerDriver: WorkerDriver;
 		managerDriver: ManagerDriver;
 		coordinateDriver?: CoordinateDriver;
@@ -110,7 +110,7 @@ export async function createTestRuntime(
 ): Promise<DriverDeployOutput> {
 	const {
 		mod: { app },
-	} = await bundleRequire<{ app: WorkerCoreApp<any> }>({
+	} = await bundleRequire<{ app: App<any> }>({
 		filepath: appPath,
 	});
 

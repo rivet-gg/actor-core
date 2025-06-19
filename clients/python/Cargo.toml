@@ -2,9 +2,9 @@
 # this package, with the aid of pyo3
 # 
 # This package turns into the python
-# pypi actor-core-client package
+# pypi rivetkit-client package
 [package]
-name = "python-actor-core-client"
+name = "python-rivetkit-client"
 version = "0.9.0-rc.1"
 edition = "2021"
 publish = false
@@ -14,7 +14,7 @@ name = "actor_core_client"
 crate-type = ["cdylib"]
 
 [dependencies]
-actor-core-client = { path = "../rust/" }
+rivetkit-client = { path = "../rust/" }
 futures-util = "0.3.31"
 once_cell = "1.21.3"
 pyo3 = { version = "0.24.0", features = ["extension-module"] }

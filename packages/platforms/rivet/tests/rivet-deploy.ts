@@ -76,7 +76,7 @@ export async function deployToRivet(projectPath: string) {
 
 	// Create a temporary directory for the test
 	const uuid = crypto.randomUUID();
-	const tmpDirName = `worker-core-test-${uuid}`;
+	const tmpDirName = `rivetkit-test-${uuid}`;
 	const tmpDir = path.join(os.tmpdir(), tmpDirName);
 	console.log(`Creating temp directory: ${tmpDir}`);
 	await fs.mkdir(tmpDir, { recursive: true });
@@ -252,7 +252,7 @@ app.config.test.enabled = true;
 export default createWorkerHandler(app);`;
 	await writeFile(tmpDir, "src/worker.ts", workerTsContent);
 
-	// Build and deploy to Rivet using worker-core CLI
+	// Build and deploy to Rivet
 	console.log("Building and deploying to Rivet...");
 
 	if (!process.env._RIVET_SKIP_DEPLOY) {

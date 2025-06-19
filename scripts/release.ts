@@ -153,12 +153,12 @@ async function publishRustClient(version: string) {
 		// Check if package already exists
 		const { exitCode } = await $({
 			nothrow: true,
-		})`cargo search actor-core-client --limit 1 | grep "rivetkit-client = \\"${version}\\""`;
+		})`cargo search rivetkit-client --limit 1 | grep "rivetkit-client = \\"${version}\\""`;
 
 		if (exitCode === 0) {
 			console.log(
 				chalk.yellow(
-					`! Rust package actor-core-client@${version} already published, skipping`,
+					`! Rust package rivetkit-client@${version} already published, skipping`,
 				),
 			);
 			return;
@@ -180,7 +180,7 @@ async function publishPythonClient(version: string) {
 	try {
 		// Check if package already exists
 		const res = await fetch(
-			"https://test.pypi.org/pypi/actor-core-client/json",
+			"https://test.pypi.org/pypi/rivetkit-client/json",
 		);
 		if (res.ok) {
 			const data = await res.json();
@@ -189,7 +189,7 @@ async function publishPythonClient(version: string) {
 			if (doesAlreadyExist) {
 				console.log(
 					chalk.yellow(
-						`! Python pypi package actor-core-client@${version} already published, skipping`,
+						`! Python pypi package rivetkit-client@${version} already published, skipping`,
 					),
 				);
 				return;
@@ -350,18 +350,18 @@ async function getPublicPackages() {
 }
 
 function validatePackages(publicPackages: any[]) {
-	const nonActorCorePackages = publicPackages.filter(
+	const nonRivetKitPackages = publicPackages.filter(
 		(pkg) =>
 			pkg.name !== "rivetkit" &&
 			pkg.name !== "create-actor" &&
 			!pkg.name.startsWith("@rivetkit/"),
 	);
 
-	if (nonActorCorePackages.length > 0) {
+	if (nonRivetKitPackages.length > 0) {
 		console.error(
-			chalk.red("Error: Found non-actor-core packages in public packages:"),
+			chalk.red("Error: Found non-rivetkit packages in public packages:"),
 		);
-		for (const pkg of nonActorCorePackages) {
+		for (const pkg of nonRivetKitPackages) {
 			console.error(chalk.red(`  - ${pkg.name} (${pkg.location})`));
 		}
 		console.error(
@@ -373,7 +373,7 @@ function validatePackages(publicPackages: any[]) {
 	}
 
 	console.log(
-		chalk.blue(`Found ${publicPackages.length} actor-core packages to publish`),
+		chalk.blue(`Found ${publicPackages.length} rivetkit packages to publish`),
 	);
 }
 

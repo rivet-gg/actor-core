@@ -8,11 +8,11 @@ import { PartitionTopologyManager } from "rivetkit/topologies/partition";
 import { proxy } from "hono/proxy";
 import invariant from "invariant";
 import { ConfigSchema, InputConfig } from "./config";
-import type { WorkerCoreApp } from "rivetkit";
+import type { App } from "rivetkit";
 import { createWebSocketProxy } from "./ws-proxy";
 
 export async function startManager(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): Promise<void> {
 	setupLogging();
@@ -181,7 +181,7 @@ export async function startManager(
 // import { logger as honoLogger } from "hono/logger";
 //
 // export async function startManager(
-// 	app: WorkerCoreApp<any>,
+// 	app: App<any>,
 // 	inputConfig?: InputConfig,
 // ): Promise<void> {
 // 	const port = parseInt(process.env.PORT_HTTP!);

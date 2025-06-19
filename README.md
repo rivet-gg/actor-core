@@ -1,8 +1,8 @@
 <div align="center">
-  <a href="https://actorcore.org">
+  <a href="https://rivetkit.org">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="./.github/media/icon-text-white.svg" alt="ActorCore" width="250">
-      <img src="./.github/media/icon-text-white.svg" alt="ActorCore" width="400">
+      <source media="(prefers-color-scheme: dark)" srcset="./.github/media/icon-text-white.svg" alt="RivetKit" width="250">
+      <img src="./.github/media/icon-text-white.svg" alt="RivetKit" width="400">
     </picture>
   </a>
   <h2>Stateful Serverless That Runs Anywhere</h2>
@@ -12,9 +12,9 @@
   </p>
 
   <p>
-    <a href="https://actorcore.org/overview">Documentation</a> •
+    <a href="https://rivetkit.org/overview">Documentation</a> •
     <a href="https://discord.gg/rivet">Discord</a> •
-    <a href="https://x.com/ActorCore_org">X</a> •
+    <a href="https://x.com/RivetKit_org">X</a> •
     <a href="https://bsky.app/">Bluesky</a>
   </p>
 </div>
@@ -23,9 +23,9 @@
 
 **Start By Framework**
 
-- <img src="docs/images/clients/react.svg" height="16" alt="React" />&nbsp;&nbsp;[React](https://actorcore.org/frameworks/react)
-- <img src="docs/images/clients/javascript.svg" height="16" alt="Node.js" />&nbsp;&nbsp;[Node.js & Bun](https://actorcore.org/clients/javascript)
-- <img src="docs/images/clients/rust.svg" height="16" alt="Rust" />&nbsp;&nbsp;[Rust](https://actorcore.org/clients/rust)
+- <img src="docs/images/clients/react.svg" height="16" alt="React" />&nbsp;&nbsp;[React](https://rivetkit.org/frameworks/react)
+- <img src="docs/images/clients/javascript.svg" height="16" alt="Node.js" />&nbsp;&nbsp;[Node.js & Bun](https://rivetkit.org/clients/javascript)
+- <img src="docs/images/clients/rust.svg" height="16" alt="Rust" />&nbsp;&nbsp;[Rust](https://rivetkit.org/clients/rust)
 
 **Start With Studio**
 
@@ -81,7 +81,7 @@ No servers to manage. Your code runs on-demand and scales automatically with usa
 
 ## Examples
 
-Browse snippets for how to use ActorCore with different use cases.
+Browse snippets for how to use RivetKit with different use cases.
 
 | Example | Actor (JavaScript) | Actor (SQLite) | Frontend (React) |
 |---------|------------|--------|-------|
@@ -100,33 +100,33 @@ _SQLite will be available in June. We’re working on publishing full examples r
 
 ## Runs On Your Stack
 
-Deploy ActorCore anywhere - from serverless platforms to your own infrastructure. Don't see the runtime you want? [Add your own](http://localhost:3000/drivers/build).
+Deploy RivetKit anywhere - from serverless platforms to your own infrastructure. Don't see the runtime you want? [Add your own](http://localhost:3000/drivers/build).
 
 ### All-In-One
 - <img src="docs/images/platforms/rivet-white.svg" height="16" alt="Rivet" />&nbsp;&nbsp;[Rivet](/platforms/rivet)
 - <img src="docs/images/platforms/cloudflare-workers.svg" height="16" alt="Cloudflare Workers" />&nbsp;&nbsp;[Cloudflare Workers](/platforms/cloudflare-workers)
 
 ### Compute
-- <img src="docs/images/platforms/vercel.svg" height="16" alt="Vercel" />&nbsp;&nbsp;[Vercel](https://github.com/rivet-gg/actor-core/issues/897) *(On The Roadmap)*
-- <img src="docs/images/platforms/aws-lambda.svg" height="16" alt="AWS Lambda" />&nbsp;&nbsp;[AWS Lambda](https://github.com/rivet-gg/actor-core/issues/898) *(On The Roadmap)*
-- <img src="docs/images/platforms/supabase.svg" height="16" alt="Supabase" />&nbsp;&nbsp;[Supabase](https://github.com/rivet-gg/actor-core/issues/905) *(Help Wanted)*
+- <img src="docs/images/platforms/vercel.svg" height="16" alt="Vercel" />&nbsp;&nbsp;[Vercel](https://github.com/rivet-gg/rivetkit/issues/897) *(On The Roadmap)*
+- <img src="docs/images/platforms/aws-lambda.svg" height="16" alt="AWS Lambda" />&nbsp;&nbsp;[AWS Lambda](https://github.com/rivet-gg/rivetkit/issues/898) *(On The Roadmap)*
+- <img src="docs/images/platforms/supabase.svg" height="16" alt="Supabase" />&nbsp;&nbsp;[Supabase](https://github.com/rivet-gg/rivetkit/issues/905) *(Help Wanted)*
 - <img src="docs/images/platforms/bun.svg" height="16" alt="Bun" />&nbsp;&nbsp;[Bun](/platforms/bun)
 - <img src="docs/images/platforms/nodejs.svg" height="16" alt="Node.js" />&nbsp;&nbsp;[Node.js](/platforms/nodejs)
 
 ### Storage
 - <img src="docs/images/platforms/redis.svg" height="16" alt="Redis" />&nbsp;&nbsp;[Redis](/drivers/redis)
-- <img src="docs/images/platforms/postgres.svg" height="16" alt="Postgres" />&nbsp;&nbsp;[Postgres](https://github.com/rivet-gg/actor-core/issues/899) *(Help Wanted)*
+- <img src="docs/images/platforms/postgres.svg" height="16" alt="Postgres" />&nbsp;&nbsp;[Postgres](https://github.com/rivet-gg/rivetkit/issues/899) *(Help Wanted)*
 - <img src="docs/images/platforms/file-system.svg" height="16" alt="File System" />&nbsp;&nbsp;[File System](/drivers/file-system)
 - <img src="docs/images/platforms/memory.svg" height="16" alt="Memory" />&nbsp;&nbsp;[Memory](/drivers/memory)
 
 ## Works With Your Tools
 
-Seamlessly integrate ActorCore with your favorite frameworks, languages, and tools. Don't see what you need? [Request an integration](https://github.com/rivet-gg/actor-core/issues/new).
+Seamlessly integrate RivetKit with your favorite frameworks, languages, and tools. Don't see what you need? [Request an integration](https://github.com/rivet-gg/rivetkit/issues/new).
 
 ### Frameworks
 - <img src="docs/images/clients/react.svg" height="16" alt="React" />&nbsp;&nbsp;[React](/frameworks/react)
-- <img src="docs/images/clients/nextjs.svg" height="16" alt="Next.js" />&nbsp;&nbsp;[Next.js](https://github.com/rivet-gg/actor-core/issues/904) *(Help Wanted)*
-- <img src="docs/images/clients/vue.svg" height="16" alt="Vue" />&nbsp;&nbsp;[Vue](https://github.com/rivet-gg/actor-core/issues/903) *(Help Wanted)*
+- <img src="docs/images/clients/nextjs.svg" height="16" alt="Next.js" />&nbsp;&nbsp;[Next.js](https://github.com/rivet-gg/rivetkit/issues/904) *(Help Wanted)*
+- <img src="docs/images/clients/vue.svg" height="16" alt="Vue" />&nbsp;&nbsp;[Vue](https://github.com/rivet-gg/rivetkit/issues/903) *(Help Wanted)*
 
 ### Clients
 - <img src="docs/images/clients/javascript.svg" height="16" alt="JavaScript" />&nbsp;&nbsp;[JavaScript](/clients/javascript)
@@ -138,14 +138,14 @@ Seamlessly integrate ActorCore with your favorite frameworks, languages, and too
 - <img src="docs/images/integrations/hono.svg" height="16" alt="Hono" />&nbsp;&nbsp;[Hono](/integrations/hono)
 - <img src="docs/images/integrations/vitest.svg" height="16" alt="Vitest" />&nbsp;&nbsp;[Vitest](/concepts/testing)
 - <img src="docs/images/integrations/resend.svg" height="16" alt="Resend" />&nbsp;&nbsp;[Resend](/integrations/resend)
-- <img src="docs/images/integrations/better-auth.svg" height="16" alt="Better Auth" />&nbsp;&nbsp;[Better Auth](https://github.com/rivet-gg/actor-core/issues/906) *(On The Roadmap)*
-- <img src="docs/images/platforms/vercel.svg" height="16" alt="AI SDK" />&nbsp;&nbsp;[AI SDK](https://github.com/rivet-gg/actor-core/issues/907) *(On The Roadmap)*
+- <img src="docs/images/integrations/better-auth.svg" height="16" alt="Better Auth" />&nbsp;&nbsp;[Better Auth](https://github.com/rivet-gg/rivetkit/issues/906) *(On The Roadmap)*
+- <img src="docs/images/platforms/vercel.svg" height="16" alt="AI SDK" />&nbsp;&nbsp;[AI SDK](https://github.com/rivet-gg/rivetkit/issues/907) *(On The Roadmap)*
 
 ### Local-First Sync
-- <img src="docs/images/integrations/livestore.svg" height="16" alt="LiveStore" />&nbsp;&nbsp;[LiveStore](https://github.com/rivet-gg/actor-core/issues/908) *(Available In June)*
-- <img src="docs/images/integrations/zerosync.svg" height="16" alt="ZeroSync" />&nbsp;&nbsp;[ZeroSync](https://github.com/rivet-gg/actor-core/issues/909) *(Help Wanted)*
-- <img src="docs/images/integrations/tinybase.svg" height="16" alt="TinyBase" />&nbsp;&nbsp;[TinyBase](https://github.com/rivet-gg/actor-core/issues/910) *(Help Wanted)*
-- <img src="docs/images/integrations/yjs.svg" height="16" alt="Yjs" />&nbsp;&nbsp;[Yjs](https://github.com/rivet-gg/actor-core/issues/911) *(Help Wanted)*
+- <img src="docs/images/integrations/livestore.svg" height="16" alt="LiveStore" />&nbsp;&nbsp;[LiveStore](https://github.com/rivet-gg/rivetkit/issues/908) *(Available In June)*
+- <img src="docs/images/integrations/zerosync.svg" height="16" alt="ZeroSync" />&nbsp;&nbsp;[ZeroSync](https://github.com/rivet-gg/rivetkit/issues/909) *(Help Wanted)*
+- <img src="docs/images/integrations/tinybase.svg" height="16" alt="TinyBase" />&nbsp;&nbsp;[TinyBase](https://github.com/rivet-gg/rivetkit/issues/910) *(Help Wanted)*
+- <img src="docs/images/integrations/yjs.svg" height="16" alt="Yjs" />&nbsp;&nbsp;[Yjs](https://github.com/rivet-gg/rivetkit/issues/911) *(Help Wanted)*
 
 ## Local Development with the Studio
 
@@ -157,24 +157,24 @@ Seamlessly integrate ActorCore with your favorite frameworks, languages, and too
 
 ## Join the Community
 
-Help make ActorCore the universal way to build & scale stateful serverless applications.
+Help make RivetKit the universal way to build & scale stateful serverless applications.
 
 - [Discord](https://rivet.gg/discord)
-- [X](https://x.com/ActorCore_org)
+- [X](https://x.com/RivetKit_org)
 - [Bluesky](https://bsky.app/profile/rivet.gg)
-- [Discussions](https://github.com/rivet-gg/actor-core/discussions)
-- [Issues](https://github.com/rivet-gg/actor-core/issues)
+- [Discussions](https://github.com/rivet-gg/rivetkit/discussions)
+- [Issues](https://github.com/rivet-gg/rivetkit/issues)
 
 ## Frequently Asked Questions
 
 <details>
-<summary><strong>How is ActorCore different than Rivet Actors?</strong></summary>
+<summary><strong>How is RivetKit different than Rivet Actors?</strong></summary>
 
-ActorCore is a framework written in TypeScript that provides high-level functionality. Rivet is an open-source serverless platform written in Rust with features tailored for stateful serverless.
+RivetKit is a framework written in TypeScript that provides high-level functionality. Rivet is an open-source serverless platform written in Rust with features tailored for stateful serverless.
 
-You can think of it as ActorCore is to Rivet as Next.js is to Vercel.
+You can think of it as RivetKit is to Rivet as Next.js is to Vercel.
 
-While Rivet is the primary maintainer of ActorCore, we intend for this to be community driven.
+While Rivet is the primary maintainer of RivetKit, we intend for this to be community driven.
 </details>
 
 <details>
@@ -192,7 +192,7 @@ Sometimes it makes sense to use stateless serverless to make requests to multipl
 </details>
 
 <details>
-<summary><strong>How does ActorCore achieve huge performance gains?</strong></summary>
+<summary><strong>How does RivetKit achieve huge performance gains?</strong></summary>
 
 By storing state in memory and flushing to a persistence layer, we can serve requests instantly instead of waiting for a round trip to the database. There are additional optimizations that can be made around your state to tune the durability of it.
 
@@ -225,12 +225,12 @@ Yes, but only as much as storing data in a single database row does. We're worki
 Things are cooking! Check out our [blog post](https://rivet.gg/blog/2025-03-23-what-would-a-w3c-standard-look-like-for-stateful-serverless-) about what a W3C standard for stateful serverless might look like and [the awesome people who are collaborating on this](https://x.com/threepointone/status/1903579571028390038).
 </details>
 
-Have more questions? Join our [Discord](https://discord.gg/rivet) or go to [GitHub Discussions](https://github.com/rivet-gg/actor-core/discussions).
+Have more questions? Join our [Discord](https://discord.gg/rivet) or go to [GitHub Discussions](https://github.com/rivet-gg/rivetkit/discussions).
 
 ## Roadmap For 2025
 
 We ship fast, so we want to share what you can expect to see before the end of the year.
-Help shape our roadmap by [creating issues](https://github.com/rivet-gg/actor-core/issues) and [joining our Discord](https://rivet.gg/discord).
+Help shape our roadmap by [creating issues](https://github.com/rivet-gg/rivetkit/issues) and [joining our Discord](https://rivet.gg/discord).
 
 - [ ] SQLite Support
 - [ ] SQLite in Studio
@@ -260,13 +260,11 @@ Help shape our roadmap by [creating issues](https://github.com/rivet-gg/actor-co
 - [X] Resend Integration
 - [X] Vitest Integration
 - [X] Non-serialized state
-- [X] `create-actor`
-- [X] `actor-core dev`
 - [X] Hono Integration
 
 ## License
 
 Apache 2.0
 
-_Scale without drama – only with ActorCore._
+_Scale without drama – only with RivetKit._
 

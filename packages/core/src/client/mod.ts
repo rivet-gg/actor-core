@@ -1,4 +1,4 @@
-import type { WorkerCoreApp } from "@/app/mod";
+import type { App } from "@/app/mod";
 import { type Client, type ClientOptions, createClientWithDriver } from "./client";
 import { createHttpClientDriver } from "./http-client-driver";
 
@@ -45,7 +45,7 @@ export {
  * @param {ClientOptions} [opts] - Options for configuring the client.
  * @returns {Client<A>} - A proxied client that supports the `client.myWorker.connect()` syntax.
  */
-export function createClient<A extends WorkerCoreApp<any>>(
+export function createClient<A extends App<any>>(
 	endpoint: string,
 	opts?: ClientOptions,
 ): Client<A> {

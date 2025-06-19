@@ -5,7 +5,7 @@ import { ConfigSchema, type InputConfig } from "./config";
 import { logger } from "./log";
 import { createBunWebSocket } from "hono/bun";
 import type { Hono } from "hono";
-import { type WorkerCoreApp, StandaloneTopology } from "rivetkit";
+import { type App, StandaloneTopology } from "rivetkit";
 import {
 	MemoryGlobalState,
 	MemoryManagerDriver,
@@ -16,7 +16,7 @@ import { FileSystemWorkerDriver, FileSystemGlobalState, FileSystemManagerDriver 
 export { InputConfig as Config } from "./config";
 
 export function createRouter(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): {
 	router: Hono;
@@ -72,7 +72,7 @@ export function createRouter(
 }
 
 export function createHandler(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): Serve {
 	const config = ConfigSchema.parse(inputConfig);
@@ -88,7 +88,7 @@ export function createHandler(
 }
 
 export function serve(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig: InputConfig,
 ): Server {
 	const config = ConfigSchema.parse(inputConfig);
@@ -96,7 +96,7 @@ export function serve(
 	const handler = createHandler(app, config);
 	const server = Bun.serve(handler);
 
-	logger().info("workercore started", {
+	logger().info("rivetkit started", {
 		hostname: config.hostname,
 		port: config.port,
 	});

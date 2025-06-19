@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { WorkerCoreApp, WorkerKey } from "rivetkit";
+import type { App, WorkerKey } from "rivetkit";
 import { logger } from "./log";
 import type { Config } from "./config";
 import { PartitionTopologyWorker } from "rivetkit/topologies/partition";
@@ -42,7 +42,7 @@ interface LoadedWorker {
 }
 
 export function createWorkerDurableObject(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	config: Config,
 ): DurableObjectConstructor {
 	const globalState = new CloudflareDurableObjectGlobalState();

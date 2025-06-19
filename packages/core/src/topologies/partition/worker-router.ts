@@ -86,7 +86,7 @@ export function createWorkerRouter(
 
 	app.get("/", (c) => {
 		return c.text(
-			"This is an WorkerCore server.\n\nLearn more at https://workercore.org",
+			"This is an RivetKit server.\n\nLearn more at https://rivetkit.org",
 		);
 	});
 

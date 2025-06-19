@@ -4,7 +4,7 @@ import { assertUnreachable } from "@/utils";
 import { CoordinateTopology } from "@/topologies/coordinate/mod";
 import { logger } from "./log";
 import type { Hono } from "hono";
-import { StandaloneTopology, type WorkerCoreApp } from "@/mod";
+import { StandaloneTopology, type App } from "@/mod";
 import {
 	TestGlobalState,
 	TestManagerDriver,
@@ -16,7 +16,7 @@ import { type Client, createClient } from "@/client/mod";
 import { createServer } from "node:net";
 
 function createRouter(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): {
 	router: Hono;
@@ -64,7 +64,7 @@ function createRouter(
 	}
 }
 
-function serve(app: WorkerCoreApp<any>, inputConfig?: InputConfig): ServerType {
+function serve(app: App<any>, inputConfig?: InputConfig): ServerType {
 	const config = ConfigSchema.parse(inputConfig);
 
 	const { router, injectWebSocket } = createRouter(app, config);
@@ -76,7 +76,7 @@ function serve(app: WorkerCoreApp<any>, inputConfig?: InputConfig): ServerType {
 	});
 	injectWebSocket(server);
 
-	logger().info("workercore started", {
+	logger().info("rivetkit started", {
 		hostname: config.hostname,
 		port: config.port,
 	});
@@ -84,7 +84,7 @@ function serve(app: WorkerCoreApp<any>, inputConfig?: InputConfig): ServerType {
 	return server;
 }
 
-export interface SetupTestResult<A extends WorkerCoreApp<any>> {
+export interface SetupTestResult<A extends App<any>> {
 	client: Client<A>;
 	mockDriver: {
 		workerDriver: {
@@ -94,7 +94,7 @@ export interface SetupTestResult<A extends WorkerCoreApp<any>> {
 }
 
 // Must use `TestContext` since global hooks do not work when running concurrently
-export async function setupTest<A extends WorkerCoreApp<any>>(
+export async function setupTest<A extends App<any>>(
 	c: TestContext,
 	app: A,
 ): Promise<SetupTestResult<A>> {

@@ -4,7 +4,7 @@ version = "0.9.0-rc.1"
 authors = [
   { name="Rivet Gaming, LLC", email="developer@rivet.gg" },
 ]
-description = "Python client for ActorCore - the Stateful Serverless Framework for building AI agents, realtime apps, and game servers"
+description = "Python client for RivetKit - the Stateful Serverless Framework for building AI agents, realtime apps, and game servers"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.8"
@@ -16,8 +16,8 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/rivet-gg/actor-core"
-Issues = "https://github.com/rivet-gg/actor-core/issues"
+Homepage = "https://github.com/rivet-gg/rivetkit"
+Issues = "https://github.com/rivet-gg/rivetkit/issues"
 
 [project.optional-dependencies]
 tests = [

@@ -34,7 +34,7 @@ export function loggerMiddleware(logger: Logger) {
 }
 
 export function handleRouteNotFound(c: HonoContext) {
-	return c.text("Not Found (WorkerCore)", 404);
+	return c.text("Not Found (RivetKit)", 404);
 }
 
 export interface HandleRouterErrorOpts {

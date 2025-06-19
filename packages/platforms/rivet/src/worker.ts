@@ -6,12 +6,12 @@ import { PartitionTopologyWorker } from "rivetkit/topologies/partition";
 import { RivetWorkerDriver } from "./worker-driver";
 import invariant from "invariant";
 import type { ActorContext } from "@rivet-gg/actor-core";
-import { WorkerCoreApp } from "rivetkit";
+import { App } from "rivetkit";
 import { type Config, ConfigSchema, type InputConfig } from "./config";
 import { stringifyError } from "rivetkit/utils";
 
 export function createWorkerHandler(
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	inputConfig?: InputConfig,
 ): RivetHandler {
 	let driverConfig: Config;
@@ -36,7 +36,7 @@ export function createWorkerHandler(
 
 async function startWorker(
 	ctx: ActorContext,
-	app: WorkerCoreApp<any>,
+	app: App<any>,
 	driverConfig: Config,
 ): Promise<void> {
 	setupLogging();

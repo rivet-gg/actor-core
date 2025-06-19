@@ -10,7 +10,7 @@ import {
 import { WorkerHandle, WorkerHandleRaw } from "./worker-handle";
 import { WorkerActionFunction } from "./worker-common";
 import { logger } from "./log";
-import type { WorkerCoreApp } from "@/mod";
+import type { App } from "@/mod";
 import type { AnyWorkerDefinition } from "@/worker/definition";
 import type * as wsToServer from "@/worker/protocol/message/to-server";
 import type { EventSource } from "eventsource";
@@ -19,11 +19,11 @@ import { createHttpClientDriver } from "./http-client-driver";
 import { HonoRequest } from "hono";
 
 /** Extract the worker registry from the app definition. */
-export type ExtractWorkersFromApp<A extends WorkerCoreApp<any>> =
-	A extends WorkerCoreApp<infer Workers> ? Workers : never;
+export type ExtractWorkersFromApp<A extends App<any>> =
+	A extends App<infer Workers> ? Workers : never;
 
 /** Extract the app definition from the client. */
-export type ExtractAppFromClient<C extends Client<WorkerCoreApp<{}>>> =
+export type ExtractAppFromClient<C extends Client<App<{}>>> =
 	C extends Client<infer A> ? A : never;
 
 /**
@@ -437,13 +437,13 @@ export class ClientRaw {
  *
  * @template A The worker application type.
  */
-export type Client<A extends WorkerCoreApp<any>> = ClientRaw & {
+export type Client<A extends App<any>> = ClientRaw & {
 	[K in keyof ExtractWorkersFromApp<A>]: WorkerAccessor<
 		ExtractWorkersFromApp<A>[K]
 	>;
 };
 
-export function createClientWithDriver<A extends WorkerCoreApp<any>>(
+export function createClientWithDriver<A extends App<any>>(
 	driver: ClientDriver,
 	opts?: ClientOptions,
 ): Client<A> {
