@@ -1,0 +1,89 @@
+---
+title: Rivet Driver
+description: Deploy and scale with Rivet cloud platform
+icon: rivet-bg
+---
+
+The Rivet driver automatically handles scaling, persistence, and global distribution when deployed to the Rivet platform.
+
+<Steps>
+<Step title="Install RivetKit">
+
+```sh
+npm install @rivetkit/actor
+```
+
+</Step>
+
+<Step title="Create Registry">
+
+```ts registry.ts
+import { actor, setup } from "@rivetkit/actor";
+
+export const counter = actor({
+	state: { count: 0 },
+	actions: {
+		increment: (c, amount: number = 1) => {
+			c.state.count += amount;
+			return c.state.count;
+		},
+		getCount: (c) => c.state.count,
+	},
+});
+
+export const registry = setup({
+	use: { counter },
+});
+```
+
+</Step>
+
+<Step title="Setup Server">
+
+```ts server.ts
+import { Hono } from "hono";
+import { registry } from "./registry";
+
+const { client, serve } = registry.createServer();
+
+// Setup your web framework
+const app = new Hono();
+
+app.post("/increment/:name", async (c) => {
+	const name = c.req.param("name");
+	const counter = client.counter.getOrCreate(name);
+	const newCount = await counter.increment(1);
+	return c.json({ count: newCount });
+});
+
+serve(app);
+```
+
+</Step>
+
+<Step title="Configure Rivet">
+
+Create a `rivet.json` configuration file:
+
+```json rivet.json
+{
+  "rivetkit": {
+    "registry": "src/registry.ts",
+    "server": "src/server.ts"
+  }
+}
+```
+
+</Step>
+
+<Step title="Deploy">
+
+```sh
+npx rivet-cli deploy
+```
+
+Your endpoint will be available at your Rivet project URL.
+
+</Step>
+
+</Steps>

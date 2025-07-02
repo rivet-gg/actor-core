@@ -1,0 +1,75 @@
+---
+title: Memory Driver
+description: In-memory storage for development and testing
+icon: memory
+---
+
+The memory driver stores data in RAM and will be lost when the process restarts. It must be explicitly configured and should only be used for development and testing.
+
+<Steps>
+<Step title="Install RivetKit">
+
+```sh
+npm install @rivetkit/actor
+```
+
+</Step>
+
+<Step title="Create Registry">
+
+```ts registry.ts
+import { actor, setup } from "@rivetkit/actor";
+
+export const counter = actor({
+	state: { count: 0 },
+	actions: {
+		increment: (c, amount: number = 1) => {
+			c.state.count += amount;
+			return c.state.count;
+		},
+		getCount: (c) => c.state.count,
+	},
+});
+
+export const registry = setup({
+	use: { counter },
+});
+```
+
+</Step>
+
+<Step title="Setup Server">
+
+```ts server.ts
+import { Hono } from "hono";
+import { registry } from "./registry";
+import { createMemoryDriver } from "@rivetkit/actor";
+
+const { client, serve } = registry.createServer({
+	driver: createMemoryDriver()
+});
+
+// Setup your web framework
+const app = new Hono();
+
+app.post("/increment/:name", async (c) => {
+	const name = c.req.param("name");
+	const counter = client.counter.getOrCreate(name);
+	const newCount = await counter.increment(1);
+	return c.json({ count: newCount });
+});
+
+serve(app);
+```
+
+</Step>
+
+<Step title="Run Server">
+
+```sh
+npx tsx --watch server.ts
+```
+
+</Step>
+
+</Steps>

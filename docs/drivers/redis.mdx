@@ -1,0 +1,83 @@
+---
+title: Redis Driver
+description: Production-ready Redis storage and coordination
+icon: redis
+---
+
+The Redis driver provides production-ready persistence and can scale across multiple server instances. It requires a Redis server to be running.
+
+<Steps>
+<Step title="Install Dependencies">
+
+```sh
+npm install @rivetkit/actor @rivetkit/redis ioredis
+npm install -D @types/ioredis
+```
+
+</Step>
+
+<Step title="Create Registry">
+
+```ts registry.ts
+import { actor, setup } from "@rivetkit/actor";
+
+export const counter = actor({
+	state: { count: 0 },
+	actions: {
+		increment: (c, amount: number = 1) => {
+			c.state.count += amount;
+			return c.state.count;
+		},
+		getCount: (c) => c.state.count,
+	},
+});
+
+export const registry = setup({
+	use: { counter },
+});
+```
+
+</Step>
+
+<Step title="Setup Server">
+
+```ts server.ts
+import { Hono } from "hono";
+import { registry } from "./registry";
+import { createRedisDriver } from "@rivetkit/redis";
+import Redis from "ioredis";
+
+// Create Redis client
+const redis = new Redis({
+	host: "localhost",
+	port: 6379,
+});
+
+const { client, serve } = registry.createServer({
+	driver: createRedisDriver(redis, registry)
+});
+
+// Setup your web framework
+const app = new Hono();
+
+app.post("/increment/:name", async (c) => {
+	const name = c.req.param("name");
+	const counter = client.counter.getOrCreate(name);
+	const newCount = await counter.increment(1);
+	return c.json({ count: newCount });
+});
+
+serve(app);
+```
+
+</Step>
+
+<Step title="Run Server">
+
+```sh
+npx tsx --watch server.ts
+```
+
+</Step>
+
+</Steps>

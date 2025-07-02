@@ -1,1 +1,90 @@
-TODO: Comparison
+---
+title: Drivers Overview
+description: Choose the right storage and coordination driver for your needs
+icon: layers
+---
+
+Drivers handle actor state persistence, management, and coordination in RivetKit. Each driver is optimized for different environments and use cases.
+
+<CardGroup cols={2}>
+<Card title="Memory Driver" icon="memory" href="/drivers/memory">
+  In-memory storage for development and testing. Data is lost on restart.
+</Card>
+
+<Card title="File System Driver" icon="file-system" href="/drivers/file-system">
+  Local file system storage. Default driver with data persistence between restarts.
+</Card>
+
+<Card title="Redis Driver" icon="redis" href="/drivers/redis">
+  Production-ready Redis storage with scaling support across multiple instances.
+</Card>
+
+<Card title="Rivet Driver" icon="rivet-bg" href="/drivers/rivet">
+  Cloud platform with automatic scaling, persistence, and global distribution.
+</Card>
+</CardGroup>
+
+## Dynamic Configuration
+
+You can dynamically configure drivers based on environment variables to use different drivers for development vs production:
+
+```ts server.ts
+import { Hono } from "hono";
+import { registry } from "./registry";
+import { createFileSystemDriver, createMemoryDriver } from "@rivetkit/actor";
+import { createRedisDriver } from "@rivetkit/redis";
+import Redis from "ioredis";
+
+// Dynamic driver configuration
+function createDriver() {
+  const env = process.env.NODE_ENV;
+  
+  if (env === "production") {
+    // Use Redis for production
+    const redis = new Redis({
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379"),
+    });
+    return createRedisDriver(redis, registry);
+  } else if (env === "test") {
+    // Use memory driver for testing
+    return createMemoryDriver();
+  } else {
+    // Use file system driver for development (default)
+    return createFileSystemDriver();
+  }
+}
+
+const { client, serve } = registry.createServer({
+  driver: createDriver()
+});
+
+// Setup your web framework
+const app = new Hono();
+
+app.post("/increment/:name", async (c) => {
+  const name = c.req.param("name");
+  const counter = client.counter.getOrCreate(name);
+  const newCount = await counter.increment(1);
+  return c.json({ count: newCount });
+});
+
+serve(app);
+```
+
+## Environment Variables
+
+You can also use the `RIVETKIT_DRIVER` environment variable to automatically select a driver:
+
+```sh
+# Use file system driver (default)
+RIVETKIT_DRIVER=file-system npm run dev
+
+# Use memory driver
+RIVETKIT_DRIVER=memory npm run dev
+
+# Use Rivet cloud driver
+RIVETKIT_DRIVER=rivet npm run dev
+```
+
+When no explicit driver is configured, RivetKit will use the file system driver by default.

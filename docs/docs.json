@@ -117,6 +117,19 @@
         ]
       },
       {
+        "group": "Drivers",
+        "icon": "database",
+        "pages": [
+          "drivers/overview",
+          "drivers/rivet",
+          "drivers/file-system",
+          "drivers/memory",
+          "drivers/redis",
+          "drivers/cloudflare-workers",
+          "drivers/building-drivers"
+        ]
+      },
+      {
         "group": "Reference",
         "pages": [
           "general/authentication",
@@ -143,20 +156,7 @@
   "_temp": [
               "general/architecture",
               "general/registry",
-              "general/webhooks",
-    {
-      "group": "Drivers",
-      "icon": "database",
-      "pages": [
-        "drivers/overview",
-        "drivers/rivet",
-        "drivers/cloudflare-workers",
-        "drivers/file-system",
-        "drivers/memory",
-        "drivers/redis",
-        "drivers/building-drivers"
-      ]
-    }
+              "general/webhooks"
   ],
   "contextual": {
    "options": [
