@@ -6,6 +6,7 @@ import {
 	rivetRequest,
 } from "./rivet-client";
 import { convertKeyToRivetTags, deserializeKeyFromTag } from "./util";
+import { logger } from "./log";
 
 interface ActorMeta {
 	name: string;
@@ -236,6 +237,22 @@ function buildActorEndpoint(actor: RivetActor): string {
 	if (hostname === "127.0.0.1") hostname = "rivet-guard";
 
 	return `${isTls ? "https" : "http"}://${hostname}:${port}${path}`;
+}
+
+/**
+ * Invalidates both cache entries for an actor by ID and name+key combination.
+ */
+export function invalidateCache(actorId: string, name: string, key: string[]) {
+	const didDeleteMeta = ACTOR_META_CACHE.delete(actorId);
+	const cacheKey = createKeysCacheKey(name, key);
+	const didDeleteKey = ACTOR_KEY_CACHE.delete(cacheKey);
+	logger().debug("invalidated cache", {
+		actorId,
+		name,
+		key,
+		didDeleteMeta,
+		didDeleteKey,
+	});
 }
 
 export function flushCache() {

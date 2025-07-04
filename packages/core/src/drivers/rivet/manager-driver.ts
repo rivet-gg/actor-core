@@ -16,6 +16,7 @@ import {
 	flushCache,
 	getActorMeta,
 	getActorMetaWithKey,
+	invalidateCache,
 	populateCache,
 } from "./actor-meta";
 import { createRivetConnRoutingHandler } from "./conn-routing-handler";
@@ -181,6 +182,8 @@ export class RivetManagerDriver implements ManagerDriver {
 			);
 
 			throw error;
+		} finally {
+			invalidateCache(actor.id, meta.name, meta.key);
 		}
 
 		return {
